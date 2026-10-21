@@ -1,11 +1,15 @@
 """FastAPI dependencies for dependency injection"""
 
+import hashlib
 import logging
+import secrets
+import time
 from typing import Any, Dict, Optional
 
 from core.config import get_settings
 from core.scheduler.job_queue import JobRequest
 from fastapi import Depends, Header, HTTPException, Request
+from fastapi.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
 
@@ -270,43 +274,190 @@ async def get_scheduler_or_queue(request: Request):
 
 async def verify_api_key(
     authorization: Optional[str] = Header(None),
-    settings = Depends(get_current_settings)
+    request: Request = None,
+    settings=Depends(get_current_settings),
 ):
-    """Verify API key if authentication is enabled"""
+    """Require a configured server key or a valid stored user token when enabled.
+
+    A non-empty Bearer string is never treated as authentication by itself.
+    """
     if not settings.security.api_key_required:
         return True
-    
+
     if not authorization:
         raise HTTPException(
             status_code=401,
-            detail="Authorization header missing"
+            detail="Authorization header missing",
+            headers={"WWW-Authenticate": "Bearer"},
         )
-    
-    # Basic API key validation (you can enhance this)
-    if not authorization.startswith("Bearer "):
+
+    parts = authorization.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer" or not parts[1]:
         raise HTTPException(
             status_code=401,
-            detail="Invalid authorization format. Use 'Bearer <token>'"
+            detail="Invalid authorization format. Use 'Bearer <token>'.",
+            headers={"WWW-Authenticate": "Bearer"},
         )
-    
-    # For now, just check if token is present
-    # You can implement proper JWT or API key validation here
-    token = authorization.split(" ")[1]
-    if not token:
+
+    token = parts[1]
+    configured_api_key = getattr(settings.security, "api_key", None)
+    if configured_api_key and secrets.compare_digest(token, configured_api_key):
+        return True
+
+    # User tokens are stored and expiry/revocation-checked by the existing AuthService.
+    if settings.user_auth_enabled:
+        if request is None:
+            raise HTTPException(status_code=503, detail="Authentication context is unavailable.")
+        auth_service = await get_auth_service(request)
+        user, error = await auth_service.validate_token(token)
+        if error or user is None:
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid or expired bearer token.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        request.state.authenticated_user = user
+        return True
+
+    if not configured_api_key:
         raise HTTPException(
-            status_code=401,
-            detail="Invalid token"
+            status_code=503,
+            detail="API-key authentication is required but P3D_API_KEY is not configured.",
         )
-    
-    return True
+
+    raise HTTPException(
+        status_code=401,
+        detail="Invalid bearer token.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+_RATE_LIMIT_LUA = """
+local count = redis.call('INCR', KEYS[1])
+if count == 1 then
+  redis.call('EXPIRE', KEYS[1], tonumber(ARGV[1]))
+end
+return count
+"""
+
+
+def _rate_limit_redis_for_request(request: Request):
+    """Reuse an existing shared Redis connection when the deployment has one."""
+    app_state = request.app.state
+    queue = getattr(app_state, "job_queue", None)
+    if queue is None:
+        scheduler = getattr(app_state, "scheduler", None)
+        queue = getattr(scheduler, "job_queue", None)
+    redis_client = getattr(queue, "redis", None) if queue is not None else None
+    if redis_client is not None:
+        return redis_client
+
+    auth_service = getattr(app_state, "auth_service", None)
+    storage = getattr(auth_service, "storage", None)
+    return getattr(storage, "redis", None) if storage is not None else None
+
+
+async def _rate_limit_result(request: Request, settings) -> Dict[str, Any]:
+    """Consume one API request from a fixed 60-second bucket.
+
+    Multi-worker mode reuses the existing Redis connection for a shared atomic
+    counter. Single-worker mode uses process-local state. Only the immediate
+    peer address is trusted; deployments behind a proxy must configure their
+    ASGI server's trusted-proxy handling rather than trusting arbitrary XFF.
+    """
+    cached = getattr(request.state, "_formash_rate_limit_result", None)
+    if cached is not None:
+        return cached
+
+    now = time.time()
+    window = int(now // 60)
+    retry_after = max(1, 60 - int(now % 60))
+    limit = max(1, int(settings.security.rate_limit_per_minute))
+    client = getattr(request, "client", None)
+    client_ip = str(getattr(client, "host", None) or "unknown")
+    client_hash = hashlib.sha256(client_ip.encode("utf-8")).hexdigest()[:32]
+    redis_key = f"3daigc:api-rate-limit:{window}:{client_hash}"
+
+    redis_client = _rate_limit_redis_for_request(request)
+    if redis_client is not None:
+        try:
+            # The script ensures the first increment and TTL are atomic across workers.
+            count = int(await redis_client.eval(_RATE_LIMIT_LUA, 1, redis_key, 120))
+        except Exception as exc:
+            logger.error("Shared API rate-limit store is unavailable; rejecting request.", exc_info=True)
+            raise HTTPException(
+                status_code=503,
+                detail="API rate-limiting backend is unavailable; request was not processed.",
+            ) from exc
+    else:
+        # Process-local fallback is safe only for the single-worker deployment;
+        # multi-worker deployments use the shared Redis queue connection above.
+        app_state = request.app.state
+        counters = getattr(app_state, "_formash_rate_limit_counters", None)
+        if counters is None:
+            counters = {}
+            app_state._formash_rate_limit_counters = counters
+        # Keep the current and immediately previous window so concurrent requests
+        # straddling a minute boundary cannot reset the new window's counters.
+        for old_key in tuple(counters):
+            if old_key[0] < window - 1:
+                counters.pop(old_key, None)
+        bucket_key = (window, client_hash)
+        count = int(counters.get(bucket_key, 0)) + 1
+        counters[bucket_key] = count
+
+    result = {
+        "allowed": count <= limit,
+        "limit": limit,
+        "remaining": max(0, limit - count),
+        "retry_after": retry_after,
+    }
+    request.state._formash_rate_limit_result = result
+    return result
+
+
+async def apply_rate_limit(request: Request, settings=None):
+    """FastAPI middleware hook; limits all API paths and returns a response when blocked."""
+    if not request.url.path.startswith("/api/"):
+        return None
+    settings = settings or get_settings()
+    try:
+        result = await _rate_limit_result(request, settings)
+    except HTTPException as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail},
+            headers=exc.headers,
+        )
+    if not result["allowed"]:
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "API request rate limit exceeded."},
+            headers={
+                "Retry-After": str(result["retry_after"]),
+                "X-RateLimit-Limit": str(result["limit"]),
+                "X-RateLimit-Remaining": "0",
+            },
+        )
+    return None
+
 
 async def check_rate_limit(
-    request_ip: str = None,
-    settings = Depends(get_current_settings)
+    request: Request,
+    settings=Depends(get_current_settings),
 ):
-    """Check rate limiting (basic implementation)"""
-    # This is a placeholder for rate limiting
-    # In production, you'd use Redis or similar for distributed rate limiting
+    """Dependency form of the same enforced rate limit, for route-level use."""
+    result = await _rate_limit_result(request, settings)
+    if not result["allowed"]:
+        raise HTTPException(
+            status_code=429,
+            detail="API request rate limit exceeded.",
+            headers={
+                "Retry-After": str(result["retry_after"]),
+                "X-RateLimit-Limit": str(result["limit"]),
+                "X-RateLimit-Remaining": "0",
+            },
+        )
     return True
 
 

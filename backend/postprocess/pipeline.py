@@ -1194,6 +1194,27 @@ def _save_file(path: Path, payload: bytes) -> str:
     return str(path)
 
 
+def _run_pbr_validation(glb_path: Path, *, required: bool) -> Dict[str, Any]:
+    """Run the PBR checker without letting an optional validator crash a finished mesh job."""
+    try:
+        report = validate_pbr_asset(glb_path)
+        report = dict(report) if isinstance(report, dict) else {
+            "valid": False,
+            "warnings": ["PBR validator returned an invalid report shape."],
+        }
+        report["status"] = "pass" if report.get("valid") is True else "fail"
+    except Exception as exc:
+        logger.warning("PBR validation failed for %s: %s", glb_path, exc)
+        report = {
+            "valid": False,
+            "status": "error",
+            "warnings": ["PBR validator raised an exception."],
+            "error": str(exc),
+        }
+    report["required"] = bool(required)
+    return report
+
+
 def _build_result(
     job_id: str,
     asset_dir: Path,
@@ -1206,6 +1227,7 @@ def _build_result(
     job_metadata: Optional[Dict[str, Any]] = None,
     texture_enabled: bool = False,
     master_quality_report: Optional[Dict[str, Any]] = None,
+    pbr_validation_report: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     primary = generated["game_ready"].get("glb") or generated["game_ready"].get("obj")
     base_url = f"/api/v1/system/jobs/{job_id}"
@@ -1238,7 +1260,15 @@ def _build_result(
         or meta.get("bake_normal_maps")
         or meta.get("bake_textures")
     )
-    bake_failed = bake_status == "failed" or (bake_requested and bake_status != "completed")
+    bake_degraded = bake_status == "degraded"
+    bake_failed = bake_status == "failed" or (
+        bake_requested and bake_status not in {"completed", "degraded"}
+    )
+    pbr_validation_report = pbr_validation_report if isinstance(pbr_validation_report, dict) else {}
+    pbr_validation_required = bool(pbr_validation_report.get("required"))
+    pbr_validation_failed = bool(
+        pbr_validation_required and pbr_validation_report.get("valid") is not True
+    )
     physics_enabled = bool(
         inputs.get("enable_physics")
         or inputs.get("physics_enabled")
@@ -1372,10 +1402,30 @@ def _build_result(
                 "required": False,
             },
             "bake": {
-                "status": "ready" if bake_status == "completed" else ("failed" if bake_failed else "skipped"),
-                "url": f"{base_url}/download?artifact_format=normal_map" if bake_status == "completed" else None,
+                "status": (
+                    "ready" if bake_status == "completed"
+                    else "degraded" if bake_degraded
+                    else "failed" if bake_failed
+                    else "skipped"
+                ),
+                "url": f"{base_url}/download?artifact_format=normal_map" if bake_status in {"completed", "degraded"} else None,
                 "required": False,
-                "error": generated.get("bake_stats", {}).get("error") if bake_failed else None,
+                "error": (
+                    generated.get("bake_stats", {}).get("error")
+                    or generated.get("bake_stats", {}).get("reason")
+                ) if (bake_failed or bake_degraded) else None,
+            },
+            "pbr_validation": {
+                "status": (
+                    "ready" if pbr_validation_report.get("valid") is True
+                    else "failed" if pbr_validation_required
+                    else "skipped"
+                ),
+                "url": f"{base_url}/download?artifact_format=qa_report",
+                "path": "metadata/quality_report.json",
+                "required": False,
+                "error": pbr_validation_report.get("error"),
+                "warnings": pbr_validation_report.get("warnings", []),
             },
             "retopology": {
                 "status": retopo_stats.get("status", "skipped"),
@@ -1446,7 +1496,7 @@ def _build_result(
         "failed"
         if required_failed
         else "degraded"
-        if any_failed or quality_failed or lod_failed or retopo_skipped_native
+        if any_failed or quality_failed or lod_failed or retopo_skipped_native or pbr_validation_failed or bake_degraded
         else "ready"
     )
     degraded_reasons = []
@@ -1458,6 +1508,10 @@ def _build_result(
         degraded_reasons.append("texture_generation_failed")
     if bake_failed and (bake_requested or generated.get("bake_requested")):
         degraded_reasons.append("bake_failed")
+    if bake_degraded:
+        degraded_reasons.append("bake_incomplete")
+    if pbr_validation_failed:
+        degraded_reasons.append("pbr_validation_failed")
     if collision_failed and physics_enabled:
         degraded_reasons.append("collision_generation_failed")
     if retopo_skipped_native and retopo_requested:
@@ -2280,21 +2334,59 @@ def run_postprocess_job(
                 target_img_path = texture_dir / f"{map_name}.png"
                 target_img_path.write_bytes(img_bytes)
                 texture_paths[map_name] = str(target_img_path)
-            bake_stats = {"status": "completed", **worker_stats}
+            required_bake_maps = set(maps_to_bake)
+            if len(required_bake_maps.intersection({"ao", "roughness", "metallic"})) >= 2:
+                required_bake_maps.add("orm")
+            missing_bake_maps = sorted(required_bake_maps - set(baked_images))
+            bake_stats = {
+                "status": "degraded" if missing_bake_maps else "completed",
+                **worker_stats,
+            }
+            if missing_bake_maps:
+                bake_stats["missing_requested_maps"] = missing_bake_maps
+                bake_stats["reason"] = (
+                    "The active bake backend did not produce all requested maps: "
+                    + ", ".join(missing_bake_maps)
+                )
+                artifact_errors["bake"] = bake_stats["reason"]
+                logger.warning("%s", bake_stats["reason"])
             texture_status = "baked"
 
-            # Attach normal map and PBR material to uv_mesh if normal was baked
+            # Attach only maps that were genuinely baked. Keep native material
+            # channels when a fallback backend cannot bake albedo/ORM for them.
             if "normal" in baked_images:
                 try:
                     norm_img = Image.open(io.BytesIO(baked_images["normal"]))
                     base_img = Image.open(io.BytesIO(baked_images["base_color"])) if "base_color" in baked_images else None
-                    pbr_mat = trimesh.visual.material.PBRMaterial(
-                        name="GameReady_PBR",
-                        normalTexture=norm_img,
-                        baseColorTexture=base_img,
-                    )
+                    orm_img = Image.open(io.BytesIO(baked_images["orm"])) if "orm" in baked_images else None
+                    ao_img = Image.open(io.BytesIO(baked_images["ao"])) if "ao" in baked_images else None
                     uvs = getattr(getattr(uv_mesh, "visual", None), "uv", None)
-                    if uvs is not None:
+                    existing_material = getattr(getattr(uv_mesh, "visual", None), "material", None)
+
+                    if native_textures and base_img is None and isinstance(
+                        existing_material, trimesh.visual.material.PBRMaterial
+                    ):
+                        # Native PBR data is authoritative when the fallback cannot bake semantic maps.
+                        pbr_mat = existing_material
+                        pbr_mat.normalTexture = norm_img
+                        if orm_img is not None:
+                            pbr_mat.metallicRoughnessTexture = orm_img
+                        pbr_mat.occlusionTexture = orm_img if orm_img is not None else ao_img
+                    elif native_textures and base_img is None and existing_material is not None:
+                        # Do not replace a non-PBR material with fake flat maps.
+                        logger.warning(
+                            "Preserving native material: the active baker did not produce a baked base-color map."
+                        )
+                        pbr_mat = None
+                    else:
+                        pbr_mat = trimesh.visual.material.PBRMaterial(
+                            name="GameReady_PBR",
+                            normalTexture=norm_img,
+                            baseColorTexture=base_img,
+                            metallicRoughnessTexture=orm_img,
+                            occlusionTexture=orm_img if orm_img is not None else ao_img,
+                        )
+                    if uvs is not None and pbr_mat is not None:
                         uv_mesh.visual = trimesh.visual.TextureVisuals(uv=uvs, material=pbr_mat)
                 except Exception as mat_err:
                     logger.warning("Could not attach baked textures to GLB material: %s", mat_err)
@@ -2423,12 +2515,9 @@ def run_postprocess_job(
         game_ready_glb_bytes = _export_glb(game_ready_mesh)
     _save_file(glb_path, game_ready_glb_bytes)
     game_ready["glb"] = str(glb_path)
-    try:
-        pbr_report = validate_pbr_asset(glb_path)
-        quality_trace["pbr_validation"] = pbr_report
-    except Exception as pbr_err:
-        logger.warning("PBR validation failed: %s", pbr_err)
-        quality_trace["pbr_validation"] = {"status": "warn", "error": str(pbr_err)}
+    pbr_validation_required = bool(texture_enabled or native_textures or should_bake)
+    pbr_report = _run_pbr_validation(glb_path, required=pbr_validation_required)
+    quality_trace["pbr_validation"] = pbr_report
 
     if retopo_stats.get("quad_faces"):
         try:
@@ -2718,7 +2807,9 @@ def run_postprocess_job(
     badge_cfg = get_quality_config().get("badge", {})
     sharp_cutoff = float(badge_cfg.get("sharp_min_score", 0.85))
     passed_clean = bool(gate_eval.get("passed_clean", False)) if isinstance(gate_eval, dict) else False
-    pbr_valid = (pbr_report.get("valid", True)) if isinstance(pbr_report, dict) else True
+    pbr_valid = (not pbr_validation_required) or (
+        isinstance(pbr_report, dict) and pbr_report.get("valid") is True
+    )
     has_flaws = (
         (not passed_clean)
         or (not pbr_valid)
@@ -2804,6 +2895,7 @@ def run_postprocess_job(
         "lod_validation": lod_validation,
         "bake_stats": bake_stats,
         "retopo_stats": retopo_stats,
+        "pbr_validation": pbr_report,
     }
     final_result = _build_result(
         job_id, asset_dir, asset_name, qa_report, generated,
@@ -2813,6 +2905,7 @@ def run_postprocess_job(
         job_metadata=job_metadata,
         texture_enabled=texture_enabled,
         master_quality_report=master_quality_report,
+        pbr_validation_report=pbr_report,
     )
     final_result["quality_trace"] = quality_trace
     final_result["quality_tier"] = backend_quality_tier

@@ -74,19 +74,15 @@ This shape is returned by the custom exception handlers (`BaseAPIException`, `Va
 
 ## Authentication
 
-The API supports two authentication modes controlled by `P3D_USER_AUTH_ENABLED`:
+The API supports simple mode and optional authentication, controlled by `P3D_USER_AUTH_ENABLED` and `security.api_key_required`:
 
-- **Simple Mode** (default): No authentication required. All clients can see all jobs.
-- **Authenticated Mode**: Redis-based user authentication with API key support.
+- **Simple Mode**: endpoints do not require a bearer credential, but the API-level request-rate limit still applies.
+- **Authenticated Mode**: user tokens are checked against the Redis-backed auth store, including active status and expiry.
+- **Server API key**: set the secret environment variable `P3D_API_KEY` when `security.api_key_required: true`. Send it as `Authorization: Bearer <P3D_API_KEY>`. The key is compared in constant time and must never be committed to the repository. If API-key protection is required but neither a configured server key nor usable user auth service is available, protected endpoints fail closed rather than accepting an arbitrary token.
 
-### Set API Key
+### Rate limiting
 
-```bash
-POST /api/v1/users/register
-Content-Type: application/json
-
-{ "username": "admin", "password": "secret" }
-```
+All `/api/*` requests are limited by `security.rate_limit_per_minute` (default: 60 requests per minute per immediate peer IP). Exceeding the fixed-window limit returns HTTP `429` and a `Retry-After` header. Multi-worker deployments use an atomic counter in the existing Redis connection; single-worker deployments use a process-local counter. Reverse-proxy limits are recommended as an additional perimeter control. When deployed behind a reverse proxy, configure trusted-proxy behavior at the ASGI/server layer; arbitrary `X-Forwarded-For` values are not trusted.
 
 ---
 

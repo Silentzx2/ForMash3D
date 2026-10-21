@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import logging.config
 import functools
 from pathlib import Path
@@ -97,6 +98,8 @@ class SecurityConfig(BaseSettings):
     rate_limit_per_minute: int = 60
     cors_origins: List[str] = ["*"]
     api_key_required: bool = False
+    # Optional privileged server credential; injected from P3D_API_KEY at runtime.
+    api_key: Optional[str] = Field(default=None, repr=False, exclude=True)
 
 
 class ModelConfig(BaseSettings):
@@ -363,6 +366,11 @@ def get_settings() -> Settings:
         models_config = config_dir / "models.yaml"
 
         settings = load_config_from_file(str(system_config))
+
+        # Static API credentials come only from the runtime environment, never YAML.
+        configured_api_key = os.getenv("P3D_API_KEY")
+        if configured_api_key:
+            settings.security.api_key = configured_api_key
 
         # If user authorization is turned on, force API key
         if settings.user_auth_enabled:

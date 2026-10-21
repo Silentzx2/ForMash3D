@@ -469,10 +469,10 @@ class TrainConfig:
         clean_prompt = prompt or "high quality, clean lighting-less albedo texture, detailed"
         neg_prompt = "strong light, bright light, intense illumination, shade, darkness, silhouette, shadow"
 
-        # EXPERIMENTAL_MAX_DETAIL (2026-10-20): retain Paint3D's implemented two-stage recipe:
-        # stage-1 text/depth generation 40 steps / CFG 7.0; first inpaint 40 / CFG 3.0;
-        # atlas refinement 20 / CFG 3.0 and UV img2img 20 / CFG 7.0. Adapter supports 1K/2K only.
-        # No independently validated community override was found. Ask the user once before changing this profile.
+        # Active locked config contract (2026-10-21): stage-1 text/depth 40 steps / CFG 7.0;
+        # stage-1 inpaint 40 / CFG 3.0; stage-2 UV inpaint 40 / CFG 3.0;
+        # stage-2 UV img2img 40 / CFG 7.0. Atlas output is limited to 1K/2K.
+        # These are generated per-job child configs, not UI-exposed controls. Preserve the recipe unless the owner approves a change.
         stage1_content = f'''txt2img:
   sd_model_key: "{ckpts['sd15']}"
   ip_adapter_image_path: ""

@@ -1,3 +1,12 @@
+## Security, PBR pipeline and adapter-contract audit — 2026-10-21
+
+- Replaced presence-only bearer-token acceptance with constant-time comparison for the optional `P3D_API_KEY` server credential and validation through the existing Redis-backed auth service when user authentication is enabled. A protected endpoint fails closed when no usable credential path is configured.
+- Enforced `security.rate_limit_per_minute` across `/api/*` in both backend deployment modes. Multi-worker requests use an atomic Redis counter; single-worker requests use per-peer, fixed-window process-local counters. Added 401/429/503 regression contracts and documented proxy/trusted-peer assumptions.
+- Made PBR validation exceptions produce a structured report, propagated required PBR failures to degraded production status, connected packed ORM and occlusion maps when truly baked, and stopped the pure-Python fallback from fabricating constant albedo/roughness/metallic maps. Native PBR channels are retained when the fallback cannot rebake semantic maps.
+- Corrected Paint3D, Mini Turbo and TripoSG settings comments to describe their actual active contracts without changing locked inference values. Documented that TRELLIS's locked 100-step request is clamped to 50 at the adapter call site and added tests for generated Paint3D stage YAML.
+
+---
+
 ## Route/page/function mount fixes — 2026-10-21 follow-up
 
 - Fixed the tool-context help API's missing-data failure: added the six Markdown files expected by the active contextual-help mappings (mesh generation, texturing, Auto UV, auto-retopology, auto-rigging, segmentation).

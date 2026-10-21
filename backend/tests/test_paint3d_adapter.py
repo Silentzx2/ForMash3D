@@ -215,3 +215,37 @@ def test_paint3d_prepare_job_mesh_fails_when_uv_unwrap_fails(tmp_path, monkeypat
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+def test_generated_paint3d_stage_configs_match_adapter_contract(tmp_path):
+    """The generated child-stage YAML is the source of truth for Paint3D steps/CFG."""
+    import yaml
+
+    adapter = Paint3DAdapter(vram_requirement=12000)
+    checkpoints = {
+        "sd15": "sd15-checkpoint",
+        "depth": "depth-checkpoint",
+        "inpaint": "inpaint-checkpoint",
+        "uv_pos": "uv-pos-checkpoint",
+        "tile": "tile-checkpoint",
+    }
+    _, stage1_path, stage2_path = adapter._generate_configs(
+        job_dir=tmp_path,
+        mesh_path=tmp_path / "cube.glb",
+        resolution=2048,
+        prompt="contract test",
+        ckpts=checkpoints,
+    )
+
+    stage1 = yaml.safe_load(stage1_path.read_text(encoding="utf-8"))
+    stage2 = yaml.safe_load(stage2_path.read_text(encoding="utf-8"))
+
+    assert stage1["txt2img"]["num_inference_steps"] == 40
+    assert stage1["txt2img"]["guidance_scale"] == 7.0
+    assert stage1["inpaint"]["num_inference_steps"] == 40
+    assert stage1["inpaint"]["guidance_scale"] == 3.0
+    assert stage2["inpaint"]["num_inference_steps"] == 40
+    assert stage2["inpaint"]["guidance_scale"] == 3.0
+    assert stage2["img2img"]["num_inference_steps"] == 40
+    assert stage2["img2img"]["guidance_scale"] == 7.0
+    assert stage2["inpaint"]["width"] == 2048
+    assert stage2["img2img"]["height"] == 2048
