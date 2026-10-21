@@ -507,3 +507,86 @@ All documentation targets have been synchronized to reflect the actual architect
 - [x] The final response distinguishes verified tests from checks not run and includes the commit/PR reference where applicable.
 
 **Do not declare success if any required gate was silently skipped.** If a gate cannot be completed, state the blocker, complete the remaining work, and leave the task explicitly partially verified rather than inventing a pass.
+
+
+---
+
+## 12. Deferred P0 Task Plan — Postprocess Mesh Integrity, Hole Repair & Physics
+
+**Status: TODO — investigation only. Do not implement fixes until the user explicitly says to proceed.**  
+**Current verification status: source audit only; runtime reproduction and all tests are NOT RUN in this task.**  
+**Execution rule: after authorization, complete one batch only, report evidence and stop. Do not begin the next batch until the user explicitly says proceed.**
+
+### Reported failure to reproduce
+
+- Model-generation output may already contain many visible/open holes.
+- The generated mesh reportedly becomes substantially worse after production post-processing, potentially appearing nearly destroyed.
+- Determine the exact first stage where holes remain, new holes appear, surface details disappear, the silhouette changes, or topology degrades.
+- Determine whether the visible asset is the actual game-ready render mesh or an incorrect preview/download of the physics collision proxy.
+- Preserve the immutable master/source.glb; never overwrite it to hide a bad derivative.
+
+### Source-audit leads — hypotheses to verify, not runtime-confirmed diagnoses
+
+1. **A failed topology gate does not guarantee full repair.** In backend/postprocess/pipeline.py, full_repair reaches structural run_repair(...) only when _should_run_structural_repair(...) accepts the auto-repair flag. Otherwise the pipeline can continue with a copy of the defective source. Establish the intended product contract for explicit Auto-Repair OFF and make the resulting state honest (repaired, deliberately preserved with a warning, or degraded/failing); never silently claim that a rejected mesh was fixed.
+2. **The configured hole-perimeter limit may not be enforced by the production call.** backend/config/quality.yaml defines holes.max_hole_perimeter, and repair_holes_targeted(...) accepts max_hole_perimeter, but the call in pipeline.py supplies only max_hole_vertices. Trace the call chain and config source of truth; do not hardcode a second numeric threshold.
+3. **Hole-fill triangulation needs adversarial geometry coverage.** backend/postprocess/services/hole_repair.py uses a fan-style triangulation for larger loops. Verify concave, highly non-planar, skinny, self-intersecting/ambiguous and large-perimeter loops. Do not assume a closed boundary means the fill is geometrically valid.
+4. **The current optimization guard is too narrow to prove surface fidelity.** _quality_guard(...) checks finite vertices, face count, bounding-box drift and vertex growth. It is applied after optimization, not as a general acceptance gate after topology repair, AutoRetopo or the high/ultra feature-remesh path. Reuse backend/core/quality/evaluation.py (compare_meshes, quality_gate) and existing mesh metrics where practical, and verify whether final source-to-derivative checks reject or merely report damage.
+5. **Retopology/remesh can be a destructive stage.** Trace the actual calls and options into backend/postprocess/services/autoretopo/, especially shell reconstruction, smoothing, projection and decimation. Compare stage outputs with their immediate inputs and the immutable master instead of diagnosing from the final file only.
+6. **Physics/collision appears to produce a separate artifact.** The production pipeline loads the game-ready render mesh, passes it into run_collision(...), and writes collision.glb plus physics metadata. Verify artifact routing end-to-end: physics processing must not replace the render asset, and preview/download must not mistake the collision proxy for the model. Also verify the physics flag defaults when request fields are absent.
+7. **Existing unit tests are not a substitute for reproducing this report.** Mesh-metric and topology-gate tests use synthetic fixtures, while the full postprocess runtime test is opt-in. Review their actual coverage and record real generated-model checks as NOT RUN until executed with suitable assets/dependencies.
+
+### Batch 1 — Reproduce and pinpoint the first destructive stage
+
+**Scope:** instrumentation/reproduction plan and minimal diagnostic harness only; no speculative quality retuning.
+
+- Use the same immutable raw source for every comparison. Record model ID, input hash, seed, requested target polycount, output preset/quality mode, topology mode, auto-repair, texture/UV/bake, LOD and physics flags.
+- Record per-stage mesh counts and topology metrics: vertices, faces, boundary edges/loops and loop sizes, watertightness, non-manifold edges/vertices, degenerate faces, connected components/floater ratio, normals, bounds and volume where meaningful.
+- Compare master/source.glb against the post-repair, retopo, feature-remesh, optimize/decimate, UV, textured and final game-ready meshes. Reuse existing quality_trace and quality metrics before adding instrumentation.
+- Save stage summaries/hashes and enough diagnostics to identify the first stage that introduces or preserves damage. Do not use the collision proxy as the render-mesh comparison target.
+- Reproduce with post-process ON/OFF and the relevant combinations of target polycount, Auto-Repair, quad retopology, texture/UV and physics. Keep all other inputs fixed during each A/B comparison.
+- **Batch 1 acceptance:** identify a reproducible stage/path for holes and quality loss, or document exactly why reproduction is blocked. No cause may be labelled confirmed without evidence.
+
+**Stop after Batch 1** and report findings, files/metrics inspected, PASS/FAIL/NOT RUN status and the proposed smallest root-cause fix. Wait for the user's explicit proceed before Batch 2.
+
+### Batch 2 — Hole detection, repair routing and safe fill
+
+- Trace topology metrics -> gate decision -> minimal repair/full repair -> downstream remesh, including the behavior when Auto-Repair is explicitly disabled.
+- Make configured hole thresholds flow from backend/config/quality.yaml to every relevant consumer; remove/avoid duplicated numeric defaults only after auditing all callers.
+- Pass and test the perimeter limit if the audit confirms it is intended to constrain production hole filling.
+- Add tests for one hole, many holes, concave loops, non-planar loops, loops above the vertex/perimeter threshold, non-manifold input, disconnected floaters and UV/native-texture preservation.
+- Verify holes_filled, holes_remaining, boundary-edge counts and actual mesh validity agree. If a hole cannot safely be filled, retain the evidence and report a degraded result rather than adding a damaging cap.
+- Preserve original geometry wherever repair is unnecessary. Any structural rebuild must be an explicit, measured decision, not a blanket operation.
+
+### Batch 3 — Retopology, remesh, decimation and geometry-fidelity guards
+
+- Trace every mutating operation in backend/postprocess/pipeline.py and backend/postprocess/services/autoretopo/, including voxel/shell reconstruction, Taubin smoothing, projection, isotropic remesh and decimation.
+- Compare each candidate against its immediate input and canonical source using existing compare_meshes(...) / quality_gate(...) where appropriate, plus topology checks. Confirm whether these checks currently reject a result or only populate metadata.
+- Add an acceptance/revert policy for a stage only after selecting defensible, scale-normalized thresholds and covering clean and defective fixtures. Store thresholds in the canonical quality configuration, not new scattered literals.
+- Ensure no post-process stage is allowed to erase critical silhouette/detail or materially degrade topology while still reporting success. Record intentional target-polycount loss separately from unintended surface drift.
+- Validate that UV seam splitting, normals, native materials and PBR data remain consistent and are not misdiagnosed as geometry changes.
+
+### Batch 4 — Physics/collision isolation and artifact correctness
+
+- Confirm physics_enabled tri-state/default behavior from UI request builder through API, scheduler and pipeline; omitted and explicit false must have documented, deterministic semantics.
+- Verify collision decomposition (fast / balanced / precise) and convex-hull fallback consume the finalized render mesh but write only physics artifacts and metadata.
+- Compare render game_ready/*.glb hashes and geometry metrics for physics ON vs OFF with every other setting fixed. They must not change solely because collision generation was requested.
+- Verify viewer, preview, download URLs and manifest entries use the render asset for normal model display and use collision.glb only for explicit physics/collision inspection.
+- Test collision failure/fallback separately from render-mesh success; physics failure must not corrupt or replace the render mesh.
+
+### Batch 5 — Regression tests, actual-model validation and docs
+
+- Review and extend existing coverage before adding helpers: backend/tests/test_mesh_metrics.py, backend/tests/test_topology_gate.py, backend/tests/test_hole_repair_and_seeds.py, backend/tests/test_postprocess_e2e.py, and the existing post-process quality tests.
+- Include synthetic regression fixtures and at least one representative real model output when it is available. Test raw/native passthrough, a modest target reduction, a low target reduction, defective topology, Auto-Repair OFF/ON, quad remesh, UV/texturing and physics ON/OFF.
+- Run the applicable test commands and report each as PASS, FAIL or NOT RUN with exact dependency/GPU/fixture blockers. Do not claim visual or model-level quality passed based on unit tests alone.
+- Sync Docs/ARCHITECTURE.md, Docs/DECISIONS.md, Docs/MEMORY.md, Docs/TASKS.md, and user-facing post-process/physics docs to the verified behavior. Update backend/tests/test_config_ssot.py coverage if canonical config changes.
+- Review the final diff; do not push implementation fixes until the user has approved each batch and the required verification is complete.
+
+### Deferred task acceptance criteria
+
+- The original master/source.glb remains immutable and independently downloadable.
+- Every stage reports its mesh input/output and enough quality evidence to locate regressions.
+- Open holes are either safely repaired or explicitly reported; they are not silently hidden behind a successful status.
+- The final render mesh passes topology and surface-fidelity checks appropriate to its selected output mode, or is honestly marked degraded.
+- Physics/collision artifacts remain separate from the render mesh and do not degrade it.
+- Batch boundaries are strict: one authorized batch per user proceed; stop and report after each batch.
+
