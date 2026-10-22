@@ -8,7 +8,7 @@ the surface directly instead of rebuilding it like Auto Retopo does:
   3. resolve non-manifold edges — either *remove* the offending faces (then the
      small holes that opens can be closed) or *split* the sheets apart (keeps all
      faces, leaves clean boundary loops);
-  4. optionally close the resulting small holes (pymeshlab + a trimesh fallback).
+  4. optionally close only small, planar, safely triangulable holes.
 
 The before/after non-manifold and boundary-edge counts are reported so the UI can
 show exactly what changed — some meshes (genuine multi-sheet "fins") cannot reach
@@ -22,6 +22,12 @@ import numpy as np
 import trimesh
 
 from ..schemas import RepairOptions
+from .hole_repair import _extract_boundary_cycles, repair_holes_targeted, triangulate_boundary_loop
+
+try:
+    from backend.core.config import get_quality_config
+except ImportError:
+    from core.config import get_quality_config
 
 try:  # pymeshlab is a hard dependency of the service, but stay defensive.
     import pymeshlab as ml
@@ -155,77 +161,67 @@ def _face_areas(vertices, faces) -> np.ndarray:
     return np.linalg.norm(np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0]), axis=1) * 0.5
 
 
-def _fill_small_holes(faces, canon, alive, max_hole_size: int) -> int:
-    """Close boundary loops by fanning them with the vertices already there.
-
-    Triangulating an existing loop adds faces but no vertices, so every UV index
-    stays valid — which is the whole point. Larger openings are left alone: a fan
-    across a big loop produces badly stretched texels, and a visible hole beats a
-    visible smear.
-    """
+def _fill_small_holes(
+    vertices, faces, canon, alive, max_hole_size: int, max_hole_perimeter: float
+) -> int:
+    """Fill only simple, planar boundary loops with safe triangulations."""
     if max_hole_size <= 0:
         return 0
 
     edges = _edge_to_faces(faces, canon, alive)
-    boundary = [edge for edge, owners in edges.items() if len(owners) == 1]
-    if not boundary:
+    boundary_keys = {edge for edge, owners in edges.items() if len(owners) == 1}
+    if not boundary_keys:
         return 0
 
-    # Walk the boundary edges into loops.
-    neighbours: dict = {}
-    for a, b in boundary:
-        neighbours.setdefault(a, []).append(b)
-        neighbours.setdefault(b, []).append(a)
-
-    # A canonical id -> one real vertex index that carries it, so the new faces
-    # reference actual entries in the vertex/UV arrays.
-    representative: dict = {}
+    representative: dict[int, int] = {}
+    next_map: dict[int, list[int]] = {}
     for face_index, face in enumerate(faces):
         if not alive[face_index]:
             continue
         for vertex in face:
             representative.setdefault(int(canon[vertex]), int(vertex))
+        for first, second in zip(face, face[1:] + face[:1]):
+            a, b = int(canon[first]), int(canon[second])
+            edge = _edge_key(a, b)
+            if edge in boundary_keys:
+                next_map.setdefault(b, []).append(a)
 
-    # Live owner count per edge, kept up to date as faces are added: a fan
-    # triangle whose edge already has two owners would *create* a non-manifold
-    # edge, turning the repair into a new defect. Those triangles are skipped.
     edge_count = {edge: len(owners) for edge, owners in edges.items()}
-
-    visited = set()
     added = []
-    for start in list(neighbours.keys()):
-        if start in visited:
+    for loop in _extract_boundary_cycles(next_map):
+        if len(loop) > max_hole_size or any(node not in representative for node in loop):
             continue
-        loop = [start]
-        visited.add(start)
-        current = start
-        while True:
-            nexts = [n for n in neighbours.get(current, []) if n not in visited]
-            if not nexts:
-                break
-            current = nexts[0]
-            visited.add(current)
-            loop.append(current)
-        # Only close loops that actually close, and only small ones.
-        if len(loop) < 3 or len(loop) > max_hole_size:
+        loop_vertices = [representative[node] for node in loop]
+        loop_points = np.asarray(vertices, dtype=float)[loop_vertices]
+        perimeter = sum(
+            float(np.linalg.norm(loop_points[i] - loop_points[(i + 1) % len(loop)]))
+            for i in range(len(loop))
+        )
+        if perimeter > max_hole_perimeter:
             continue
-        if start not in neighbours.get(loop[-1], []):
+        local_faces = triangulate_boundary_loop(list(range(len(loop))), loop_points)
+        if local_faces is None:
             continue
-        anchor = representative.get(loop[0])
-        if anchor is None:
+
+        loop_boundary_keys = {
+            _edge_key(loop[index], loop[(index + 1) % len(loop)])
+            for index in range(len(loop))
+        }
+        candidate_edges: dict[tuple, int] = {}
+        for face in local_faces:
+            for first, second in ((face[0], face[1]), (face[1], face[2]), (face[2], face[0])):
+                edge = _edge_key(loop[first], loop[second])
+                candidate_edges[edge] = candidate_edges.get(edge, 0) + 1
+        if any(
+            edge_count.get(edge, 0) + additions > 2
+            or (edge_count.get(edge, 0) == 1 and edge not in loop_boundary_keys)
+            for edge, additions in candidate_edges.items()
+        ):
             continue
-        for i in range(1, len(loop) - 1):
-            b = representative.get(loop[i])
-            c = representative.get(loop[i + 1])
-            if b is None or c is None:
-                continue
-            keys = (_edge_key(loop[0], loop[i]), _edge_key(loop[i], loop[i + 1]),
-                    _edge_key(loop[i + 1], loop[0]))
-            if any(edge_count.get(key, 0) >= 2 for key in keys):
-                continue
-            for key in keys:
-                edge_count[key] = edge_count.get(key, 0) + 1
-            added.append([anchor, b, c])
+
+        for edge, additions in candidate_edges.items():
+            edge_count[edge] = edge_count.get(edge, 0) + additions
+        added.extend([[loop_vertices[index] for index in face] for face in local_faces])
 
     if added:
         faces.extend(added)
@@ -233,8 +229,13 @@ def _fill_small_holes(faces, canon, alive, max_hole_size: int) -> int:
     return len(added)
 
 
-def _repair_preserving_uv(mesh: trimesh.Trimesh, options: RepairOptions,
-                          emit) -> tuple[trimesh.Trimesh, dict]:
+def _repair_preserving_uv(
+    mesh: trimesh.Trimesh,
+    options: RepairOptions,
+    emit,
+    max_hole_vertices: int,
+    max_hole_perimeter: float,
+) -> tuple[trimesh.Trimesh, dict]:
     vertices = np.asarray(mesh.vertices, dtype=float)
     faces = [list(map(int, face)) for face in np.asarray(mesh.faces, dtype=np.int64)]
 
@@ -324,7 +325,14 @@ def _repair_preserving_uv(mesh: trimesh.Trimesh, options: RepairOptions,
     filled = 0
     if options.close_holes and options.method != "split":
         emit("close", 0.75, "Closing small holes…")
-        filled = _fill_small_holes(faces, canon, alive, int(options.max_hole_size))
+        filled = _fill_small_holes(
+            vertices,
+            faces,
+            canon,
+            alive,
+            max_hole_vertices,
+            max_hole_perimeter,
+        )
 
     # Compact: keep only live faces, then drop vertices nothing references —
     # remapping positions and UVs together so the two never drift apart.
@@ -364,6 +372,14 @@ def run_repair(mesh: trimesh.Trimesh, options: RepairOptions,
         if progress:
             progress(stage, frac, msg)
 
+    mesh = mesh.copy()
+    hole_limits = get_quality_config()["holes"]
+    max_hole_perimeter = float(hole_limits["max_hole_perimeter"])
+    max_hole_vertices = (
+        int(options.max_hole_size)
+        if "max_hole_size" in getattr(options, "model_fields_set", set())
+        else int(hole_limits["max_hole_vertices"])
+    )
     emit("analyze", 0.05, "Analyzing topology…")
     before = topology_counts(mesh.vertices, mesh.faces)
 
@@ -376,7 +392,9 @@ def run_repair(mesh: trimesh.Trimesh, options: RepairOptions,
     # below is the fallback for meshes too broken for that — it is far more
     # aggressive and discards UVs entirely.
     if options.preserve_uv:
-        out, tool_stats = _repair_preserving_uv(mesh, options, emit)
+        out, tool_stats = _repair_preserving_uv(
+            mesh, options, emit, max_hole_vertices, max_hole_perimeter
+        )
         emit("done", 1.0, "Repair complete.")
         after = topology_counts(out.vertices, out.faces)
         return out, {
@@ -434,16 +452,6 @@ def run_repair(mesh: trimesh.Trimesh, options: RepairOptions,
         except Exception:
             pass
 
-    # 4. Close the small holes that face removal opens.
-    if options.close_holes and options.max_hole_size > 0:
-        emit("close", 0.8, "Closing small holes…")
-        for selfintersection in (False, True):
-            try:
-                ms.meshing_close_holes(maxholesize=int(options.max_hole_size),
-                                       selfintersection=selfintersection)
-            except Exception:
-                pass
-
     try:
         ms.meshing_remove_unreferenced_vertices()
     except Exception:
@@ -453,15 +461,23 @@ def run_repair(mesh: trimesh.Trimesh, options: RepairOptions,
     out = trimesh.Trimesh(np.asarray(mm.vertex_matrix()),
                           np.asarray(mm.face_matrix(), np.int64), process=False)
 
-    # Final weld + optional trimesh fill to seal any pinholes pymeshlab left.
+    # Final cleanup, then use the same guarded hole filler as the UV-preserving path.
     out.merge_vertices(merge_tex=True, merge_norm=True)
     out.update_faces(out.nondegenerate_faces())
-    if options.close_holes:
-        try:
-            out.fill_holes()
-        except Exception:
-            pass
     out.remove_unreferenced_vertices()
+    hole_stats = {
+        "holes_filled": 0,
+        "holes_remaining": 0,
+        "boundary_edges_before": topology_counts(out.vertices, out.faces)["boundary_edges"],
+        "boundary_edges_after": topology_counts(out.vertices, out.faces)["boundary_edges"],
+    }
+    if options.close_holes:
+        emit("close", 0.8, "Closing safe small holes…")
+        out, hole_stats = repair_holes_targeted(
+            out,
+            max_hole_vertices=max_hole_vertices,
+            max_hole_perimeter=max_hole_perimeter,
+        )
 
     emit("done", 1.0, "Repair complete.")
     after = topology_counts(out.vertices, out.faces)
@@ -473,5 +489,6 @@ def run_repair(mesh: trimesh.Trimesh, options: RepairOptions,
         "method": options.method,
         "preserve_uv": False,
         "uv_preserved": False,
+        "hole_stats": hole_stats,
     }
     return out, stats, None

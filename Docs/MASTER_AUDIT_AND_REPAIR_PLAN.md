@@ -3,14 +3,14 @@
 **Repository:** Silentzx2/ForMash3D  
 **Target branch:** dev  
 **Purpose:** One complete, enforceable source of truth for Generate UI cleanup, adapter-owned inference, request routing, mesh post-process, physics/collision, PBR/textures, validation and documentation.  
-**Status:** PLAN ONLY — creating this document does not authorize implementation or tests.  
-**Authorization model:** The user explicitly says “proceed” to authorize one batch at a time.
+**Status:** Implementation authorized across all batches for the current execution; source-level verification is complete, while runtime-only validation remains explicitly tracked below.
+**Authorization model:** For this execution, the user explicitly authorized all batches to be implemented in parallel. This supersedes the historical one-batch-at-a-time pause for this task only.
 
 ## Read first — non-negotiable execution contract
 
 1. Read current root RULES.md fully before touching code, and re-read relevant contracts/docs at the start of each batch. RULES.md is mandatory: root-cause-first, YAGNI, single-source-of-truth, doc sync, honest tests and no fake controls apply to every sub-agent.
 2. This document consolidates the earlier Generate-panel/UI cleanup and adapter-locked-inference task with the newer bug list for generated holes, mesh distortion after post-process, physics/collision, PBR/materials, routing/mounts, tests and documentation.
-3. **Do not start implementation until the user says “proceed”.** That authorizes only the next uncompleted batch. Finish that batch, report evidence and outcomes, then stop. Do not continue to the following batch automatically.
+3. **Execution authorization:** the user authorized all batches in this plan for the current task. Continue through the requested scope without pausing after each batch; still stop and ask before any profile retune that requires approval or any action that risks overwriting collaborator work.
 4. At batch start, inspect the latest dev HEAD and current diff. Do not rely on stale local state or assume older findings are unchanged. Preserve user work; never force-reset, force-push or overwrite unknown changes.
 5. Trace every real setting/control end-to-end: UI → request builder → API schema/router → job fields/metadata → scheduler → adapter or post-process consumer → artifact/result route. A label, field, helper, mock or historic test result is not evidence of working end-to-end behavior.
 6. Classify every required check as PASS, FAIL or NOT RUN. Explain blockers such as unavailable GPU, weights, runtime dependencies, browser, fixture or repository permission. Static source inspection is not proof of visual/model quality.
@@ -24,21 +24,21 @@
 
 ## Master execution order
 
-| Batch | Focus | Required output | Stop condition |
+| Batch | Focus | Required output | Completion evidence |
 |---|---|---|---|
-| 1 | Baseline audit and reproduce mesh-quality failure | Current code map, route/mount map, UI control inventory and stage-by-stage reproduction report | Report evidence or blockers; wait |
-| 2 | Locked adapter inference profiles | Effective model kwargs match each authoritative locked profile | Profile/call-argument tests; report; wait |
-| 3 | Seed, candidates and request-routing contract | Seed 0 preserved; candidates and production-only settings reach correct consumers | Planner/scheduler/router tests; report; wait |
-| 4 | Generate UI and Advanced controls | Beginner-friendly UI with only verified settings; remove fake inference controls/dead state | Frontend/backend consumer tests; report; wait |
-| 5 | Topology gate and hole repair | Explain and safely handle persistent holes; report unrepaired defects honestly | Hole-repair fixtures and quality metrics; report; wait |
-| 6 | Retopology, remesh, decimation and geometry guards | Locate/revert destructive steps without damaging healthy meshes | Before/after geometry tests; report; wait |
-| 7 | UV, normals, PBR, textures and export artifacts | Verify material integrity and correct render artifact | Asset-integrity tests; report; wait |
-| 8 | Physics/collision isolation | Collision output never replaces or corrupts render geometry | Physics ON/OFF A/B and routing tests; report; wait |
-| 9 | Routes, mounts, service wiring and controls inventory | No dead/hidden/mis-mounted paths; factual working/broken/unverified report | Route/consumer matrix; report; wait |
-| 10 | Regression suite and real-model validation | Automated evidence and real output comparisons if environment permits | PASS/FAIL/NOT RUN matrix; report; wait |
-| 11 | Documentation, final review, commit/publish | Synced docs, scoped diff, final handoff | Publish only if checks/permissions permit; stop |
+| 1 | Baseline audit and reproduce mesh-quality failure | Current code map, route/mount map, UI control inventory and stage-by-stage reproduction report | Source findings recorded; runtime reproduction limits explicit |
+| 2 | Locked adapter inference profiles | Effective model kwargs match each authoritative locked profile | Profile/request-isolation tests; any configured/effective mismatch documented |
+| 3 | Seed, candidates and request-routing contract | Seed 0 preserved; candidates and production-only settings reach correct consumers | Planner/scheduler/router regression tests |
+| 4 | Generate UI and Advanced controls | Beginner-friendly UI with only verified settings; remove fake inference controls/dead state | Frontend/backend consumer tests |
+| 5 | Topology gate and hole repair | Safely handle persistent holes; report unrepaired defects honestly | Hole-repair fixtures and quality metrics |
+| 6 | Retopology, remesh, decimation and geometry guards | Locate/revert destructive steps without damaging healthy meshes | Geometry-preservation tests; runtime comparison where available |
+| 7 | UV, normals, PBR, textures and export artifacts | Verify material integrity and correct render artifact | Asset-integrity tests; runtime-dependent bake status recorded |
+| 8 | Physics/collision isolation | Collision output never replaces or corrupts render geometry | Artifact-isolation and failure tests; runtime A/B status recorded |
+| 9 | Routes, mounts, service wiring and controls inventory | No dead/hidden/mis-mounted paths; factual working/broken/unverified report | Route/consumer matrix and source-contract tests |
+| 10 | Regression suite and real-model validation | Automated evidence and real output comparisons if environment permits | PASS/FAIL/NOT RUN matrix; do not infer runtime success |
+| 11 | Documentation, final review, commit/publish | Synced docs, scoped diff, final handoff | Publish only if checks/permissions permit |
 
-If a batch uncovers a dependency on a later batch, record it. Do not silently expand the authorized scope or begin a second batch.
+If a batch uncovers a dependency on a later batch, record it. The user has authorized the full batch scope for this execution; do not make unapproved numerical inference-profile changes or overwrite collaborator work.
 
 ## Unified bug and improvement register
 
@@ -235,7 +235,7 @@ Carry forward the full previous detailed UI specification below; recheck the cur
 
 ## Mandatory batch report format
 
-For each batch report: (1) batch and goal; (2) exact files/functions inspected/changed; (3) root cause confirmed vs hypothesis vs not reproduced; (4) reproduction steps and relevant artifact hashes; (5) tests as PASS/FAIL/NOT RUN with reasons; (6) controls/routes status if in scope; (7) commit/branch/SHA if published; (8) remaining risks and next batch proposal. Then **STOP** and wait for explicit proceed.
+For the completed parallel execution, report: (1) batch and goal; (2) exact files/functions inspected/changed; (3) root cause confirmed vs hypothesis vs not reproduced; (4) reproduction steps and relevant artifact hashes; (5) tests as PASS/FAIL/NOT RUN with reasons; (6) controls/routes status if in scope; (7) commit/branch/SHA and publish status; (8) remaining risks. Stop after the requested work, and request approval for any unapproved numerical inference-profile change.
 
 ## Global definition of done
 
@@ -249,7 +249,7 @@ For each batch report: (1) batch and goal; (2) exact files/functions inspected/c
 - Physics/collision cannot replace or damage render geometry.
 - Routes/mounts/visible controls are traced end-to-end, including hidden/manual tools.
 - Tests/docs represent current behavior; GPU/weights/runtime checks are never fabricated.
-- One user “proceed” authorizes one batch only; report and stop after every batch.
+- The user authorized all batches for this execution. Numerical inference-profile changes remain separately approval-gated; unrun GPU/runtime validation is not a passing result.
 
 ---
 
@@ -723,19 +723,19 @@ All documentation targets have been synchronized to reflect the actual architect
 
 | Gate | Requirement | Verification Method | Result | Evidence / Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| **G-01** | Generate panel has one Target Polycount / Output Preset card and no duplicate target UI | Code Audit (`GeneratePanel.tsx`) | **PASS** | One output-preset card with the six canonical chips and a single 5K–200K polycount slider. |
-| **G-02** | Inference-quality selector and unbacked inference toggles removed from UI | Static Grep & Code Audit | **PASS** | `MESH_QUALITY_OPTIONS` and `applyModelSpecificQuality` are gone; no inference controls remain in the panel. |
-| **G-03** | Presets consolidated as production recipes; no auto-submit on preset click | Code Audit (`selectOutputPreset`) | **PASS** | `selectOutputPreset` only updates settings state; the only `pendingGenerateRef` write is the explicit Generate action. |
-| **G-04** | Explicit model choice and explicit Advanced settings have deterministic precedence | Test Suite (`test_preset_alignment_and_persistence.py`, `generationParameters.test.mjs`) | **PASS** | Explicit request value > intent preset > backend default, with a tri-state request contract (ADR-093). |
-| **G-05** | Request builder no longer duplicates adapter-owned numeric inference profiles | Static Grep & Code Audit | **PASS** | The builder forwards `seed` only; no numeric inference schedule is present in the frontend. |
-| **G-06** | Former scheduler-profile entries audited and migrated | Adapter & Scheduler Audit | **PASS** | Hunyuan3D-DiT-v2-mini-turbo, Trellis, Trellis2, Pixal3D, Unique3D, TaoFlowForge, Hunyuan3D-Shape-v2.1, and TripoSG fully migrated to adapter-owned locked inference profiles. All entries removed from `_RAW_MESH_MAX_QUALITY_PARAMETERS`. |
-| **G-07** | Real production controls wired end-to-end; no mock controls | Pipeline & Router Audit | **PASS** | Candidates 1-4 (`_score_and_select`), Quad retopo, PartUV, normal baking, LODs, repair, CoACD verified in pipeline. The LOD controls were found **disconnected** (the builder never serialized them) and are now wired: `generate_lod` / `lod_preset` / `lod_count` request fields feed the pipeline's LOD stage. The dead "Enable Low VRAM Mode and retry" action was removed. |
-| **G-08** | All generation pathways (main, batch, re-run, preset) follow same contract | Contract Audit | **PASS** | Canonical contract defined in `Docs/GENERATION-UI-CONTRACT.md`. |
-| **G-09** | Frontend regression tests cover removed override paths and candidate controls | Node Test Runner (`bun test`) | **PASS** | `bun test` ran 41 tests across 7 files, 41 passed, 0 failed; `features/workspace/lib/generationParameters.test.mjs` covers 12 rules including the LOD request contract. |
-| **G-10** | Backend regression tests cover adapter contracts | Pytest | **PARTIAL / NOT RUN (GPU + heavy deps)** | `backend/tests/test_preset_alignment_and_persistence.py` (24 tests) and `backend/tests/test_smart_preset_parity.py` pass, and the CI contract subset passes (56 tests). The remaining backend modules need `torch`, `trimesh`, `skimage`, `psutil` and a GPU; in this environment 53 tests fail on missing imports both before and after this change (unchanged baseline). GPU inference tests `NOT RUN` (no GPU). |
-| **G-11** | Documentation synchronized without contradictions | Full Doc Sync Audit | **PASS** | `README.md`, `RULES.md`, `CONTRIBUTING.md`, `Docs/ARCHITECTURE.md`, `Docs/DESIGN.md`, `Docs/PRD.md`, `Docs/SYSTEM-BLUEPRINT.md`, `Docs/api-documentation.md`, `Docs/DECISIONS.md`, `Docs/CHANGELOG.md`, `Docs/MEMORY.md`, `Docs/GENERATION-UI-CONTRACT.md`, `Docs/EXPERIMENTAL-MODEL-SETTINGS.md`, `Docs/quad_topology_evaluation.md`, `Docs/taoflowforge_spike_report.md`, `Docs/SECURITY.md` updated. |
-| **G-12** | TypeScript and syntax checks clean | TypeScript Compiler (`tsc`) | **PASS** | `npx tsc --noEmit` completed with 0 errors; `npx eslint` on the changed files reports 0 errors. |
-| **G-13** | Review final diff and clean commit history | Git Status & Diff Audit | **PASS** | Only documented and authorized files modified; no destructive alterations. |
+| **G-01** | Generate panel has one canonical output-intent/budget surface | Source audit and frontend contracts | **PASS (source-level)** | Current panel/request behavior was inspected; no visual browser verification was run. |
+| **G-02** | No unbacked inference-quality selector or deformation control | Source audit and frontend contracts | **PASS (source-level)** | Adapter-owned inference remains separate; disconnected jiggle/deformation UI was removed. |
+| **G-03** | Preset selection does not auto-submit | Source audit | **PASS (source-level)** | Preset selection updates settings; submission remains an explicit Generate action. |
+| **G-04** | Explicit model, seed and production settings retain their intended precedence | Frontend/backend contract tests | **PASS** | Request and seed regression coverage; explicit seed zero and explicit model choice are covered. |
+| **G-05** | Request builder does not duplicate adapter-owned inference profiles | Adapter and scheduler regression tests | **PASS (source-level)** | Adapter profiles remain authoritative and request-side overrides are filtered. |
+| **G-06** | Adapter profile ownership and call-site constraints are documented honestly | Profile regression tests and source audit | **PARTIAL** | Tests cover ownership/isolation. The TRELLIS configured/effective step discrepancy remains unresolved pending approval; GPU behavior is NOT RUN. |
+| **G-07** | Production controls and quality outcomes have verified consumers | Backend and frontend contract tests | **PASS (source-level)** | Coverage includes topology repair, quality outcome, collision isolation, hash contract, seed and request behavior; optional stages are runtime-conditional. |
+| **G-08** | Main/sample request paths preserve the generation contract | Frontend request-builder tests and source audit | **PASS (source-level)** | Sample SVGs use the image upload path; queue/batch runtime behavior was not exercised in a deployed environment. |
+| **G-09** | Frontend regression tests cover request and import contracts | Bun tests | **PASS** | `bun test` ran 52 tests across 10 files; all passed, including request builder, route, contextual-help and graph re-export contracts. |
+| **G-10** | Backend CPU regression tests cover the changed contracts | Clean Python 3.10 pytest environment | **PASS** | 44 tests passed; one existing SQLAlchemy deprecation warning. GPU inference and model-output benchmarking are NOT RUN. |
+| **G-11** | Directly affected documentation matches source behavior | Doc review | **PASS (scoped)** | README, CONTRIBUTING, API, architecture, PRD, system blueprint, task/master audit, memory, decisions, changelog, generation contracts and postprocess README updated. |
+| **G-12** | Frontend type, lint and production-build checks | TypeScript / ESLint / build | **PARTIAL** | Direct TypeScript check passed; targeted ESLint exited 0 with 0 errors and 8 warnings. `next build` was terminated with code 143 during optimized compilation; browser verification is NOT RUN. |
+| **G-13** | Final diff review, commit and publication | Git status/diff and remote operations | **NOT RUN** | Changes remain uncommitted at this checkpoint; commit/push/PR are pending. |
 
 ---
 
@@ -746,8 +746,8 @@ All documentation targets have been synchronized to reflect the actual architect
 2. `requested_quality` / `meshQuality`:
    - Still present in the router schemas (`mesh_generation.py`) as deprecated fields, and stripped by the scheduler in `_ADAPTER_OWNED_INFERENCE_INPUTS`.
    - The scheduler properly strips these from reaching adapter-owned models; the API only uses them for planner routing.
-3. `modelParameterOverrides`:
-   - Handled cleanly in `buildGenerationParameters.ts` and `GenerationPresetDrawer.tsx` with finite JSON validation and prototype pollution guards.
+3. Legacy inference overrides:
+   - They are not supported by the active Generate request contract. The request builder forwards the runtime seed, and adapter-owned inference values are not user-editable overrides.
 4. Auto-submit on Preset Click:
    - Absent. `selectOutputPreset` only updates the settings state; the only `pendingGenerateRef` write belongs to the explicit Generate action.
 5. LOD controls (new finding, 2026-10-21):
@@ -760,8 +760,7 @@ All documentation targets have been synchronized to reflect the actual architect
    - The panel hardcoded a second copy of the preset budgets and the mobile preset declared an atlas size the API rejects.
    - Fixed: the panel derives the chip summary from the backend catalogue, the offline fallback table is `constants/smartPresetFallback.json` (parity-tested by `backend/tests/test_smart_preset_parity.py`), and the mobile atlas size is 1024.
 
-- [x] Changes have been committed and pushed to `dev`. Commits `537d8b49` and `47251a8a` are pushed to `origin/dev` (`tanushreesindur0-rgb/ForMash3D`) and to `upstream/dev` (`Silentzx2/ForMash3D`); the upstream push required an explicit credential because the sandbox codespace credential helper is not authorized for that repository.
-- [x] The final response distinguishes verified tests from checks not run and includes the commit/PR reference where applicable.
+Historical publication notes from earlier 2026-10-21 work do not describe this execution. Current changes remain uncommitted until final review and safe publication.
 
 **Do not declare success if any required gate was silently skipped.** If a gate cannot be completed, state the blocker, complete the remaining work, and leave the task explicitly partially verified rather than inventing a pass.
 
@@ -770,9 +769,9 @@ All documentation targets have been synchronized to reflect the actual architect
 
 ## 12. Deferred P0 Task Plan — Postprocess Mesh Integrity, Hole Repair & Physics
 
-**Status: TODO — investigation only. Do not implement fixes until the user explicitly says to proceed.**  
-**Current verification status: source audit only; runtime reproduction and all tests are NOT RUN in this task.**  
-**Execution rule: after authorization, complete one batch only, report evidence and stop. Do not begin the next batch until the user explicitly says proceed.**
+**Status: Source fixes and CPU regression tests are implemented under the current all-batches authorization; runtime reproduction remains unverified.**
+**Current verification status: CPU tests are recorded in the final matrix; real-model/physics A/B and deployment validation remain NOT RUN.**
+**Execution rule: all batches are authorized for this execution; report source evidence and runtime limitations without claiming an unobserved visual-quality result.**
 
 ### Reported failure to reproduce
 
@@ -886,4 +885,3 @@ Paths can change. Inspect the latest dev tree and confirm current paths before e
 ### Required diagnostic report artifacts during implementation
 
 Keep reproduction output outside the project root or use existing fixture/storage conventions. Do not commit large generated meshes, checkpoint weights, screenshots, caches, secrets or environment-specific artifacts. The audit report should record model/feature/settings; source/output hashes; per-stage topology/fidelity metrics; stage decisions/warnings/errors; actual route and consumer; reproduction commands summarized; PASS/FAIL/NOT RUN; and no-GPU/no-weights limitations.
-

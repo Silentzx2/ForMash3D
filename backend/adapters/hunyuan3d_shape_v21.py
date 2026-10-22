@@ -336,9 +336,9 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
             else:
                 octree_res = int(octree_res)
 
-            num_chunks = inputs.get("num_chunks", 20000)
+            num_chunks = inputs.get("num_chunks", _LOCKED_INFERENCE_PROFILE["num_chunks"])
             if num_chunks is None:
-                num_chunks = 20000
+                num_chunks = _LOCKED_INFERENCE_PROFILE["num_chunks"]
             else:
                 num_chunks = int(num_chunks)
 
@@ -498,4 +498,3 @@ class Hunyuan3DShapeV21ImageToTexturedMeshAdapter(Hunyuan3DShapeV21ImageToRawMes
 
 # Backward-compatible alias for raw geometry generation
 Hunyuan3DShapeV21ImageToMeshAdapter = Hunyuan3DShapeV21ImageToRawMeshAdapter
-

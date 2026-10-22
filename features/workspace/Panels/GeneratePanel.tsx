@@ -538,6 +538,7 @@ export const GeneratePanel: React.FC = () => {
   const [approvalWarning, setApprovalWarning] = useState<string | null>(null);
   const [approvalValidation, setApprovalValidation] = useState<unknown>(null);
   const [approvalAcknowledged, setApprovalAcknowledged] = useState(false);
+  const [sampleLoading, setSampleLoading] = useState(false);
   const preprocessingApprovalStatus = generationSettings.preprocessingMetadata?.approval_status ?? null;
 
   const meshCapableModels = useMemo(() => {
@@ -813,6 +814,40 @@ export const GeneratePanel: React.FC = () => {
       url: '/samples/obsidian-blade.svg',
     },
   ];
+
+  const handleSampleSelection = async (preset: (typeof SAMPLE_PRESETS)[number]) => {
+    setSampleLoading(true);
+    setUploadError(null);
+    try {
+      const response = await fetch(preset.url);
+      if (!response.ok) throw new Error(`Failed to load sample image (${response.status}).`);
+
+      const objectUrl = URL.createObjectURL(await response.blob());
+      try {
+        const image = new Image();
+        image.src = objectUrl;
+        await image.decode();
+
+        const canvas = document.createElement('canvas');
+        canvas.width = image.naturalWidth;
+        canvas.height = image.naturalHeight;
+        const context = canvas.getContext('2d');
+        if (!context) throw new Error('Could not prepare sample image.');
+        context.drawImage(image, 0, 0);
+        const png = await new Promise<Blob>((resolve, reject) => {
+          canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Could not prepare sample image.')), 'image/png');
+        });
+        await processImageFiles([new File([png], `${preset.name}.png`, { type: 'image/png' })]);
+      } finally {
+        URL.revokeObjectURL(objectUrl);
+      }
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : 'Failed to prepare sample image.');
+      setUploadStatus('error');
+    } finally {
+      setSampleLoading(false);
+    }
+  };
 
   const selectOutputPreset = (presetId: 'mobile' | 'game_ready' | 'cinematic' | 'animation' | '3d_print' | 'native') => {
     if (presetId === 'native') {
@@ -1319,19 +1354,14 @@ export const GeneratePanel: React.FC = () => {
                           <button
                             key={preset.id}
                             type="button"
+                            disabled={sampleLoading}
                             onClick={(e) => {
                               e.stopPropagation();
-                              setGenerationSettings(prev => ({
-                                ...prev,
-                                image: preset.url,
-                                prompt: preset.name,
-                                imageName: preset.name,
-                                mode: 'image-to-3d',
-                              }));
+                              void handleSampleSelection(preset);
                             }}
-                            className="px-2 py-0.5 rounded bg-white/[0.05] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.08] text-[9.5px] font-medium cursor-pointer transition-colors"
+                            className="px-2 py-0.5 rounded bg-white/[0.05] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.08] text-[9.5px] font-medium cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-wait"
                           >
-                            {preset.name.split(' ')[0]}
+                            {sampleLoading ? 'Loading…' : preset.name.split(' ')[0]}
                           </button>
                         ))
                       )}
@@ -2323,10 +2353,6 @@ export const GeneratePanel: React.FC = () => {
                     Gravity {physics.gravityEnabled ? 'enabled' : 'disabled'}
                   </button>
 
-                  <div className="col-span-2 flex items-center justify-between rounded-md border border-white/[0.06] bg-[hsl(var(--surface-1))] px-2 py-1.5">
-                    <span className="text-[9px] text-zinc-400">Jiggle / deformation</span>
-                    <span className="text-[9px] font-semibold text-zinc-500">Capability-gated</span>
-                  </div>
                 </div>
               )}
               {isPostprocessOff && (

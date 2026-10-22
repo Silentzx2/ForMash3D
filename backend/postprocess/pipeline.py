@@ -26,6 +26,7 @@ from PIL import Image
 
 from core.utils.file_utils import get_storage_base_dir, resolve_server_file_path
 from core.utils.log_formatters import format_banner, format_box, format_bytes
+from core.utils.artifact_utils import sha256_file
 from core.quality.evaluation import compare_meshes, quality_gate
 from core.scheduler.resource_planner import configure_cpu_runtime, cpu_count
 from .config import blender_expr_argv, blender_runtime_available
@@ -435,15 +436,6 @@ def canonical_asset_workspace(
     return _storage_root() / f"{asset_name}_{clean_job_id}"
 
 
-def _sha256_file(path: "Path | str") -> str:
-    path = Path(path)
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
 def _ensure_master_source(raw_path: Path | str, master_path: Path | str) -> tuple[bool, str]:
     """Refresh master/source.glb by content identity, not file size."""
     source = Path(raw_path)
@@ -451,8 +443,8 @@ def _ensure_master_source(raw_path: Path | str, master_path: Path | str) -> tupl
     if not source.is_file():
         raise FileNotFoundError(f"Raw source mesh is missing: {source}")
 
-    source_sha256 = _sha256_file(source)
-    master_sha256 = _sha256_file(master) if master.is_file() else None
+    source_sha256 = sha256_file(source)
+    master_sha256 = sha256_file(master) if master.is_file() else None
     if source_sha256 == master_sha256:
         return False, source_sha256
 
@@ -460,7 +452,7 @@ def _ensure_master_source(raw_path: Path | str, master_path: Path | str) -> tupl
     temp_path = master.with_name(f".{master.name}.{time.time_ns()}.tmp")
     try:
         shutil.copy2(source, temp_path)
-        if _sha256_file(temp_path) != source_sha256:
+        if sha256_file(temp_path) != source_sha256:
             raise RuntimeError("Raw source mesh changed while copying to master/source.glb.")
         temp_path.replace(master)
     finally:
@@ -568,7 +560,7 @@ def persist_manual_mesh_result(
     """Save a mesh-tool result as a derivative of its selected immutable source."""
     source = Path(job_inputs["mesh_path"]).resolve(strict=True)
     expected_source_hash = job_metadata.get("source_sha256")
-    source_hash = _sha256_file(source)
+    source_hash = sha256_file(source)
     if expected_source_hash and source_hash != expected_source_hash:
         raise RuntimeError("Selected source mesh changed while the mesh tool was running.")
 
@@ -603,7 +595,7 @@ def persist_manual_mesh_result(
         except Exception as poly_err:
             logger.warning("[MANUAL MESH TOOL] Could not decimate derivative to target_polycount=%s: %s", target_polycount, poly_err)
 
-    if _sha256_file(source) != source_hash:
+    if sha256_file(source) != source_hash:
         derivative.unlink(missing_ok=True)
         raise RuntimeError("Selected source mesh changed while saving the tool derivative.")
 
@@ -793,7 +785,7 @@ def _collect_input_hashes(inputs: Dict[str, Any]) -> Dict[str, str]:
         candidate = Path(value)
         if candidate.is_file():
             try:
-                hashes[key] = _sha256_file(candidate)
+                hashes[key] = sha256_file(candidate)
             except OSError:
                 logger.debug("Unable to hash input %s", candidate, exc_info=True)
     return hashes
@@ -1492,16 +1484,45 @@ def _build_result(
         and qa_report["qa"].get("status") == "fail"
     )
     lod_failed = generated.get("lod_validation", {}).get("status") == "fail"
+    final_topology_gate = generated.get("final_topology_gate")
+    final_topology_unverified = (
+        not isinstance(final_topology_gate, dict)
+        or not isinstance(final_topology_gate.get("passed_clean"), bool)
+    )
+    final_topology_failed = (
+        isinstance(final_topology_gate, dict)
+        and final_topology_gate.get("passed_clean") is False
+    )
+    # Master/derivative gate is a real outcome: a failed drift gate (or an
+    # unusable gate metric) must degrade the result, never pass silently.
+    master_quality_gate = (
+        master_quality_report.get("quality_gate")
+        if isinstance(master_quality_report, dict)
+        else None
+    )
+    master_drift_unverified = (
+        not isinstance(master_quality_gate, dict)
+        or master_quality_gate.get("status") != "ok"
+        or not isinstance(master_quality_gate.get("passed"), bool)
+    )
+    master_drift_failed = (
+        master_drift_unverified
+        or master_quality_gate.get("passed") is False
+    )
     result["production_status"] = (
         "failed"
         if required_failed
         else "degraded"
-        if any_failed or quality_failed or lod_failed or retopo_skipped_native or pbr_validation_failed or bake_degraded
+        if any_failed or quality_failed or lod_failed or final_topology_unverified or final_topology_failed or master_drift_failed or retopo_skipped_native or pbr_validation_failed or bake_degraded
         else "ready"
     )
     degraded_reasons = []
     if quality_failed:
         degraded_reasons.append("final_quality_gate_failed")
+    if final_topology_failed:
+        degraded_reasons.append("final_topology_gate_failed")
+    elif final_topology_unverified:
+        degraded_reasons.append("final_topology_gate_unverified")
     if lod_failed:
         degraded_reasons.append("lod_validation_failed")
     if texture_failed and texture_enabled:
@@ -1516,8 +1537,11 @@ def _build_result(
         degraded_reasons.append("collision_generation_failed")
     if retopo_skipped_native and retopo_requested:
         degraded_reasons.append("quad_topology_unsupported_native_textures")
-    if master_quality_report and master_quality_report.get("quality_gate", {}).get("passed") is False:
-        degraded_reasons.append("master_to_derivative_quality_drift")
+    if master_drift_failed:
+        if master_drift_unverified:
+            degraded_reasons.append("master_to_derivative_quality_unverified")
+        else:
+            degraded_reasons.append("master_to_derivative_quality_drift")
     if degraded_reasons:
         result["degraded_reasons"] = degraded_reasons
 
@@ -1845,7 +1869,7 @@ def run_postprocess_job(
 
     _check_cancelled(cancel_checker)
     repair_t0 = time.time()
-    _emit(progress, 0.18, "repair", "Checking and repairing topology.")
+    _emit(progress, 0.18, "repair", "Checking topology and applying enabled repairs.")
     repair_opts = RepairOptions(
         method="remove",
         preserve_uv=True,
@@ -1876,10 +1900,11 @@ def run_postprocess_job(
             "reason": "Topology gate evaluated mesh as clean; structural repair skipped.",
             "gate_report": gate_eval,
         }
-    elif gate_repair_decision == "minimal_repair":
+    elif gate_repair_decision == "minimal_repair" and printability_auto_repair:
         repaired, hole_stats = repair_holes_targeted(
             mesh.copy(),
-            max_hole_vertices=int(get_quality_config()["holes"]["max_hole_vertices"])
+            max_hole_vertices=int(get_quality_config()["holes"]["max_hole_vertices"]),
+            max_hole_perimeter=float(get_quality_config()["holes"]["max_hole_perimeter"]),
         )
         repair_stats = {
             "before": source_topology,
@@ -1889,6 +1914,19 @@ def run_postprocess_job(
             "preserve_uv": True,
             "uv_preserved": bool(getattr(getattr(repaired, "visual", None), "uv", None) is not None),
             "skipped": False,
+            "gate_report": gate_eval,
+        }
+    elif gate_repair_decision == "minimal_repair":
+        repaired = mesh.copy()
+        repair_stats = {
+            "before": source_topology,
+            "after": source_topology.copy(),
+            "removed_faces": 0,
+            "method": "skipped_auto_repair_disabled",
+            "preserve_uv": True,
+            "uv_preserved": bool(getattr(getattr(mesh, "visual", None), "uv", None) is not None),
+            "skipped": True,
+            "reason": "Automatic repair is disabled; source geometry was preserved as a copy.",
             "gate_report": gate_eval,
         }
     elif _should_run_structural_repair(source_topology, printability_auto_repair):
@@ -1926,7 +1964,12 @@ def run_postprocess_job(
         "\n" + format_box(
             "POSTPROCESS: STAGE 2/8 - TOPOLOGY REPAIR",
             [
-                ("Operations", f"Weld coincident verts, remove non-manifold, close holes (<= {repair_opts.max_hole_size})"),
+                (
+                    "Operations",
+                    repair_stats.get("reason")
+                    if repair_stats.get("skipped")
+                    else f"Weld coincident verts, remove non-manifold, close holes (<= {repair_opts.max_hole_size})",
+                ),
                 ("Before Repair", f"{len(mesh.faces):,} faces | {len(mesh.vertices):,} vertices"),
                 ("After Repair", f"{len(repaired.faces):,} faces | {len(repaired.vertices):,} vertices"),
                 ("Watertight", rep_after.get("watertight", False)),
@@ -2647,6 +2690,8 @@ def run_postprocess_job(
                 game_ready_mesh, physics_config, collision_stats
             )
             _write_json(metadata_dir / "physics.json", physics_metadata)
+        except InterruptedError:
+            raise
         except Exception as exc:
             logger.warning("Collision generation failed for %s, falling back to simple convex hull: %s", job_id, exc)
             try:
@@ -2664,6 +2709,7 @@ def run_postprocess_job(
                     "vertices": int(len(getattr(hull, "vertices", []))),
                     "source_faces": int(len(game_ready_mesh.faces)),
                     "fallback": True,
+                    "fallback_reason": str(exc),
                 }
                 physics_metadata = build_physics_metadata(game_ready_mesh, physics_config, collision_stats)
                 _write_json(metadata_dir / "physics.json", physics_metadata)
@@ -2760,6 +2806,12 @@ def run_postprocess_job(
         "uv_seam_vertex_delta": len(uv_mesh.vertices) - len(mesh.vertices),
         "qa": qa_report,
     }
+    final_topology_gate = evaluate_topology_gate(
+        mesh=uv_mesh.copy(),
+        plan=generation_result.get("plan") or job_inputs.get("plan"),
+        strict=bool(job_inputs.get("strict_topology_gate", False)),
+    )
+    quality_trace["final_topology_gate"] = final_topology_gate
 
     now = datetime.now(timezone.utc).isoformat()
     _write_json(
@@ -2801,7 +2853,7 @@ def run_postprocess_job(
             "generation_result": generation_result,
         },
     )
-    if _sha256_file(master_path) != source_sha256:
+    if sha256_file(master_path) != source_sha256:
         raise RuntimeError("Immutable master source.glb changed during post-processing.")
 
     badge_cfg = get_quality_config().get("badge", {})
@@ -2882,6 +2934,7 @@ def run_postprocess_job(
     generated = {
         "game_ready": game_ready,
         "lods": lods,
+        "final_topology_gate": final_topology_gate,
         "collision": str(collision_path) if collision_path else None,
         "physics": str(metadata_dir / "physics.json") if physics_metadata else None,
         "physics_metadata": physics_metadata,
@@ -2908,6 +2961,7 @@ def run_postprocess_job(
         pbr_validation_report=pbr_report,
     )
     final_result["quality_trace"] = quality_trace
+    final_result["final_topology_gate"] = final_topology_gate
     final_result["quality_tier"] = backend_quality_tier
     final_result["generation_info"] = generation_info
     final_result["raw_geometry_telemetry"] = raw_geometry_telemetry or None

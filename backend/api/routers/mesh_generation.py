@@ -146,6 +146,13 @@ def validate_model_preference(
         )
 
 
+def _is_explicit_model_preference(model_preference: Optional[str]) -> bool:
+    return bool(
+        model_preference
+        and str(model_preference).strip().lower() not in {"auto", "default", "none"}
+    )
+
+
 # Enhanced Request models with file upload support
 class TextMeshPaintingRequest(BaseModel):
     """Request for text-based mesh painting"""
@@ -278,7 +285,7 @@ class ImageToRawMeshRequest(BaseModel):
     )
     auto_mode: Optional[bool] = Field(
         None,
-        description="Enable smart auto-selection of generation model. If False and model_preference is specified, planner strictly respects model_preference.",
+        description="Enable smart model selection when model_preference is omitted; an explicit model_preference always takes precedence.",
     )
     input_prep: Optional[Dict[str, Any]] = Field(
         None,
@@ -456,7 +463,7 @@ class ImageToTexturedMeshRequest(BaseModel):
     )
     auto_mode: Optional[bool] = Field(
         None,
-        description="Enable smart auto-selection of generation model. If False and model_preference is specified, planner strictly respects model_preference.",
+        description="Enable smart model selection when model_preference is omitted; an explicit model_preference always takes precedence.",
     )
     input_prep: Optional[Dict[str, Any]] = Field(
         None,
@@ -954,7 +961,12 @@ async def text_mesh_painting(
 
 
 async def _resolve_generation_plan(request, *, default_model: str, default_feature: str, scheduler):
-    model_id = request.model_preference or default_model
+    explicit_model = (
+        request.model_preference
+        if _is_explicit_model_preference(request.model_preference)
+        else None
+    )
+    model_id = explicit_model or default_model
     feature = default_feature
     preset = {}
     preset_metadata = {}
@@ -964,7 +976,7 @@ async def _resolve_generation_plan(request, *, default_model: str, default_featu
         resolved = resolve_intent(
             request.intent,
             settings,
-            explicit_model=request.model_preference,
+            explicit_model=explicit_model,
         )
         model_id = resolved["model_id"]
         feature = resolved["feature"]
@@ -1011,16 +1023,14 @@ async def image_to_raw_mesh(
     try:
         user_id = getattr(current_user, "user_id", None)
 
-        # Determine auto_mode policy:
-        # If auto_mode is explicitly set, follow it.
-        # Otherwise, if caller specified an explicit model_preference (not "auto"/"default"/None), auto_mode is disabled.
-        # Otherwise, follow planner apply configuration (model_choice).
+        # A concrete user model choice takes precedence over automatic selection.
         from core.planner import plan_generation, get_planner_apply_config
         apply_cfg = get_planner_apply_config()
-        if mesh_request.auto_mode is not None:
-            is_auto = bool(mesh_request.auto_mode)
-        elif mesh_request.model_preference and str(mesh_request.model_preference).strip().lower() not in ("auto", "default", "none", ""):
+        has_explicit_model = _is_explicit_model_preference(mesh_request.model_preference)
+        if has_explicit_model:
             is_auto = False
+        elif mesh_request.auto_mode is not None:
+            is_auto = bool(mesh_request.auto_mode)
         else:
             is_auto = bool(apply_cfg.get("model_choice", False))
 
@@ -1051,7 +1061,7 @@ async def image_to_raw_mesh(
         would_have_chosen = generation_plan.get("would_have_chosen") or generation_plan.get("adapter")
         logger.info("Planner would_have_chosen: %s, reasons: %s", would_have_chosen, generation_plan.get("reasons"))
 
-        if not is_auto and mesh_request.model_preference:
+        if not is_auto and has_explicit_model:
             model_id, feature, preset, preset_metadata = await _resolve_generation_plan(
                 mesh_request,
                 default_model="hunyuan3d_shape_v21_image_to_raw_mesh",
@@ -1142,6 +1152,8 @@ async def image_to_raw_mesh(
         )
         # Filter out None values from model_parameters so pop() fallbacks work correctly
         params = {k: v for k, v in (mesh_request.model_parameters or {}).items() if v is not None}
+        for key in ("candidate_count", "enable_postprocess", "topology_mode", "quad_topology"):
+            params.pop(key, None)
         # Keep texture-stage controls out of model-specific inference parameters.
         params.pop("texture_resolution", None)
         params.pop("texture_resolution_preset", None)
@@ -1350,16 +1362,14 @@ async def image_to_textured_mesh(
     tracked_temp_dirs: List[str] = []
     try:
         user_id = getattr(current_user, "user_id", None)
-        # Determine auto_mode policy:
-        # If auto_mode is explicitly set, follow it.
-        # Otherwise, if caller specified an explicit model_preference (not "auto"/"default"/None), auto_mode is disabled.
-        # Otherwise, follow planner apply configuration (model_choice).
+        # A concrete user model choice takes precedence over automatic selection.
         from core.planner import plan_generation, get_planner_apply_config
         apply_cfg = get_planner_apply_config()
-        if mesh_request.auto_mode is not None:
-            is_auto = bool(mesh_request.auto_mode)
-        elif mesh_request.model_preference and str(mesh_request.model_preference).strip().lower() not in ("auto", "default", "none", ""):
+        has_explicit_model = _is_explicit_model_preference(mesh_request.model_preference)
+        if has_explicit_model:
             is_auto = False
+        elif mesh_request.auto_mode is not None:
+            is_auto = bool(mesh_request.auto_mode)
         else:
             is_auto = bool(apply_cfg.get("model_choice", False))
 
@@ -1390,7 +1400,7 @@ async def image_to_textured_mesh(
         would_have_chosen = generation_plan.get("would_have_chosen") or generation_plan.get("adapter")
         logger.info("Planner would_have_chosen: %s, reasons: %s", would_have_chosen, generation_plan.get("reasons"))
 
-        if not is_auto and mesh_request.model_preference:
+        if not is_auto and has_explicit_model:
             model_id, feature, preset, preset_metadata = await _resolve_generation_plan(
                 mesh_request,
                 default_model="trellis_image_to_textured_mesh",
@@ -1492,6 +1502,8 @@ async def image_to_textured_mesh(
         )
         # Filter out None values from model_parameters so pop() fallbacks work correctly
         params = {k: v for k, v in (mesh_request.model_parameters or {}).items() if v is not None}
+        for key in ("candidate_count", "enable_postprocess", "topology_mode", "quad_topology"):
+            params.pop(key, None)
         # Preserve nested resolution from old clients, but never pass it to geometry inference.
         source_texture_resolution = params.pop("texture_resolution", None)
         legacy_preset = params.pop("texture_resolution_preset", None)

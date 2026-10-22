@@ -15,9 +15,11 @@ import trimesh
 try:
     from backend.core.quality.metrics import compute_mesh_metrics
     from backend.core.config import get_quality_config
+    from backend.postprocess.services.hole_repair import repair_holes_targeted
 except ImportError:
     from core.quality.metrics import compute_mesh_metrics
     from core.config import get_quality_config
+    from postprocess.services.hole_repair import repair_holes_targeted
 
 
 @functools.lru_cache(maxsize=8)
@@ -72,7 +74,8 @@ def evaluate_topology_gate(
     max_hole_size = max(boundary_loop_sizes) if boundary_loop_sizes else 0
     metrics["max_hole_size"] = max_hole_size
 
-    thresholds = load_gate_thresholds(config_path)
+    quality_config = get_quality_config(config_path)
+    thresholds = dict(quality_config["gate"])
     is_strict = bool(strict or thresholds.get("strict", False))
 
     non_manifold_edges = int(metrics.get("non_manifold_edges", 0))
@@ -136,7 +139,8 @@ def evaluate_topology_gate(
             "violations": violations,
         }
 
-    max_hole_limit = int(get_quality_config(config_path)["holes"]["max_hole_vertices"])
+    hole_limits = quality_config["holes"]
+    max_hole_limit = int(hole_limits["max_hole_vertices"])
     # If mesh only has small boundary loops (holes <= max_hole_limit vertices) and no non-manifold geometry:
     has_only_small_holes = (
         non_manifold_edges == 0
@@ -148,6 +152,18 @@ def evaluate_topology_gate(
         and aspect_ratio_p1 >= thresholds["min_aspect_ratio_p1"]
         and aspect_ratio_p5 >= thresholds["min_aspect_ratio_p5"]
     )
+    if has_only_small_holes:
+        _, hole_repair_stats = repair_holes_targeted(
+            working_copy,
+            max_hole_vertices=max_hole_limit,
+            max_hole_perimeter=float(hole_limits["max_hole_perimeter"]),
+            config_path=config_path,
+        )
+        has_only_small_holes = (
+            hole_repair_stats["holes_filled"] == hole_count
+            and hole_repair_stats["holes_remaining"] == 0
+            and hole_repair_stats["boundary_edges_after"] == 0
+        )
 
     if has_only_small_holes:
         repair_decision = "minimal_repair"

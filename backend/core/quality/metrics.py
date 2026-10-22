@@ -5,12 +5,13 @@ Zero external heavy dependencies; operates directly on trimesh.Trimesh instances
 from __future__ import annotations
 
 from collections import defaultdict
-import hashlib
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import trimesh
+
+from ..utils.artifact_utils import sha256_file
 
 
 def _triangle_aspect_ratios(vertices: np.ndarray, faces: np.ndarray) -> np.ndarray:
@@ -357,16 +358,6 @@ def compute_mesh_metrics(
         "uv_island_count": uv_island_count,
         "feature_edge_retention": feature_edge_retention,
     }
-
-
-def sha256_file(path: str | Path) -> str:
-    """Compute sha256 hexadecimal hash of a file."""
-    p = Path(path)
-    h = hashlib.sha256()
-    with p.open("rb") as f:
-        for chunk in iter(lambda: f.read(65536), b""):
-            h.update(chunk)
-    return h.hexdigest()
 
 
 def audit_master_immutability(master_path: str | Path, working_copy_path: str | Path) -> bool:

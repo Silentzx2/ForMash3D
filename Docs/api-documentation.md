@@ -453,6 +453,8 @@ Content-Type: application/json
 }
 ```
 
+`model_parameters` carries the runtime seed only; an explicit seed of `0` is valid. Model-specific steps, guidance, samplers, and extraction settings are adapter-owned and are not user request overrides. Production fields are resolved separately from inference inputs.
+
 `texture_resolution` is only sent when the texture stage is enabled; it is a numeric atlas size (1024/2048/4096/8192).
 
 #### Request Fields Specification

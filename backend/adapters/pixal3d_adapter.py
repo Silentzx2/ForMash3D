@@ -35,6 +35,7 @@ _LOCKED_INFERENCE_PROFILE = {
     "source_quality": "max",
     "resolution": 2048,
     "pipeline_type": "1536_cascade",
+    "max_num_tokens": 524288,
     "sampler_overrides": {
         "sparse_structure": {
             "steps": 100,
@@ -409,14 +410,7 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
         self,
         image: Image.Image,
         seed: int = 42,
-        # EXPERIMENTAL_MAX_DETAIL: official standard Pixal3D path is 1536; sampler values below are adapted
-        # from TRELLIS.2 community issue #92 and have not been benchmarked directly on Pixal3D.
-        pipeline_type: str = "1536_cascade",
-        max_num_tokens: int = 524288,
-        resolution: int = 2048,
-        sampler_overrides: Optional[Dict[str, Dict[str, Any]]] = None,
         camera_params: Optional[Dict[str, float]] = None,
-        low_vram: Optional[bool] = None,
     ) -> str:
         """Run Pixal3D pipeline inference and return GLB path."""
         import o_voxel
@@ -424,33 +418,15 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
         if camera_params is None:
             raise ValueError("camera_params is required")
 
-        if low_vram is not None and hasattr(self.pipeline, "low_vram"):
-            self.pipeline.low_vram = bool(low_vram)
-
-        sampler_overrides = sampler_overrides or {}
-        # EXPERIMENTAL_MAX_DETAIL profile (source: microsoft/TRELLIS.2 issue #92).
-        # This is an A/B candidate borrowed for Pixal3D's TRELLIS.2-style staged API, not a verified Pixal3D optimum.
-        ss_override = {
-            "steps": 100,
-            "guidance_strength": 10.0,
-            "guidance_rescale": 0.7,
-            "rescale_t": 6.0,
-        }
-        shape_override = {
-            "steps": 100,
-            "guidance_strength": 10.0,
-            "guidance_rescale": 0.5,
-            "rescale_t": 6.0,
-        }
-        tex_override = {
-            "steps": 100,
-            "guidance_strength": 3.5,
-            "guidance_rescale": 0.2,
-            "rescale_t": 6.0,
-        }
-        ss_override.update(sampler_overrides.get("sparse_structure", {}))
-        shape_override.update(sampler_overrides.get("shape", {}))
-        tex_override.update(sampler_overrides.get("texture", {}))
+        # Keep model settings adapter-owned; seed and camera parameters remain caller-controlled.
+        pipeline_type = _LOCKED_INFERENCE_PROFILE["pipeline_type"]
+        max_num_tokens = _LOCKED_INFERENCE_PROFILE["max_num_tokens"]
+        resolution = _LOCKED_INFERENCE_PROFILE["resolution"]
+        low_vram = _LOCKED_INFERENCE_PROFILE["low_vram"]
+        locked_samplers = _LOCKED_INFERENCE_PROFILE["sampler_overrides"]
+        ss_override = deepcopy(locked_samplers["sparse_structure"])
+        shape_override = deepcopy(locked_samplers["shape"])
+        tex_override = deepcopy(locked_samplers["texture"])
 
         logger.info(f"Running Pixal3D inference with pipeline_type={pipeline_type}")
         torch.manual_seed(seed)
@@ -521,10 +497,7 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
                 - output_format: Output format (default: "glb")
                 - seed: Random seed for reproducibility (default: 42)
                 - manual_fov: Manual camera FOV in radians (optional, override MoGe)
-                - resolution: Pipeline resolution (experimental max-detail default: 1536; use 1024 only when explicitly selecting the low-cost profile)
-                - pipeline_type: '1024_cascade' or '1536_cascade' (experimental max-detail default: '1536_cascade')
-                - low_vram: Whether to use low-VRAM mode (default: False)
-                - sampler_overrides: Optional dict of sampler parameter overrides
+                - resolution, pipeline_type, low_vram, and sampler_overrides: adapter-locked inference profile
 
         Returns:
             Dictionary with generation results
@@ -552,15 +525,9 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
             seed = inputs.get("seed", 42)
             manual_fov = inputs.get("manual_fov", None)
             # EXPERIMENTAL_MAX_DETAIL default follows official Pixal3D standard mode. Ask user before later profile changes.
-            resolution = inputs.get("resolution", 1536)
-            pipeline_type = inputs.get("pipeline_type", "1536_cascade")
-            low_vram_input = inputs.get("low_vram")
-            low_vram = (
-                bool(low_vram_input)
-                if low_vram_input is not None
-                else getattr(self, "low_vram_mode", False)
-            )
-            sampler_overrides = inputs.get("sampler_overrides", {})
+            resolution = _LOCKED_INFERENCE_PROFILE["resolution"]
+            pipeline_type = _LOCKED_INFERENCE_PROFILE["pipeline_type"]
+            low_vram = _LOCKED_INFERENCE_PROFILE["low_vram"]
 
             logger.info(f"Generating mesh with Pixal3D from image: {image_path}")
 
@@ -581,10 +548,6 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
                 input_image,
                 seed=seed,
                 camera_params=camera_params,
-                pipeline_type=pipeline_type,
-                resolution=resolution,
-                sampler_overrides=sampler_overrides,
-                low_vram=low_vram,
             )
 
             # Convert format if needed
@@ -663,10 +626,7 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
         Official parameters from Pixal3D inference.py and pipeline documentation:
         - seed: Random seed for reproducibility
         - manual_fov: Manual camera FOV in radians (optional, override MoGe estimation)
-        - resolution: Pipeline resolution (1024 or 1536; experimental max-detail default 1536)
-        - pipeline_type: '1024_cascade' or '1536_cascade' (experimental max-detail default '1536_cascade')
-        - low_vram: Whether to use low-VRAM mode
-        - sampler_overrides: Dict with sampler parameter overrides for stages
+        - resolution, pipeline_type, low_vram and sampler_overrides are adapter-locked.
         """
         return {
             "parameters": {
@@ -688,24 +648,24 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
                 },
                 "resolution": {
                     "type": "integer",
-                    "description": "Pipeline resolution; experimental max-detail defaults to official standard resolution 1536.",
-                    "default": 2048,
+                    "description": "Adapter-locked pipeline resolution.",
+                    "default": _LOCKED_INFERENCE_PROFILE["resolution"],
                     "enum": [1024, 1536, 2048],
                     "readOnly": True,
                     "required": False,
                 },
                 "pipeline_type": {
                     "type": "string",
-                    "description": "Pipeline type for cascade generation; experimental max-detail defaults to 1536 cascade.",
-                    "default": "1536_cascade",
+                    "description": "Adapter-locked pipeline type for cascade generation.",
+                    "default": _LOCKED_INFERENCE_PROFILE["pipeline_type"],
                     "enum": ["1024_cascade", "1536_cascade"],
                     "readOnly": True,
                     "required": False,
                 },
                 "low_vram": {
                     "type": "boolean",
-                    "description": "Whether to use low-VRAM mode (models on CPU, loaded on-demand). Reduces peak VRAM from ~18GB to ~10-12GB at cost of slower inference.",
-                    "default": False,
+                    "description": "Adapter-locked low-VRAM mode.",
+                    "default": _LOCKED_INFERENCE_PROFILE["low_vram"],
                     "readOnly": True,
                     "required": False,
                 },
@@ -713,9 +673,9 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
                     "type": "object",
                     "description": "Experimental quality-first sampler parameters for sparse_structure, shape and texture. Adapted from TRELLIS.2 community issue #92; not benchmarked directly on Pixal3D.",
                     "default": {
-                        "sparse_structure": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.9, "rescale_t": 8.0},
-                        "shape": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.8, "rescale_t": 8.0},
-                        "texture": {"steps": 100, "guidance_strength": 3.5, "guidance_rescale": 0.5, "rescale_t": 8.0},
+                        "sparse_structure": deepcopy(_LOCKED_INFERENCE_PROFILE["sampler_overrides"]["sparse_structure"]),
+                        "shape": deepcopy(_LOCKED_INFERENCE_PROFILE["sampler_overrides"]["shape"]),
+                        "texture": deepcopy(_LOCKED_INFERENCE_PROFILE["sampler_overrides"]["texture"]),
                     },
                     "readOnly": True,
                     "additionalProperties": {
