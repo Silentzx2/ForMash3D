@@ -1386,3 +1386,15 @@ The runtime log announced a seed count that no execution honored, for every mode
 5. Keep collision artifacts isolated from render geometry and expose convex-hull fallback details when decomposition is unavailable or fails.
 
 **Consequences:** Source-level ownership and failure behavior are covered by focused frontend/backend contract tests. This decision does not claim model-quality improvement; GPU inference, representative asset comparisons, and optional runtime stages remain separate validation requirements.
+
+## ADR-097: Distinguish Automatic Model Fallback and Centralize Physics Policy (2026-10-22)
+
+**Context:** Automatic model choices were treated as explicit preferences after load failure, planner suggestions could cross feature boundaries, and physics/comparison settings had duplicate defaults outside the canonical quality configuration.
+
+**Decision:**
+1. Preserve the origin of a generation model choice as internal request metadata. An explicit user choice is a hard requirement; an automatic choice may fall back only to a feature-compatible model.
+2. Apply planner-selected models only when the scheduler confirms support for the requested generation feature.
+3. Keep comparison and physics defaults, bounds, and collision quality profiles in `backend/config/quality.yaml`. The UI may use only the minimal defaults/bounds mirror in `constants/physicsDefaults.json`, and `backend/tests/test_config_ssot.py` must enforce parity.
+4. Do not change active adapter inference schedules as part of this routing/configuration fix.
+
+**Consequences:** Regression tests cover explicit-versus-automatic fallback, feature-compatible planner choices, configured physics bounds/profiles, and UI mirror parity. Runtime inference and browser interaction remain separate validation requirements.

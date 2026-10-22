@@ -31,6 +31,7 @@ import {
   resolveGenerationModelCapabilities,
   resolveGenerationModelChoice,
 } from '../utils/buildGenerationParameters';
+import { DEFAULT_PHYSICS_SETTINGS } from '../utils/physicsSettings';
 import { taskPersistence } from '@/services/taskPersistence';
 
 interface ComparisonGroup {
@@ -572,20 +573,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       enableAutoRig: false,
       autoRigMode: 'full',
       enablePostprocess: true,
-      physics: {
-        bodyType: 'auto',
-        massMode: 'auto',
-        massKg: 1,
-        densityMode: 'auto',
-        densityKgM3: 500,
-        friction: 0.5,
-        restitution: 0.1,
-        linearDamping: 0.05,
-        angularDamping: 0.05,
-        gravityEnabled: true,
-        collisionQuality: 'balanced',
-        deformation: 'off',
-      },
+      physics: { ...DEFAULT_PHYSICS_SETTINGS },
     });
  
    const [comparisonGroupId, setComparisonGroupId] = useState<string | null>(null);
@@ -2125,20 +2113,7 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
             enableAutoRig: batchItem.enableAutoRig ?? false,
             autoRigMode: batchItem.autoRigMode ?? 'full',
             enablePostprocess: batchItem.enablePostprocess ?? true,
-            physics: batchItem.physics ?? {
-             bodyType: 'auto',
-             massMode: 'auto',
-             massKg: 1,
-             densityMode: 'auto',
-             densityKgM3: 500,
-             friction: 0.5,
-             restitution: 0.1,
-             linearDamping: 0.05,
-             angularDamping: 0.05,
-             gravityEnabled: true,
-             collisionQuality: 'balanced',
-             deformation: 'off',
-           },
+            physics: batchItem.physics ?? { ...DEFAULT_PHYSICS_SETTINGS },
          };
 
           // Create a local task for tracking

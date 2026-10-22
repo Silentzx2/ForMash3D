@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 import trimesh
 
+from core.config import get_quality_config
 from postprocess import physics
 from postprocess.schemas import CollisionOptions
 
@@ -127,6 +128,27 @@ def test_collision_quality_maps_to_decomposition_options(quality):
     options = physics.collision_options_for_quality(quality)
 
     assert options["method"] == "decomposition"
+    assert options == get_quality_config()["physics"]["collision_quality_profiles"][quality]
     assert options["max_hulls"] > 0
     assert options["max_hull_vertices"] > 0
     assert options["input_faces"] > 0
+
+
+def test_physics_defaults_and_limits_come_from_quality_config():
+    physics_policy = get_quality_config()["physics"]
+    normalized = physics.normalize_physics_config({})
+
+    for key, value in physics_policy["defaults"].items():
+        if key in normalized:
+            assert normalized[key] == value
+    assert physics.estimate_volume(trimesh.Trimesh())[0] == physics_policy["defaults"][
+        "fallback_volume_m3"
+    ]
+    assert normalized["collision_quality"] == physics_policy["default_collision_quality"]
+
+    bounded = physics.normalize_physics_config(
+        {"mass_kg": -1, "density_kg_m3": 1_000_000, "friction": 5}
+    )
+    assert bounded["mass_kg"] == physics_policy["limits"]["mass_kg"]["min"]
+    assert bounded["density_kg_m3"] == physics_policy["limits"]["density_kg_m3"]["max"]
+    assert bounded["friction"] == physics_policy["limits"]["friction"]["max"]

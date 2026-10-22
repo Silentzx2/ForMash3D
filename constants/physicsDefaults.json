@@ -1,0 +1,24 @@
+{
+  "defaults": {
+    "body_type": "auto",
+    "mass_mode": "auto",
+    "mass_kg": 1.0,
+    "density_mode": "auto",
+    "density_kg_m3": 500.0,
+    "friction": 0.5,
+    "restitution": 0.1,
+    "linear_damping": 0.05,
+    "angular_damping": 0.05,
+    "gravity_enabled": true,
+    "fallback_volume_m3": 0.001
+  },
+  "limits": {
+    "mass_kg": { "min": 0.01, "max": 100000.0 },
+    "density_kg_m3": { "min": 0.01, "max": 20000.0 },
+    "friction": { "min": 0.0, "max": 2.0 },
+    "restitution": { "min": 0.0, "max": 1.0 },
+    "linear_damping": { "min": 0.0, "max": 100.0 },
+    "angular_damping": { "min": 0.0, "max": 100.0 }
+  },
+  "default_collision_quality": "balanced"
+}

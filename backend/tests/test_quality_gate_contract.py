@@ -3,7 +3,8 @@ import sys
 
 import pytest
 from core.config import get_quality_config
-from core.quality.evaluation import quality_gate
+from core.quality.evaluation import compare_meshes, quality_gate
+import trimesh
 
 
 def _pipeline_result_builder():
@@ -25,6 +26,20 @@ def test_quality_gate_rejects_missing_or_invalid_metrics():
     assert quality_gate({})["status"] == "missing_metrics"
     assert quality_gate({"normalized_surface_drift": "not-a-number"})["status"] == "invalid_metrics"
     assert quality_gate({"normalized_surface_drift": float("nan")})["status"] == "invalid_metrics"
+
+
+def test_mesh_comparison_uses_the_canonical_sampling_policy():
+    config = get_quality_config()["surface_comparison"]
+    mesh = trimesh.creation.box()
+
+    report = compare_meshes(mesh, mesh)
+
+    diagonal = float((mesh.bounds[1] - mesh.bounds[0]).dot(mesh.bounds[1] - mesh.bounds[0]) ** 0.5)
+    assert report["sample_count"] == config["sample_count"]
+    assert report["fscore_threshold"] == max(
+        diagonal * config["fscore_diagonal_fraction"],
+        config["minimum_fscore_threshold"],
+    )
 
 
 def test_failed_final_topology_gate_degrades_production_result(tmp_path: Path):

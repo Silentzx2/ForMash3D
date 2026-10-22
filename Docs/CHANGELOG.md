@@ -12,6 +12,7 @@
 
 ## 2026-10-22 — CI and documentation synchronization
 
-- Backend Runtime Contract CI now runs the full backend CPU contract suite and declares the geometry/render dependencies imported by those tests. A clean Python 3.10 environment passed all 44 backend/third-party tests.
+- Backend Runtime Contract CI runs the full backend CPU contract suite and declares the dependencies imported by those tests. The Python 3.10 full run passed 50 backend/third-party tests with one SQLAlchemy deprecation warning; the subsequently added config-mirror parity check passed with both config tests under Python 3.14, but the complete backend suite was not rerun in that environment.
+- Frontend CI runs all Bun contract tests rather than a hand-selected subset; all 52 local tests, the TypeScript check, and production build passed. Targeted ESLint on changed frontend files reported 0 errors and 58 warnings.
 - Updated repository guidance for actual test commands, the generation UI/request boundary, post-processing bake behavior, and runtime-validation limits.
-- GPU/model inference, deployed API smoke tests, production build/browser verification, Blender stages and UniRig execution were not run.
+- GPU/model inference, browser interaction, deployed API smoke tests, Blender stages and UniRig execution were not run.

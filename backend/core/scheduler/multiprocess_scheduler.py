@@ -88,6 +88,17 @@ def retry_transient_errors_enabled() -> bool:
     return parse_bool_env("RETRY_TRANSIENT_ERRORS", False)
 
 
+def _may_fallback_after_model_load_failure(
+    model_preference: Optional[str], metadata: Dict[str, Any]
+) -> bool:
+    selection = metadata.get("model_selection")
+    if selection == "explicit":
+        return False
+    if selection == "automatic":
+        return True
+    return not model_preference
+
+
 def auto_unload_after_job_enabled() -> bool:
     """Read the VRAM unload switch at decision time."""
     return parse_bool_env("AUTO_UNLOAD_AFTER_JOB", False)
@@ -1766,7 +1777,9 @@ class MultiprocessModelScheduler:
                 )
                 # Explicit model selections are hard requirements. Automatic routes may
                 # fall back to the next compatible retained model instead of failing the job.
-                if not job_request.model_preference:
+                if _may_fallback_after_model_load_failure(
+                    job_request.model_preference, job_request.metadata
+                ):
                     feature_models = self.model_features.get(job_request.feature, [])
                     routing_inputs = dict(job_request.inputs or {})
                     routing_inputs["available_gpu_count"] = len(self.gpu_monitor.get_gpu_status())

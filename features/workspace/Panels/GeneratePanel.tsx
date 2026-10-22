@@ -11,6 +11,7 @@ import { ShimmerButton } from '@/components/ui/shimmer-button';
 import { getModelDefinition, isMeshGenerationModel } from '@/constants/models';
 import { SMART_PRESET_FALLBACK } from '@/constants/smartPresets';
 import { useRouter } from 'next/navigation';
+import { DEFAULT_PHYSICS_SETTINGS, PHYSICS_LIMITS } from '../utils/physicsSettings';
 
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Box, Cancel, CheckIcon, ChevronDown, ChevronUp, ImageIcon, InfoIcon, LayersIcon, LoaderCircle, Plus, RefreshCw, Settings2, SparklesIcon, TriangleAlertIcon, UploadIcon, ZapIcon } from '@hugeicons/core-free-icons';
@@ -46,7 +47,7 @@ function formatValidationDetails(validation: unknown): string | null {
 }
 
 export const PHYSICS_MATERIAL_PRESETS = [
-  { label: 'Default', friction: 0.5, restitution: 0.1 },
+  { label: 'Default', friction: DEFAULT_PHYSICS_SETTINGS.friction, restitution: DEFAULT_PHYSICS_SETTINGS.restitution },
   { label: 'Rubber', friction: 0.8, restitution: 0.8 },
   { label: 'Stone', friction: 0.6, restitution: 0.1 },
   { label: 'Wood', friction: 0.4, restitution: 0.2 },
@@ -583,20 +584,7 @@ export const GeneratePanel: React.FC = () => {
      generationSettings.textureQuality === 'medium' ? '1K' :
      generationSettings.textureQuality === '8k' ? '8K' : '2K');
 
-  const physics = generationSettings.physics ?? {
-    bodyType: 'auto' as const,
-    massMode: 'auto' as const,
-    massKg: 1,
-    densityMode: 'auto' as const,
-    densityKgM3: 500,
-    friction: 0.5,
-    restitution: 0.1,
-    linearDamping: 0.05,
-    angularDamping: 0.05,
-    gravityEnabled: true,
-    collisionQuality: 'balanced' as const,
-    deformation: 'off' as const,
-  };
+  const physics = generationSettings.physics ?? DEFAULT_PHYSICS_SETTINGS;
 
   const updatePhysics = (updates: Partial<PhysicsSettings>) => {
     setGenerationSettings(prev => {
@@ -2281,8 +2269,8 @@ export const GeneratePanel: React.FC = () => {
                       <option value="manual">Manual kg/m³</option>
                     </select>
                     {physics.densityMode === 'manual' && (
-                      <input type="number" min={0.01} max={20000} step={10} value={physics.densityKgM3}
-                        onChange={e => updatePhysics({ densityKgM3: Number(e.target.value) || 1 })}
+                      <input type="number" min={PHYSICS_LIMITS.densityKgM3.min} max={PHYSICS_LIMITS.densityKgM3.max} step={10} value={physics.densityKgM3}
+                        onChange={e => updatePhysics({ densityKgM3: Number(e.target.value) || PHYSICS_LIMITS.densityKgM3.min })}
                         className="w-full mt-1 rounded-md bg-[hsl(var(--surface-1))] border border-white/[0.08] px-2 py-1.5 text-[10px] text-zinc-200" />
                     )}
                   </label>
@@ -2294,8 +2282,8 @@ export const GeneratePanel: React.FC = () => {
                       <option value="manual">Manual kg</option>
                     </select>
                     {physics.massMode === 'manual' && (
-                      <input type="number" min={0.01} max={100000} step={0.1} value={physics.massKg}
-                        onChange={e => updatePhysics({ massKg: Number(e.target.value) || 0.01 })}
+                      <input type="number" min={PHYSICS_LIMITS.massKg.min} max={PHYSICS_LIMITS.massKg.max} step={0.1} value={physics.massKg}
+                        onChange={e => updatePhysics({ massKg: Number(e.target.value) || PHYSICS_LIMITS.massKg.min })}
                         className="w-full mt-1 rounded-md bg-[hsl(var(--surface-1))] border border-white/[0.08] px-2 py-1.5 text-[10px] text-zinc-200" />
                     )}
                   </label>

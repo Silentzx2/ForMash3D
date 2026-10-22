@@ -19,6 +19,73 @@ gate:
   min_aspect_ratio_p1: 0.05
   min_aspect_ratio_p5: 0.10
 
+surface_comparison:
+  sample_count: 4096
+  fscore_diagonal_fraction: 0.005
+  minimum_fscore_threshold: 0.00001
+  local_density_neighbor_count: 16
+
+physics:
+  defaults:
+    body_type: auto
+    mass_mode: auto
+    mass_kg: 1.0
+    density_mode: auto
+    density_kg_m3: 500.0
+    friction: 0.5
+    restitution: 0.1
+    linear_damping: 0.05
+    angular_damping: 0.05
+    gravity_enabled: true
+    fallback_volume_m3: 0.001
+  limits:
+    mass_kg: {min: 0.01, max: 100000.0}
+    density_kg_m3: {min: 0.01, max: 20000.0}
+    friction: {min: 0.0, max: 2.0}
+    restitution: {min: 0.0, max: 1.0}
+    linear_damping: {min: 0.0, max: 100.0}
+    angular_damping: {min: 0.0, max: 100.0}
+  thresholds:
+    minimum_valid_volume_m3: 0.000000001
+  default_collision_quality: balanced
+  collision_quality_profiles:
+    fast:
+      method: decomposition
+      max_hulls: 4
+      threshold: 0.35
+      input_faces: 750
+      max_hull_vertices: 32
+      resolution: 600
+      mcts_nodes: 4
+      mcts_iterations: 20
+      mcts_max_depth: 1
+      preprocess_resolution: 40
+      seed: 0
+    balanced:
+      method: decomposition
+      max_hulls: 8
+      threshold: 0.25
+      input_faces: 1000
+      max_hull_vertices: 64
+      resolution: 1000
+      mcts_nodes: 6
+      mcts_iterations: 40
+      mcts_max_depth: 2
+      preprocess_resolution: 50
+      seed: 0
+    precise:
+      method: decomposition
+      max_hulls: 16
+      threshold: 0.20
+      input_faces: 1400
+      max_hull_vertices: 64
+      resolution: 1200
+      mcts_nodes: 8
+      mcts_iterations: 60
+      mcts_max_depth: 3
+      preprocess_resolution: 60
+      seed: 0
+
 decimation:
   memory_safe_threshold_triangles: 2000000
   max_deviation_deg: 45.0

@@ -16,6 +16,14 @@ except Exception:
     cKDTree = None
 
 
+def _quality_config() -> dict[str, Any]:
+    try:
+        from backend.core.config import get_quality_config
+    except ImportError:  # pragma: no cover - package-layout variant
+        from core.config import get_quality_config
+    return get_quality_config()
+
+
 def load_mesh(path: str | Path) -> trimesh.Trimesh:
     loaded = trimesh.load(path, process=False)
     if isinstance(loaded, trimesh.Scene):
@@ -28,9 +36,13 @@ def load_mesh(path: str | Path) -> trimesh.Trimesh:
     return loaded
 
 
-def sample_surface(mesh: trimesh.Trimesh, count: int = 4096, seed: int = 0) -> np.ndarray:
+def sample_surface(
+    mesh: trimesh.Trimesh, count: Optional[int] = None, seed: int = 0
+) -> np.ndarray:
     if len(mesh.faces) == 0:
         raise ValueError("Cannot sample an empty mesh.")
+    if count is None:
+        count = int(_quality_config()["surface_comparison"]["sample_count"])
     previous = np.random.get_state()
     try:
         np.random.seed(seed)
@@ -61,11 +73,13 @@ def f_score(source_points: np.ndarray, target_points: np.ndarray, threshold: flo
     return float(0.0 if precision + recall == 0.0 else 2.0 * precision * recall / (precision + recall))
 
 
-def _local_density(points: np.ndarray, k: int = 16) -> np.ndarray:
+def _local_density(points: np.ndarray, k: Optional[int] = None) -> np.ndarray:
     if len(points) <= 1:
         return np.ones(len(points), dtype=np.float32)
     if cKDTree is None:
         return np.ones(len(points), dtype=np.float32)
+    if k is None:
+        k = int(_quality_config()["surface_comparison"]["local_density_neighbor_count"])
     k = max(2, min(k, len(points) - 1))
     distances = cKDTree(points).query(points, k=k + 1, workers=-1)[0]
     scale = np.maximum(distances[:, -1], 1e-8)
@@ -85,14 +99,24 @@ def density_aware_chamfer_distance(source_points: np.ndarray, target_points: np.
 def compare_meshes(
     reference: trimesh.Trimesh,
     candidate: trimesh.Trimesh,
-    sample_count: int = 4096,
+    sample_count: Optional[int] = None,
     fscore_threshold: Optional[float] = None,
     seed: int = 0,
 ) -> dict[str, Any]:
+    comparison_config = _quality_config()["surface_comparison"]
+    if sample_count is None:
+        sample_count = int(comparison_config["sample_count"])
     reference_points = sample_surface(reference, sample_count, seed)
     candidate_points = reference_points if candidate is reference else sample_surface(candidate, sample_count, seed)
     diagonal = float(np.linalg.norm(reference.bounds[1] - reference.bounds[0]))
-    threshold = float(fscore_threshold if fscore_threshold is not None else max(diagonal * 0.005, 1e-5))
+    threshold = float(
+        fscore_threshold
+        if fscore_threshold is not None
+        else max(
+            diagonal * float(comparison_config["fscore_diagonal_fraction"]),
+            float(comparison_config["minimum_fscore_threshold"]),
+        )
+    )
     cd = chamfer_distance(reference_points, candidate_points)
     normalized_drift = float((max(cd, 0.0) ** 0.5) / max(diagonal, 1e-8))
     return {
@@ -195,7 +219,7 @@ def compare_model_runs(
     candidate_asset_dir: str | Path,
     *,
     reference_mesh: str | Path | None = None,
-    sample_count: int = 4096,
+    sample_count: Optional[int] = None,
     render_output_dir: str | Path | None = None,
 ) -> dict[str, Any]:
     """Controlled A/B comparison requiring identical input hashes and protocol."""

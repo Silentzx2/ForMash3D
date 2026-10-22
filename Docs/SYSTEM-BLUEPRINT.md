@@ -153,6 +153,7 @@ sequenceDiagram
     participant API as FastAPI Router (:7842)
     participant SCHED as VRAM-Aware Scheduler
     participant Adapter as Model Adapter
+    participant PP as Production Postprocess
     participant Storage as backend/storage/
 
     User->>Frontend: Select image + intent preset / polycount budget
@@ -160,15 +161,19 @@ sequenceDiagram
     API->>SCHED: Submit job (VRAM-aware)
     SCHED->>Adapter: Run inference (TRELLIS/Hunyuan3D/etc.)
     Adapter-->>SCHED: Raw 3D mesh output
-    SCHED->>Storage: Save master source.glb (Untouched Master)
-    SCHED->>Storage: Save game_ready.glb (Decimated)
-    SCHED->>Storage: Save lods/lod0..3.glb (LOD Cascade)
-    SCHED->>Storage: Save collision.glb (Convex Hull)
-    SCHED->>Storage: Save quality_report.json (QA 0-100 Score)
+    SCHED->>Storage: Persist raw master/source.glb
+    opt Production post-processing enabled
+        SCHED->>PP: run_postprocess_job(master, options)
+        PP->>Storage: Write game_ready derivative and QA status
+        PP->>Storage: Write requested LOD, texture, and collision artifacts
+        PP->>Storage: Update asset manifest and quality report
+    end
     SCHED-->>API: Job complete
     API-->>Frontend: Return {job_id, status: "completed", outputs}
     Frontend->>User: Render 3D model in WebGL Viewport
 ```
+
+The scheduler owns model workers and job state; `backend/postprocess/pipeline.py` owns derivative generation and final production status. When production post-processing is disabled, the scheduler marks it bypassed and returns the raw master result.
 
 ---
 
@@ -363,7 +368,7 @@ bun run build
 ## Production Asset Lifecycle & Two-Way PostProcess Pipeline
 
 ForMash3D executes post-processing via two complementary pathways:
-1. **Automatic Chaining:** Generation -> maximum-fidelity model output -> immutable `master/source.glb` -> automatic trigger in `multiprocess_scheduler.py` via `run_postprocess_job` (repair -> conditional retopo -> downstream target polycount -> Auto UV -> bake -> optional texture stage -> game-ready formats -> LOD cascade -> collision hulls -> QA) -> production completion -> `WorkspaceContext.tsx` artifacts.
+1. **Conditional Production Chaining:** When `enable_postprocess` is enabled, generation -> raw model output -> immutable `master/source.glb` -> scheduler call to `run_postprocess_job` (repair -> conditional retopo -> target budget -> UV -> bake/texture -> requested LOD/collision -> QA) -> production completion -> `WorkspaceContext.tsx` artifacts. Native/Raw requests with post-processing disabled bypass this chain.
 2. **Manual On-Demand PostProcess: Users can select any workspace model or upload an external mesh (`.glb`, `.obj`, `.stl`, `.ply`) inside `RemeshPanel.tsx`, `UVUnwrapPanel.tsx`, or `MeshSegmentPanel.tsx` to execute discrete operations on demand via REST API (`/api/v1/mesh-retopology/*`, `/api/v1/mesh-uv-unwrapping/*`, `/api/v1/mesh-segmentation/*`).
 The post-processing stage runs in `asyncio.to_thread` so CPU/GPU mesh operations do not block FastAPI's event loop.
 

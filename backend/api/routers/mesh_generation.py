@@ -1068,7 +1068,13 @@ async def image_to_raw_mesh(
                 default_feature="image_to_raw_mesh",
                 scheduler=scheduler,
             )
-        elif is_auto and would_have_chosen:
+        elif (
+            is_auto
+            and would_have_chosen
+            and scheduler.validate_model_preference(
+                would_have_chosen, "image_to_raw_mesh"
+            )
+        ):
             if mesh_request.intent:
                 _, feature, preset, preset_metadata = await _resolve_generation_plan(
                     mesh_request,
@@ -1298,6 +1304,7 @@ async def image_to_raw_mesh(
                 "plan": generation_plan,
                 "fallback_chain": generation_plan.get("fallback_chain", []),
                 **preset_metadata,
+                "model_selection": "explicit" if has_explicit_model else "automatic",
                 "preprocessing": preprocessing_metadata,
                 "preprocessing_review_override": mesh_request.preprocessing_review_override,
                 "enhancement_enabled": mesh_request.enhancement_enabled,
@@ -1407,7 +1414,13 @@ async def image_to_textured_mesh(
                 default_feature="image_to_textured_mesh",
                 scheduler=scheduler,
             )
-        elif is_auto and would_have_chosen:
+        elif (
+            is_auto
+            and would_have_chosen
+            and scheduler.validate_model_preference(
+                would_have_chosen, "image_to_textured_mesh"
+            )
+        ):
             if mesh_request.intent:
                 _, feature, preset, preset_metadata = await _resolve_generation_plan(
                     mesh_request,
@@ -1662,6 +1675,7 @@ async def image_to_textured_mesh(
                 "plan": generation_plan,
                 "fallback_chain": generation_plan.get("fallback_chain", []),
                 **preset_metadata,
+                "model_selection": "explicit" if has_explicit_model else "automatic",
                 "preprocessing": preprocessing_metadata,
                 "preprocessing_review_override": mesh_request.preprocessing_review_override,
                 "enhancement_enabled": mesh_request.enhancement_enabled,

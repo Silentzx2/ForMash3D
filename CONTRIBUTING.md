@@ -90,7 +90,7 @@ The backend CPU contract suite uses the geometry libraries listed in `.github/wo
 Two GitHub Actions workflows live under `.github/workflows/`:
 
 - **Backend Runtime Contract CI** (`.github/workflows/backend-runtime-ci.yml`): compiles the backend sources, checks `backend/scripts/download_models.sh` shell syntax, and runs `backend/tests/` plus the third-party runtime-path contract on Python 3.10.
-- **Frontend CI** (`.github/workflows/frontend-ci.yml`): installs dependencies with Bun, runs the TypeScript type-check (`bun run test`) and the production build (`bun run build`).
+- **Frontend CI** (`.github/workflows/frontend-ci.yml`): installs dependencies with Bun, runs the TypeScript type-check (`bun run test`), all Bun contract tests (`bun test`), and the production build (`bun run build`).
 
 The backend workflow runs on pushes and pull requests targeting `main` and `dev`; the frontend workflow runs on pushes to `dev` and on pull requests targeting `dev` or `main`. Local verification should mirror the CI commands before opening a pull request.
 

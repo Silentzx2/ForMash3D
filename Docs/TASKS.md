@@ -8,7 +8,7 @@ This file replaces the former task index with an actionable cleanup/wiring plan.
 
 ## Current execution status — 2026-10-22
 
-The user authorized all audit batches in parallel. The graph-helper boundary, request/seed routing, adapter profile ownership, topology repair, quality-gate status, collision isolation, artifact hashing, and sample-image request path have source changes and regression coverage. Backend CPU contracts pass in a clean Python 3.10 environment. GPU/model inference, deployed API smoke tests, Blender/UniRig execution, browser validation, and a production build are not implied by these results; see the master audit for the final verification matrix and remaining limits.
+The user authorized all audit batches in parallel. In addition to the graph/request/quality fixes, this execution corrected automatic-versus-explicit model fallback, feature-compatible planner selection, and physics/quality policy ownership. Physics UI defaults are a minimal mirror of `backend/config/quality.yaml`, guarded by a parity test. The Python 3.10 backend suite passed 50 tests before that final parity assertion was added; the two configuration SSOT tests pass under Python 3.14, but the complete backend suite has not been rerun in the current interpreter environment. Frontend validation passed: 52 Bun tests, TypeScript, changed-file ESLint (0 errors; 58 warnings), and production build. Browser interaction, GPU/model inference, deployed API smoke tests, Blender stages, and UniRig execution remain NOT RUN; see the master audit for exact limits.
 
 ## Rules before changing code
 
@@ -30,7 +30,7 @@ File: features/graph/utils/graphHelpers.js
 - [x] The current copied file uses relative imports such as ./workflowFileInputs and ./ids, but those sibling files are absent from features/graph/utils in the tracked tree. The duplicate therefore points at missing modules.
 - [x] Keep the nested path as a re-export shim because GraphPage imports through that path; do not remove the path before updating all imports.
 - [x] Confirm root utility exports cover every symbol imported by GraphPage and graph node components.
-- [ ] Run the frontend typecheck, lint, and production build; add a small route/import contract test if the build does not cover this import boundary.
+- [x] Run the frontend typecheck, lint, and production build; the graph re-export contract is covered by frontend tests. Full lint reported warnings but no errors.
 
 ### P0-2. Make the quality gate outcome real and observable
 
@@ -44,7 +44,7 @@ Files: backend/core/quality/evaluation.py, backend/core/quality/metrics.py, back
 
 ### P0-3. Verify the graph/UI integration and test coverage
 
-- [ ] Run a full frontend typecheck, ESLint, and production build against dev after P0-1.
+- [x] Run the frontend typecheck, ESLint, and production build against dev after P0-1; see the verification matrix for warning and runtime limits.
 - [ ] Check actual route mounts and navigation entry points before deleting pages/panels. Keep Next.js conventional files such as app/icon.svg and app/apple-icon.png unless metadata and public references prove they are redundant.
 - [ ] Keep root/shared UI components until a complete import graph and build prove they are unused; tiny files are not automatically dead code.
 - [ ] Add any missing lightweight import/route contracts to CI so future dangling relative imports fail before merge.

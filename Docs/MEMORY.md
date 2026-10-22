@@ -4,7 +4,9 @@
 - Sample SVG inputs now rasterize to PNG and use the standard upload path. Generation request contracts preserve an explicit seed of zero, honor explicit model choice, and keep production settings separate from adapter-owned inference.
 - Auto-Repair OFF preserves geometry; final topology and master-drift gate failures or missing required comparisons affect production status. Safe hole repair is bounded/configured, collision artifacts remain isolated, and fallback/error details are retained.
 - Artifact hashing uses the canonical helper. Quality thresholds remain configured in `backend/config/quality.yaml`.
-- Backend CPU contracts passed in a clean Python 3.10 environment: 44 passed, 1 SQLAlchemy deprecation warning. Frontend contract tests and typecheck passed in the existing session. GPU/model inference, browser verification, production build, deployed API smoke tests, Blender bake/retopology and UniRig execution were not run.
+- The audit follow-up fixed automatic-vs-explicit model fallback and feature compatibility for planner-selected models. Physics defaults, bounds, comparison sampling, and collision quality profiles are configured in `backend/config/quality.yaml`; the UI uses a minimal defaults/bounds mirror enforced by `backend/tests/test_config_ssot.py`.
+- The full Python 3.10 backend suite passed 50 tests before the final config-mirror test was added. Both config SSOT tests pass in the current Python 3.14 environment; the full backend suite was not rerun there because the required Python 3.10 test dependencies are not currently installed.
+- Frontend validation: 52 Bun tests passed, TypeScript passed, production build passed, and targeted ESLint on changed files reported 0 errors and 58 warnings. Browser interaction, GPU/model inference, deployed API smoke tests, Blender bake/retopology, and UniRig execution are NOT RUN.
 - TRELLIS's requested/effective step-count discrepancy remains unresolved pending measured comparison and explicit approval; do not change the active profile or call cap without that approval.
 
 ## 2026-10-21 — Route / Page / Function Mount Fix Follow-up

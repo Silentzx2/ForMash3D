@@ -2448,8 +2448,7 @@ def run_postprocess_job(
         master_quality_report = compare_meshes(
             mesh,
             uv_mesh,
-            sample_count=4096,
-            seed=0,
+            seed=1,
         )
         master_quality_report["interpretation"] = "master_vs_derivative_diagnostic"
         master_quality_report["quality_gate"] = quality_gate(master_quality_report)

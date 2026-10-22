@@ -16,6 +16,8 @@ Production mesh-finishing pipeline ported from 3DGenStudio and adapted to the Fo
 
 The master asset is never modified by these services. The production pipeline can bake normal maps when requested and supported; it does not synthesize a new base-color texture during post-processing. Textured models retain the material/UV data produced by the selected model, while the dedicated Texture page owns AI painting. Integration code in the next stage owns the ForMash3D asset workspace and lifecycle.
 
+`pipeline.py` is the production orchestrator; it promotes the immutable master and evaluates derivative, topology, quality, and artifact status. Tunable mesh comparison policy, physics defaults/bounds, and collision quality profiles are read from `backend/config/quality.yaml` through `backend/core/config.py`, not defined as duplicate code-level recipes.
+
 ## Runtime boundary
 
 The root `backend/postprocess` tree is the single production implementation. Interactive mesh tools are mounted by the main FastAPI application under `/api/v1/mesh-tools/*`; the retired `backend/postprocess/app` sidecar implementation and Python 3.13 runtime are not part of the default product path.
