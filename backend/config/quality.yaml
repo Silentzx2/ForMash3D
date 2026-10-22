@@ -10,6 +10,7 @@ holes:
 
 gate:
   strict: false
+  max_native_mesh_normalized_drift: 0.15
   max_non_manifold_edges: 0
   max_non_manifold_vertices: 0
   max_holes: 0

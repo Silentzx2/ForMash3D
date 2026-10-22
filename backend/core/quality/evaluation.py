@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Any, Optional, Sequence, Tuple
 
@@ -113,10 +114,47 @@ def compare_paths(reference_path: str | Path, candidate_path: str | Path, **kwar
     return compare_meshes(load_mesh(reference_path), load_mesh(candidate_path), **kwargs)
 
 
-def quality_gate(report: dict[str, Any], max_normalized_drift: float = 0.15) -> dict[str, Any]:
-    drift = float(report.get("normalized_surface_drift", max(report.get("chamfer_distance", 0.0), 0.0) ** 0.5))
+def quality_gate(report: dict[str, Any], max_normalized_drift: float | None = None) -> dict[str, Any]:
+    """Gate the master-vs-derivative drift ratio from a compare_meshes report.
+
+    Threshold single-source-of-truth: quality.gate.max_native_mesh_normalized_drift
+    in backend/config/quality.yaml (loaded via core.config.get_quality_config).
+    A report without a usable drift metric must NOT pass: a failed gate decision
+    can only mean a measured outcome, never missing data.
+    """
+    if max_normalized_drift is None:
+        try:
+            from backend.core.config import get_quality_config
+        except ImportError:  # pragma: no cover - package-layout variant
+            from core.config import get_quality_config
+        max_normalized_drift = float(get_quality_config()["gate"]["max_native_mesh_normalized_drift"])
+    raw_drift = report.get("normalized_surface_drift")
+    if raw_drift is None:
+        return {
+            "passed": False,
+            "status": "missing_metrics",
+            "reason": "report has no normalized_surface_drift; cannot gate",
+            "threshold": float(max_normalized_drift),
+        }
+    try:
+        drift = float(raw_drift)
+    except (TypeError, ValueError, OverflowError):
+        return {
+            "passed": False,
+            "status": "invalid_metrics",
+            "reason": f"normalized_surface_drift is not numeric: {raw_drift!r}",
+            "threshold": float(max_normalized_drift),
+        }
+    if not math.isfinite(drift):
+        return {
+            "passed": False,
+            "status": "invalid_metrics",
+            "reason": f"normalized_surface_drift is not finite: {drift!r}",
+            "threshold": float(max_normalized_drift),
+        }
     return {
         "passed": drift <= float(max_normalized_drift),
+        "status": "ok",
         "normalized_surface_drift": drift,
         "threshold": float(max_normalized_drift),
     }

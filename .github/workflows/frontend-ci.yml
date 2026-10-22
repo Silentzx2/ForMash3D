@@ -42,7 +42,7 @@ jobs:
         run: bun run test
 
       - name: Run frontend route and help-content contract tests
-        run: bun test features/workspace/lib/generationParameters.test.mjs features/workspace/lib/workspaceRouteContract.test.mjs features/wiki/content/toolHelpContract.test.mjs
+        run: bun test features/workspace/lib/generationParameters.test.mjs features/workspace/lib/workspaceRouteContract.test.mjs features/wiki/content/toolHelpContract.test.mjs features/graph/utils/graphHelpersReexport.test.mjs
 
       - name: Build production application
         run: bun run build

@@ -109,6 +109,7 @@ def run_collision(mesh: trimesh.Trimesh, options: CollisionOptions | dict,
         options = CollisionOptions(**options)
 
     method = options.method
+    requested_method = method
     hulls: list[trimesh.Trimesh] = []
     fallback_reason = ""
 
@@ -123,39 +124,59 @@ def run_collision(mesh: trimesh.Trimesh, options: CollisionOptions | dict,
         hulls = [mesh.convex_hull.copy()]
     else:
         if coacd is None:
-            raise RuntimeError(
-                "CoACD is required for collision decomposition but is not installed or unavailable."
-            )
-        emit("decimate", 0.1, "Preparing the mesh…")
-        source = _decimate(mesh, int(options.input_faces))
-        _check_cancelled(cancel_checker)
+            fallback_reason = "CoACD is unavailable; used a convex-hull fallback."
+        else:
+            emit("decimate", 0.1, "Preparing the mesh…")
+            source = _decimate(mesh, int(options.input_faces))
+            _check_cancelled(cancel_checker)
+            emit("decompose", 0.2, f"Decomposing {len(source.faces):,} faces into convex parts…")
+            try:
+                try:
+                    coacd.set_log_level("error")
+                except Exception:  # noqa: BLE001 — older builds have no log control
+                    pass
+                parts = coacd.run_coacd(
+                    coacd.Mesh(np.asarray(source.vertices, dtype=np.float64),
+                               np.asarray(source.faces, dtype=np.int32)),
+                    threshold=float(options.threshold),
+                    max_convex_hull=int(options.max_hulls),
+                    resolution=int(options.resolution),
+                    mcts_nodes=int(options.mcts_nodes),
+                    mcts_iterations=int(options.mcts_iterations),
+                    mcts_max_depth=int(options.mcts_max_depth),
+                    preprocess_resolution=int(options.preprocess_resolution),
+                    seed=int(options.seed),
+                )
+                _check_cancelled(cancel_checker)
+                if not parts:
+                    raise RuntimeError("CoACD decomposition produced no parts.")
+            except InterruptedError:
+                raise
+            except Exception as exc:  # noqa: BLE001 — preserve render output with a proxy fallback
+                fallback_reason = (
+                    f"CoACD decomposition failed ({type(exc).__name__}): {exc}; "
+                    "used a convex-hull fallback."
+                )
 
-        emit("decompose", 0.2, f"Decomposing {len(source.faces):,} faces into convex parts…")
-        try:
-            coacd.set_log_level("error")
-        except Exception:  # noqa: BLE001 — older builds have no log control
-            pass
-        parts = coacd.run_coacd(
-            coacd.Mesh(np.asarray(source.vertices, dtype=np.float64),
-                       np.asarray(source.faces, dtype=np.int32)),
-            threshold=float(options.threshold),
-            max_convex_hull=int(options.max_hulls),
-            resolution=int(options.resolution),
-            mcts_nodes=int(options.mcts_nodes),
-            mcts_iterations=int(options.mcts_iterations),
-            mcts_max_depth=int(options.mcts_max_depth),
-            preprocess_resolution=int(options.preprocess_resolution),
-            seed=int(options.seed),
-        )
-        _check_cancelled(cancel_checker)
-        if not parts:
-            raise RuntimeError("CoACD decomposition produced no parts.")
-        emit("hulls", 0.7, f"Making {len(parts)} hulls…")
-        for vertices, faces in parts:
-            part = trimesh.Trimesh(np.asarray(vertices, dtype=np.float64),
-                                   np.asarray(faces, dtype=np.int64), process=False)
-            if len(part.faces) >= 4:
-                hulls.append(part.convex_hull)
+            if not fallback_reason:
+                emit("hulls", 0.7, f"Making {len(parts)} hulls…")
+                try:
+                    for vertices, faces in parts:
+                        part = trimesh.Trimesh(np.asarray(vertices, dtype=np.float64),
+                                               np.asarray(faces, dtype=np.int64), process=False)
+                        if len(part.faces) >= 4:
+                            hulls.append(part.convex_hull)
+                    if not hulls:
+                        raise RuntimeError("CoACD decomposition produced no usable hulls.")
+                except Exception as exc:  # noqa: BLE001 — reject malformed decomposition output
+                    fallback_reason = (
+                        f"CoACD returned unusable hull data ({type(exc).__name__}): {exc}; "
+                        "used a convex-hull fallback."
+                    )
+
+        if fallback_reason:
+            method = "convex_hull"
+            hulls = [mesh.convex_hull.copy()]
 
     if not hulls:
         raise RuntimeError("Collision generation produced no hulls.")
@@ -186,6 +207,7 @@ def run_collision(mesh: trimesh.Trimesh, options: CollisionOptions | dict,
 
     stats = {
         "method": method,
+        "requested_method": requested_method,
         "parts": len(hulls),
         "faces": int(sum(len(h.faces) for h in hulls)),
         "vertices": int(sum(len(h.vertices) for h in hulls)),

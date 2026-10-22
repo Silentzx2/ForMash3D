@@ -6,6 +6,10 @@ Scope: backend, core, quality, API, model adapters, post-processing, frontend/fe
 
 This file replaces the former task index with an actionable cleanup/wiring plan. The previous file is preserved in Docs/TASKS_BEFORE_CODEBASE_CLEANUP_2026-10-21.md. The consolidated repair context remains in Docs/MASTER_AUDIT_AND_REPAIR_PLAN.md.
 
+## Current execution status — 2026-10-22
+
+The user authorized all audit batches in parallel. The graph-helper boundary, request/seed routing, adapter profile ownership, topology repair, quality-gate status, collision isolation, artifact hashing, and sample-image request path have source changes and regression coverage. Backend CPU contracts pass in a clean Python 3.10 environment. GPU/model inference, deployed API smoke tests, Blender/UniRig execution, browser validation, and a production build are not implied by these results; see the master audit for the final verification matrix and remaining limits.
+
 ## Rules before changing code
 
 - Do not delete a file only because a simple text search did not find an import. Check dynamic imports, reflection, registries, CLI entry points, Next.js conventions, plugin loading, tests, deployment scripts, and the backend/thirdparty Git submodule.
@@ -22,21 +26,21 @@ This file replaces the former task index with an actionable cleanup/wiring plan.
 
 File: features/graph/utils/graphHelpers.js
 
-- [ ] Replace the duplicated implementation with a compatibility re-export from features/utils/graphHelpers.js. The root helper is the canonical implementation.
-- [ ] The current copied file uses relative imports such as ./workflowFileInputs and ./ids, but those sibling files are absent from features/graph/utils in the tracked tree. The duplicate therefore points at missing modules.
-- [ ] Keep the nested path as a re-export shim because GraphPage imports through that path; do not remove the path before updating all imports.
-- [ ] Confirm root utility exports cover every symbol imported by GraphPage and graph node components.
+- [x] Replace the duplicated implementation with a compatibility re-export from features/utils/graphHelpers.js. The root helper is the canonical implementation.
+- [x] The current copied file uses relative imports such as ./workflowFileInputs and ./ids, but those sibling files are absent from features/graph/utils in the tracked tree. The duplicate therefore points at missing modules.
+- [x] Keep the nested path as a re-export shim because GraphPage imports through that path; do not remove the path before updating all imports.
+- [x] Confirm root utility exports cover every symbol imported by GraphPage and graph node components.
 - [ ] Run the frontend typecheck, lint, and production build; add a small route/import contract test if the build does not cover this import boundary.
 
 ### P0-2. Make the quality gate outcome real and observable
 
 Files: backend/core/quality/evaluation.py, backend/core/quality/metrics.py, backend/postprocess/pipeline.py, backend/core/scheduler/multiprocess_scheduler.py
 
-- [ ] Trace the production quality report from master mesh comparison to the final result/status. pipeline.py calls compare_meshes and quality_gate; verify whether a failed gate changes the result, blocks an unsafe promotion, or is merely recorded as metadata.
-- [ ] Define and test the actual policy for pass, warning, fail, skipped, and missing metrics. Do not silently turn missing metrics into a pass.
-- [ ] Ensure the quality decision applies to derived output only and never mutates master/source.glb.
-- [ ] Reuse quality.yaml thresholds; do not add another hard-coded threshold table.
-- [ ] Keep diagnostics honest: a diagnostic comparison without ground truth must not be described as competitive parity or proof of visual superiority.
+- [x] Trace the production quality report from master mesh comparison to the final result/status. pipeline.py calls compare_meshes and quality_gate; verify whether a failed gate changes the result, blocks an unsafe promotion, or is merely recorded as metadata.
+- [x] Define and test the actual policy for pass, warning, fail, skipped, and missing metrics. Do not silently turn missing metrics into a pass.
+- [x] Ensure the quality decision applies to derived output only and never mutates master/source.glb.
+- [x] Reuse quality.yaml thresholds; do not add another hard-coded threshold table.
+- [x] Keep diagnostics honest: a diagnostic comparison without ground truth must not be described as competitive parity or proof of visual superiority.
 
 ### P0-3. Verify the graph/UI integration and test coverage
 

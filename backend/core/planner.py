@@ -250,14 +250,17 @@ def plan_generation(
     candidates: List[Dict[str, Any]] = []
 
     explicit_model = request.get("model_preference") or request.get("model") or request.get("adapter")
+    if explicit_model is not None:
+        explicit_model = str(explicit_model).strip()
+        if explicit_model.lower() in ("auto", "default", "none", ""):
+            explicit_model = None
     auto_mode = request.get("auto_mode")
     if auto_mode is None:
-        auto_mode = (
-            explicit_model is None
-            or str(explicit_model).strip().lower() in ("auto", "default", "none", "")
-        )
+        auto_mode = explicit_model is None
     else:
         auto_mode = bool(auto_mode)
+    if explicit_model is not None:
+        auto_mode = False
 
     # Fallback of last resort candidate definition
     fallback_resort = rules.get("fallback_of_last_resort", {
@@ -561,7 +564,10 @@ def resolve_seed_plan(
     max_candidates = int(seeds_cfg.get("max_candidates") or 4)
     candidate_count = min(max(candidate_count, 1), max_candidates)
 
-    base_seed = int(model_inputs.get("seed") or seeds_cfg.get("base_seed") or 0)
+    seed = model_inputs.get("seed")
+    if seed is None:
+        seed = seeds_cfg.get("base_seed", 0)
+    base_seed = int(seed)
     seed_step = int(seeds_cfg.get("seed_step") or 0)
     return {
         "candidate_count": candidate_count,

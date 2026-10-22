@@ -218,8 +218,8 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
 
             # EXPERIMENTAL_MAX_DETAIL: upstream Hunyuan3D-Paint demo supports up to 9 views and 768 per-view resolution.
             # Ask the user once and require explicit confirmation before future changes to these locked defaults.
-            max_num_view = 9
-            resolution = 768
+            max_num_view = _LOCKED_INFERENCE_PROFILE["max_num_view"]
+            resolution = _LOCKED_INFERENCE_PROFILE["resolution"]
             conf = Hunyuan3DPaintConfig(max_num_view, resolution)
             planned_gpus = [
                 int(gpu) for gpu in (getattr(self, "resource_plan", None) or {}).get("gpu_ids", [])
@@ -454,8 +454,8 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
             if output_format not in self.supported_output_formats:
                 raise ValueError(f"Unsupported output format: {output_format}")
 
-            max_num_view = inputs.get("max_num_view", 12)
-            resolution = int(inputs.get("resolution", 768))
+            max_num_view = inputs["max_num_view"]
+            resolution = int(inputs["resolution"])
 
             # Strictly enforce 4K (4096) and 8K (8192) resolution routing for Hunyuan3D-Paint-v2-1
             raw_tex_res = inputs.get("texture_resolution", 4096)
@@ -657,4 +657,3 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
 
 # Alias for backward-compatibility and clean imports
 Hunyuan3DPaintV21Adapter = Hunyuan3DPaintV21ImageMeshPaintingAdapter
-

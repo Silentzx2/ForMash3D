@@ -396,6 +396,7 @@ _QUALITY_REQUIRED_KEYS = (
     "shared.feature_edge_angle_deg",
     "holes.max_hole_vertices", "holes.max_hole_perimeter",
     "gate.strict", "gate.max_non_manifold_edges", "gate.max_non_manifold_vertices",
+    "gate.max_native_mesh_normalized_drift",
     "gate.max_holes", "gate.max_floater_ratio", "gate.max_degenerate_faces",
     "gate.min_aspect_ratio_p1", "gate.min_aspect_ratio_p5",
     "decimation.memory_safe_threshold_triangles", "decimation.max_deviation_deg",

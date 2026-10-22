@@ -902,3 +902,11 @@ The Next.js 16 Presentation Layer unifies all creation, editing, retopology, rig
 - Existing local checkpoint directories are preferred; a local Paint pipeline must include `model_index.json`, and a local DINOv2 checkpoint must include `config.json` plus model weights.
 - A missing absolute path or incomplete local checkpoint fails with an actionable diagnostic instead of silently switching to an unrelated remote model. Explicit Hugging Face repository IDs remain supported.
 - Dependency-light source-resolution regression tests run from the third-party submodule in backend CI. GPU checkpoint loading/inference still requires the supported GPU environment.
+
+## Generation and post-process audit update (2026-10-22)
+
+- The Generate panel's sample SVG inputs use the normal image upload contract after rasterization; request construction keeps runtime seed input separate from production controls.
+- Adapter profiles remain the owner of model-specific inference schedules. The scheduler filters adapter-owned override keys; the TRELLIS requested/effective step discrepancy is documented but not retuned without measured evidence and approval.
+- Quality policy reads configured limits from `backend/config/quality.yaml`. Auto-Repair OFF does not mutate the mesh, and final topology or master-drift failures (including unavailable comparisons) are reflected in the production result rather than treated as passes.
+- Collision artifacts remain separate from render geometry, and backend CPU contract tests cover safe repair, quality status, seed handling, adapter isolation, collision fallback and canonical artifact hashes.
+- The verification boundary is explicit: CPU contracts do not prove GPU inference, output quality, deployed API behavior, or optional Blender/UniRig execution.

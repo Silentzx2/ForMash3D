@@ -178,6 +178,20 @@ test('Rule 8: missing image input throws a clear actionable error', () => {
   );
 });
 
+test('sample SVG paths are uploaded before becoming generation inputs', () => {
+  assert.throws(
+    () => buildGenerationParameters({ image: '/samples/mech-sentinel.svg' }),
+    /No usable image input/
+  );
+
+  const uploadedSample = buildGenerationParameters({
+    image: '/api/v1/file-upload/download/sample-file-id',
+    imageFileId: 'sample-file-id',
+  });
+  assert.equal(uploadedSample.body.image_file_id, 'sample-file-id');
+  assert.equal(uploadedSample.body.image_base64, undefined);
+});
+
 // Rule 9: Legacy saved presets containing old inference override keys cannot reintroduce those values.
 test('Rule 9: legacy inference override keys in saved presets are not merged', () => {
   const legacyPreset = {
