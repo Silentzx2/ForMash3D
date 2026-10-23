@@ -9,11 +9,11 @@
 
 
 # Shared backend/TripoSG/Hunyuan/TRELLIS/Paint3D unified runtime versions
-transformers==4.44.2
-diffusers==0.30.3
+transformers==5.10.1
+diffusers==0.38.0
 huggingface_hub>=0.25.0,<0.26.0
 # Unique3D imports datasets while registering inference trainers
-datasets==3.6.0
+datasets==5.0.1
 safetensors>=0.4.4
 einops>=0.8.0
 rembg>=2.0.60
@@ -40,7 +40,7 @@ sqlalchemy==2.0.23
 
 # File handling and async I/O
 aiofiles==23.2.1
-Pillow==12.3.0
+Pillow==13.0.0
 
 # GPU monitoring and system info
 GPUtil==1.4.0
@@ -59,7 +59,7 @@ python-box>=7.0.0
 # Development and testing
 pytest==9.0.3
 pytest-asyncio==0.21.1
-black==26.3.1
+black==26.10.1
 flake8==6.1.0
 mypy==1.7.1
 
