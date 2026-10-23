@@ -1006,15 +1006,7 @@ async def get_jobs_history(
     try:
         from datetime import datetime
 
-        from api.dependencies import get_current_user_or_none
-        from core.auth.models import UserRole
         from core.scheduler.job_queue import JobStatus
-
-        # Get current user for filtering
-        current_user = await get_current_user_or_none(
-            request.headers.get("authorization") if request else None,
-            request
-        )
 
         # Validate limit
         if limit > 500:
@@ -1040,15 +1032,11 @@ async def get_jobs_history(
                     return None
 
             page_status = status.lower() if status else None
-            user_id = None
-            if current_user and current_user.role != UserRole.ADMIN:
-                user_id = current_user.user_id
 
             page_jobs, total_jobs = await asyncio.to_thread(
                 db_manager.get_jobs_page,
                 status=page_status,
                 feature=feature,
-                user_id=user_id,
                 start_date=parse_date(start_date),
                 end_date=parse_date(end_date),
                 limit=limit,
@@ -1118,11 +1106,6 @@ async def get_jobs_history(
                 if job_dict.get("status") == "completed" and job_dict.get("result"):
                     _ensure_production_result_urls(job_dict.get("job_id") or job_dict.get("id"), job_dict["result"])
                 
-                # User filtering: non-admin users can only see their own jobs
-                if current_user and current_user.role != UserRole.ADMIN:
-                    job_user_id = job_dict.get("user_id")
-                    if job_user_id != current_user.user_id:
-                        continue
 
                 # Apply feature filter if provided
                 if feature and job_dict.get("feature") != feature:
@@ -1190,26 +1173,11 @@ async def get_jobs_history(
 async def get_job_status(job_id: str, request: Request):
     """Get status of a specific job with visitable URLs for files"""
     try:
-        from api.dependencies import get_current_user_or_none
-        from core.auth.models import UserRole
-
         scheduler = await get_scheduler(request)
         job_status = await scheduler.get_job_status(job_id)
 
         if job_status is None:
             raise HTTPException(status_code=404, detail="Job not found")
-
-        # User filtering: non-admin users can only see their own jobs
-        current_user = await get_current_user_or_none(
-            request.headers.get("authorization"),
-            request
-        )
-        
-        if current_user:
-            job_user_id = job_status.get("user_id")
-            # If user is not admin and job doesn't belong to them, deny access
-            if current_user.role != UserRole.ADMIN and job_user_id != current_user.user_id:
-                raise HTTPException(status_code=403, detail="Access denied to this job")
 
         job_status.setdefault("api_version", "1")
 
@@ -1439,25 +1407,11 @@ async def download_job_result(
         FileResponse for direct download or JSON with base64 data
     """
     try:
-        from api.dependencies import get_current_user_or_none
-        from core.auth.models import UserRole
-
         scheduler = await get_scheduler(request)
         job_status = await scheduler.get_job_status(job_id)
 
         if job_status is None:
             raise HTTPException(status_code=404, detail="Job not found")
-
-        # User filtering: non-admin users can only download their own jobs
-        current_user = await get_current_user_or_none(
-            request.headers.get("authorization"),
-            request
-        )
-
-        if current_user:
-            job_user_id = job_status.get("user_id")
-            if current_user.role != UserRole.ADMIN and job_user_id != current_user.user_id:
-                raise HTTPException(status_code=403, detail="Access denied to this job")
 
         if job_status.get("status") != "completed":
             raise HTTPException(
@@ -1825,9 +1779,6 @@ async def download_job_thumbnail(
         FileResponse for direct download or JSON with base64 data
     """
     try:
-        from api.dependencies import get_current_user_or_none
-        from core.auth.models import UserRole
-
         raw_status = scheduler.get_job_status(job_id)
         if asyncio.iscoroutine(raw_status):
             job_status = await raw_status
@@ -1836,17 +1787,6 @@ async def download_job_thumbnail(
 
         if job_status is None:
             raise HTTPException(status_code=404, detail="Job not found")
-
-        # User filtering: non-admin users can only access their own jobs
-        current_user = await get_current_user_or_none(
-            request.headers.get("authorization"),
-            request
-        )
-
-        if current_user:
-            job_user_id = job_status.get("user_id")
-            if current_user.role != UserRole.ADMIN and job_user_id != current_user.user_id:
-                raise HTTPException(status_code=403, detail="Access denied to this job")
 
         if job_status.get("status") != "completed":
             raise HTTPException(
@@ -2003,25 +1943,11 @@ async def download_job_input(
         FileResponse for direct download or JSON with base64 data
     """
     try:
-        from api.dependencies import get_current_user_optional
-        from core.auth.models import UserRole
-        
         scheduler = await get_scheduler(request)
         job_status = await scheduler.get_job_status(job_id)
 
         if job_status is None:
             raise HTTPException(status_code=404, detail="Job not found")
-        
-        # User filtering: non-admin users can only access their own jobs
-        current_user = await get_current_user_optional(
-            request.headers.get("authorization"),
-            request
-        )
-        
-        if current_user:
-            job_user_id = job_status.get("user_id")
-            if current_user.role != UserRole.ADMIN and job_user_id != current_user.user_id:
-                raise HTTPException(status_code=403, detail="Access denied to this job")
 
         # Get input image path from job inputs
         inputs = job_status.get("inputs", {})
@@ -2104,25 +2030,11 @@ async def get_job_result_info(job_id: str, request: Request):
         Detailed job result information including file metadata
     """
     try:
-        from api.dependencies import get_current_user_optional
-        from core.auth.models import UserRole
-        
         scheduler = await get_scheduler(request)
         job_status = await scheduler.get_job_status(job_id)
 
         if job_status is None:
             raise HTTPException(status_code=404, detail="Job not found")
-        
-        # User filtering
-        current_user = await get_current_user_optional(
-            request.headers.get("authorization"),
-            request
-        )
-        
-        if current_user:
-            job_user_id = job_status.get("user_id")
-            if current_user.role != UserRole.ADMIN and job_user_id != current_user.user_id:
-                raise HTTPException(status_code=403, detail="Access denied to this job")
 
         result = job_status.get("result", {})
         if not result:
@@ -2189,21 +2101,6 @@ async def get_job_result_info(job_id: str, request: Request):
         )
 
 
-async def _assert_job_access(request: Request, job_status: Dict[str, Any]) -> None:
-    from api.dependencies import get_current_user_or_none
-    from core.auth.models import UserRole
-
-    current_user = await get_current_user_or_none(
-        request.headers.get("authorization"), request
-    )
-    if (
-        current_user
-        and current_user.role != UserRole.ADMIN
-        and job_status.get("user_id") != current_user.user_id
-    ):
-        raise HTTPException(status_code=403, detail="Access denied to this job")
-
-
 @router.get("/jobs/{job_id}/candidates/{candidate_id}/download", summary="Download specific candidate mesh")
 async def download_candidate_mesh(
     job_id: str,
@@ -2214,7 +2111,6 @@ async def download_candidate_mesh(
     job_status = await scheduler.get_job_status(job_id)
     if not job_status:
         raise HTTPException(status_code=404, detail="Job not found")
-    await _assert_job_access(request, job_status)
     result = job_status.get("result") or {}
     candidates = result.get("candidates") or []
     match = next((c for c in candidates if c.get("candidate_id") == candidate_id), None)
@@ -2240,7 +2136,6 @@ async def download_candidate_thumbnail(
     job_status = await scheduler.get_job_status(job_id)
     if not job_status:
         raise HTTPException(status_code=404, detail="Job not found")
-    await _assert_job_access(request, job_status)
     result = job_status.get("result") or {}
     candidates = result.get("candidates") or []
     match = next((c for c in candidates if c.get("candidate_id") == candidate_id), None)
@@ -2273,7 +2168,6 @@ async def select_candidate_mesh(
     job_status = await scheduler.get_job_status(job_id)
     if not job_status:
         raise HTTPException(status_code=404, detail="Job not found")
-    await _assert_job_access(request, job_status)
     result = job_status.get("result") or {}
     candidates = result.get("candidates") or []
     chosen = next((c for c in candidates if c.get("candidate_id") == candidate_id), None)
@@ -2333,22 +2227,12 @@ async def retry_job_postprocess(
 ):
     """Rebuild derived production artifacts from the immutable canonical master."""
     try:
-        from api.dependencies import get_current_user_optional
-        from core.auth.models import UserRole
         from postprocess.pipeline import run_postprocess_job
 
         scheduler = await get_scheduler(request)
         job_status = await scheduler.get_job_status(job_id)
         if job_status is None:
             raise HTTPException(status_code=404, detail="Job not found")
-
-        current_user = await get_current_user_optional(
-            request.headers.get("authorization"), request
-        )
-        if current_user:
-            job_user_id = job_status.get("user_id")
-            if current_user.role != UserRole.ADMIN and job_user_id != current_user.user_id:
-                raise HTTPException(status_code=403, detail="Access denied to this job")
 
         result = job_status.get("result") or {}
         asset_root = result.get("asset_root")
@@ -2661,25 +2545,11 @@ async def delete_job_result(
         Confirmation of deletion
     """
     try:
-        from api.dependencies import get_current_user_optional
-        from core.auth.models import UserRole
-        
         scheduler = await get_scheduler(request)
         job_status = await scheduler.get_job_status(job_id)
 
         if job_status is None:
             raise HTTPException(status_code=404, detail="Job not found")
-        
-        # User filtering: users can only delete their own job results
-        current_user = await get_current_user_optional(
-            request.headers.get("authorization"),
-            request
-        )
-        
-        if current_user:
-            job_user_id = job_status.get("user_id")
-            if current_user.role != UserRole.ADMIN and job_user_id != current_user.user_id:
-                raise HTTPException(status_code=403, detail="Access denied to this job")
 
         result = job_status.get("result", {})
         if not result:
@@ -2742,27 +2612,13 @@ async def delete_job(
         Confirmation of deletion
     """
     try:
-        from api.dependencies import get_current_user_optional
-        from core.auth.models import UserRole
-        
         scheduler = await get_scheduler(request)
-        
+
         # Check if job exists
         job_status = await scheduler.get_job_status(job_id)
         if job_status is None:
             raise HTTPException(status_code=404, detail="Job not found")
-        
-        # User filtering: users can only delete their own jobs
-        current_user = await get_current_user_optional(
-            request.headers.get("authorization"),
-            request
-        )
-        
-        if current_user:
-            job_user_id = job_status.get("user_id")
-            if current_user.role != UserRole.ADMIN and job_user_id != current_user.user_id:
-                raise HTTPException(status_code=403, detail="Access denied to this job")
-        
+
         # Get canonical workspace before deletion; client paths are never trusted.
         asset_root = (job_status.get("result") or {}).get("asset_root")
         asset_root_path = None
