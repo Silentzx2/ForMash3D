@@ -104,26 +104,45 @@ else
 fi
 
 INSTALL="$ROOT/backend/scripts/install.sh"
-total="$(grep -ciE 'cu124|kaolin|natten|pytorch3d' "$INSTALL" 2>/dev/null || true)"
-cuda_guard_lines="$(grep -n 'COMPUTE_MODE.*cuda' "$INSTALL" 2>/dev/null | cut -d: -f1 || true)"
-unguarded="$(
-  grep -nE 'cu124|kaolin|natten|pytorch3d' "$INSTALL" 2>/dev/null |
-    cut -d: -f1 |
-    while read -r line_no; do
-      if echo "$cuda_guard_lines" | grep -qE '^[0-9]+$' &&
-        echo "$cuda_guard_lines" | awk -v line="$line_no" '$1 <= line {found=1} END {exit !found}'; then
-        :
-      else
-        echo "$line_no"
-      fi
-    done
-)"
-unguarded_count="$(printf '%s\n' "$unguarded" | grep -cE '^[0-9]+$' 2>/dev/null || true)"
-if [[ "$unguarded_count" -eq 0 ]]; then
-  echo "  ✓ backend/scripts/install.sh: $total CUDA-only dependency references follow a CUDA guard"
+
+# Verify the CPU branch selects CPU PyTorch wheels and the CUDA index is in its else branch.
+if awk '
+  /^[[:space:]]*if[[:space:]].*COMPUTE_MODE.*== "cpu"/ { in_torch=1; next }
+  in_torch {
+    if (/whl\/cpu/) cpu_index=1
+    if (cpu_index && /^[[:space:]]*else[[:space:]]*$/) else_seen=1
+    if (else_seen && /whl\/cu124/) cuda_index=1
+    if (cuda_index && /^[[:space:]]*fi[[:space:]]*$/) { branch_closed=1; exit }
+  }
+  END { exit !(cpu_index && else_seen && cuda_index && branch_closed) }
+' "$INSTALL"; then
+  echo "  ✓ backend/scripts/install.sh: PyTorch CPU/CUDA indexes are separated by compute mode"
   PASS=$((PASS + 1))
 else
-  echo "  ✗ backend/scripts/install.sh: $unguarded_count possible unguarded CUDA-only dependency references"
+  echo "  ✗ backend/scripts/install.sh: PyTorch CPU/CUDA indexes are not correctly guarded"
+  FAIL=$((FAIL + 1))
+fi
+
+# The CUDA model stack must remain inside the second (outer) explicit CUDA-mode guard.
+if awk '
+  /^[[:space:]]*if[[:space:]].*COMPUTE_MODE.*== "cuda"/ {
+    cuda_guard_count++
+    if (cuda_guard_count == 2) { in_stack=1; depth=1; next }
+  }
+  in_stack {
+    if (/^[[:space:]]*if[[:space:]]/) depth++
+    if (/^[[:space:]]*fi[[:space:]]*$/) {
+      depth--
+      if (depth == 0) { in_stack=0; guard_closed=1 }
+    }
+    if (/(kaolin -f|spconv-cu124|pytorch3d-\\*|torch_scatter|xformers.*cu124|NATTEN_PREBUILT_URL=.*natten)/ && depth < 1) unguarded=1
+  }
+  END { exit !(cuda_guard_count >= 2 && guard_closed && !unguarded) }
+' "$INSTALL"; then
+  echo "  ✓ backend/scripts/install.sh: CUDA-only model stack is inside the CUDA-mode guard"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ backend/scripts/install.sh: CUDA-only model stack is not protected by the CUDA-mode guard"
   FAIL=$((FAIL + 1))
 fi
 
