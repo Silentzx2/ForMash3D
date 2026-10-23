@@ -1,3 +1,37 @@
+## 2026-10-23 — Production Readiness + Beta Phase
+
+- Auth removed entirely from backend + frontend (personal/self-hosted use, no paid SaaS)
+  - Deleted `get_auth_service`, `get_current_user`, `get_current_user_optional`, `require_admin`, `get_current_user_or_none` from `backend/api/dependencies.py`
+  - Removed auth checks from all routers: `system.py`, `mesh_generation.py`, `smart_generation.py`, `auto_rigging.py`, `motion_generation.py`, `mesh_retopology.py`, `mesh_uv_unwrapping.py`, `mesh_editing.py`, `mesh_segmentation.py`, `database.py`
+  - Deleted `backend/api/routers/users.py`
+  - Removed `auth_service` lifecycle from `backend/api/main_multiworker.py`
+  - Removed auth header forwarding from frontend API proxy (`app/api/v1/[...path]/route.ts`)
+  - Deleted `services/authPersistence.ts`
+- Feature improvements (Tripo/Meshy/Hyper3D parity — no segment/mesh-edit):
+  - `backend/config/smart_presets.yaml` — `slicer_handoff` added to all 8 intents
+  - `backend/core/smart_presets.py` — `slicer_handoff: False` default
+  - `backend/api/routers/mesh_generation.py` — `slicer_handoff`, `part_count_range`, `rig_type`, `export_formats` request fields wired to job inputs/metadata
+  - `frontend` — quad topology toggle, multi-variant selector (1-4), part segmentation presets (3-6/6-15/15+), rig type selector, export format selector in GeneratePanel
+  - `frontend` — quad-compatible smart UV toggle in TexturePanel
+- Task A — CPU-only auto mode (implemented, not pushed):
+  - `scripts/lib/compute_mode.sh` — shared resolver (auto|cpu|cuda)
+  - `scripts/setup.sh` — `--cpu`/`--gpu`/`--with-thirdparty`/`--update-thirdparty` flags, skips CUDA steps in CPU mode, `err()` defined, summary shows mode+skipped
+  - `scripts/start.sh` — CPU mode exports `CUDA_VISIBLE_DEVICES=""` and `FORMASH3D_COMPUTE=cpu`
+  - `manager.sh` — `setup` passes through flags
+  - `backend/scripts/install.sh` — CPU torch wheels, `ensure_release_wheels` cuda-only, model stacks in `install_model_stacks()`, ARDY optional with `--cpu-extras`
+  - `backend/requirements-core.txt` + `backend/requirements-models.txt` + `backend/requirements.txt` split
+  - `scripts/tests/script_test.sh` — resolver + static grep tests
+  - `.github/workflows/backend-runtime-ci.yml` — resolver test job
+- Task B — SEO/contributor growth (implemented, not pushed):
+  - README keyword H1, badges, TOC, contributor path, beta banner
+  - CONTRIBUTING.md CPU setup section
+  - CODE_OF_CONDUCT.md, SECURITY.md (root), PR template, labels.yml, config.yml
+  - docs/GOOD_FIRST_ISSUES.md (15 drafts), ARCHITECTURE_FOR_CONTRIBUTORS.md, GITHUB_SETUP.md, OUTREACH.md
+- Tests: `bun test` 54/54 pass, `pytest backend/tests/` 40 passed/6 skipped, `npx tsc --noEmit` zero errors
+- Git: dev branch pushed to origin/dev (not upstream)
+- Project marked BETA phase (README has Phase: BETA banner)
+- Zero `pre-alpha`/`prealpha` references remain in any `.md` file
+
 ## 2026-10-22 — Parallel Audit Repair Execution
 
 - The user authorized implementation across all batches in parallel. This task-specific authorization supersedes the older one-batch pause, but does not authorize speculative inference-profile retuning or overwriting collaborator changes.

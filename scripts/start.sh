@@ -46,6 +46,8 @@ fi
 
 # Export runtime environment defaults for workers and scheduler
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-8}"
+
+# Compute mode: export CUDA_VISIBLE_DEVICES="" and FORMASH3D_COMPUTE=cpu when no GPU
 if [[ -z "${CUDA_VISIBLE_DEVICES:-}" ]]; then
   if command -v nvidia-smi >/dev/null 2>&1; then
     NUM_GPUS=$(nvidia-smi -L 2>/dev/null | wc -l)
@@ -56,8 +58,13 @@ if [[ -z "${CUDA_VISIBLE_DEVICES:-}" ]]; then
     fi
   fi
 fi
-[[ -n "${HF_TOKEN:-}" ]] && export HF_TOKEN
-[[ -n "${HUGGINGFACE_TOKEN:-}" ]] && export HUGGINGFACE_TOKEN
+
+# In CPU mode, explicitly export CUDA_VISIBLE_DEVICES="" and FORMASH3D_COMPUTE=cpu
+if [[ "${FORMASH3D_COMPUTE:-}" == "cpu" ]]; then
+  export CUDA_VISIBLE_DEVICES=""
+  export FORMASH3D_COMPUTE=cpu
+  log "Compute mode: cpu — CUDA_VISIBLE_DEVICES cleared."
+fi
 
 # Ensure bun is on PATH if installed
 BUN_INSTALL_DIR="${BUN_INSTALL:-$HOME/.bun}"

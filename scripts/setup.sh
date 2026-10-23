@@ -11,6 +11,7 @@ log(){ printf "${GREEN}[SETUP]${NC} %s\n" "$*"; }
 info(){ printf "${CYAN}[INFO]${NC}  %s\n" "$*"; }
 warn(){ printf "${YELLOW}[WARN]${NC}  %s\n" "$*"; }
 fail(){ printf "${RED}[ERROR]${NC} %s\n" "$*" >&2; exit 1; }
+err(){ printf "${RED}[ERROR]${NC} %s\n" "$*" >&2; }
 
 ensure_thirdparty_submodule() {
   log "Ensuring thirdparty submodule is present and up-to-date..."
@@ -18,8 +19,15 @@ ensure_thirdparty_submodule() {
     log "Thirdparty submodule not found. Initializing..."
     git submodule update --init --recursive
   else
-    log "Updating thirdparty submodule to latest..."
-    git submodule update --remote --merge
+    if [[ "${UPDATE_THIRDPARTY:-0}" == "1" ]]; then
+      log "Updating thirdparty submodule to latest (--update-thirdparty)..."
+      git submodule update --remote --merge
+    elif [[ "${WITH_THIRDPARTY:-0}" == "1" ]]; then
+      log "Thirdparty submodule present; ensuring init only (no remote update)."
+      git submodule update --init --recursive
+    else
+      log "Thirdparty submodule present; skipping update (use --update-thirdparty to refresh)."
+    fi
   fi
 }
 # Load .env if present
@@ -33,6 +41,8 @@ fi
 # Parse command line flags
 AUTO_MODE=0
 SKIP_CUDA=0
+FORCE_CPU=0
+FORCE_CUDA=0
 ENV_MANAGER="${FORMASH3D_ENV_MANAGER:-conda}"
 
 while [[ $# -gt 0 ]]; do
@@ -42,8 +52,22 @@ while [[ $# -gt 0 ]]; do
       export NONINTERACTIVE=1
       shift
       ;;
-    --skip-cuda)
-      SKIP_CUDA=1
+    --cpu)
+      FORCE_CPU=1
+      export FORMASH3D_COMPUTE=cpu
+      shift
+      ;;
+    --gpu)
+      FORCE_CUDA=1
+      export FORMASH3D_COMPUTE=cuda
+      shift
+      ;;
+    --with-thirdparty)
+      WITH_THIRDPARTY=1
+      shift
+      ;;
+    --update-thirdparty)
+      UPDATE_THIRDPARTY=1
       shift
       ;;
     --conda)
@@ -71,6 +95,12 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+# ── Compute mode resolver ──────────────────────────────────────────────────
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/lib/compute_mode.sh"
+COMPUTE_MODE=$(resolve_compute_mode) || exit $?
+log "Compute mode: ${COMPUTE_MODE}"
 
 section(){ printf "\n${MAGENTA}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n${WHITE}${BOLD}  %s${NC}\n${MAGENTA}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n" "$*"; }
 
@@ -171,8 +201,13 @@ detect_gpu() {
   fi
 
   if [[ "$GPU_AVAILABLE" == "false" ]]; then
-    warn "No NVIDIA GPU detected — AI inference requires CUDA-capable hardware."
-    warn "The stack will start, but generation jobs will fail without a GPU."
+    if [[ "${COMPUTE_MODE:-}" == "cpu" ]]; then
+      warn "No NVIDIA GPU detected — compute mode is cpu. Model/CUDA dependencies will be skipped."
+      warn "The stack will start; image-to-3D generation jobs require a GPU and will be unavailable."
+    else
+      warn "No NVIDIA GPU detected — AI inference requires CUDA-capable hardware."
+      warn "The stack will start, but generation jobs will fail without a GPU."
+    fi
     if [[ "${REQUIRE_GPU:-}" == "1" ]]; then
       fail "REQUIRE_GPU=1 is set — aborting without GPU."
       exit 1
@@ -185,7 +220,7 @@ detect_gpu() {
       fi
     else
       warn "Non-interactive environment detected — proceeding with CPU fallback."
-      warn "Generation jobs will fail without a GPU."
+      warn "Model/CUDA dependencies will be skipped in cpu mode."
     fi
   fi
 }
@@ -685,9 +720,13 @@ install_backend(){
   log "Backend dependency installation completed."
 }
 
-summary(){
+summary() {
   section "Setup Complete"
   printf "${WHITE}${BOLD}  ForMash 3D is prepared.${NC}\n\n"
+  printf "  ${DIM}Compute mode:${NC} ${COMPUTE_MODE}\n"
+  if [[ "${COMPUTE_MODE:-}" == "cpu" ]]; then
+    printf "  ${DIM}Skipped:${NC} CUDA toolkit, release wheels, model stacks (GPU-dependent)\n"
+  fi
   printf "  ${DIM}Frontend:${NC}  http://localhost:3000\n"
   printf "  ${DIM}Backend:${NC}   http://localhost:7842\n"
   printf "  ${DIM}Docs:${NC}      http://localhost:7842/docs\n"
@@ -709,8 +748,14 @@ printf "  05. Run backend/scripts/install.sh\n\n"
 
 require_commands
 detect_gpu
-_sanitize_apt_cuda_sources
-setup_cuda_124
+
+if [[ "${COMPUTE_MODE:-}" == "cuda" ]]; then
+  _sanitize_apt_cuda_sources
+  setup_cuda_124
+else
+  log "Skipping CUDA setup steps (compute mode: cpu)."
+fi
+
 ensure_bun_or_npm
 ensure_uv
 ensure_redis
@@ -718,9 +763,26 @@ create_directories
 
 ensure_thirdparty_submodule
 
-download_release_wheels
-build_deps
+if [[ "${COMPUTE_MODE:-}" == "cuda" ]]; then
+  download_release_wheels
+  build_deps
+else
+  log "Skipping CUDA wheel download and build steps (compute mode: cpu)."
+fi
+
 install_frontend_deps
 
-install_backend
+install_backend_flags=()
+if [[ "${FORCE_CPU:-0}" == "1" ]]; then
+  install_backend_flags+=(--cpu)
+elif [[ "${FORCE_CUDA:-0}" == "1" ]]; then
+  install_backend_flags+=(--gpu)
+fi
+if [[ "${WITH_THIRDPARTY:-0}" == "1" ]]; then
+  install_backend_flags+=(--with-thirdparty)
+fi
+if [[ "${UPDATE_THIRDPARTY:-0}" == "1" ]]; then
+  install_backend_flags+=(--update-thirdparty)
+fi
+install_backend "${install_backend_flags[@]}"
 summary

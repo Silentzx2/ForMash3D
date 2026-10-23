@@ -31,6 +31,18 @@ cd ForMash3D
 bash scripts/setup.sh
 ```
 
+### CPU-only setup (no NVIDIA GPU)
+
+If you do not have an NVIDIA GPU, run setup in CPU mode. Model/CUDA dependencies are skipped; the studio, API, and post-processing tools remain available.
+
+```bash
+git clone https://github.com/Silentzx2/ForMash3D.git
+cd ForMash3D
+bash scripts/setup.sh --cpu
+```
+
+Use `--cpu` to force CPU mode even if a GPU is present, or `--gpu` to force CUDA mode. Use `--with-thirdparty` to initialize third-party model sources.
+
 Third-party model integrations are maintained under `backend/thirdparty/` in this repository. A normal checkout does not require a separate third-party repository.
 
 The maintained Wheels release is used for compatible prebuilt Python wheels; the installer falls back to source/index installation when a compatible wheel is unavailable.
@@ -109,7 +121,7 @@ Never commit credentials, model checkpoints, private URLs, or generated secrets.
 
 ## Security
 
-Do not disclose security vulnerabilities in public issues. Follow [Docs/SECURITY.md](Docs/SECURITY.md).
+Do not disclose security vulnerabilities in public issues. Follow [Docs/SECURITY.md](SECURITY.md).
 
 ## Documentation
 
