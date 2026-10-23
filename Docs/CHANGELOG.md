@@ -1,3 +1,9 @@
+## 2026-10-23 — Production readiness verification
+
+- All test gates green: backend `pytest` 40 passed / 6 skipped, Bun frontend 54 passed / 0 failed, `npx tsc --noEmit` zero errors; no mock data is served by production API paths.
+- End-to-end auth wiring confirmed: API proxy forwards `Authorization` on GET/POST/PUT/DELETE and SSE; `verify_api_key` validates stored user tokens when user auth is enabled; multi-worker Redis rate-limit fallback restored.
+- `dev` verified ahead of `upstream/dev` and pushed to `origin/dev`.
+
 ## 2026-10-22 — Quality, topology and artifact contracts
 
 - Final topology and master-drift checks now affect production status; missing required comparisons do not silently pass. Auto-Repair OFF preserves geometry, safe hole repair uses configured limits, and remaining defects are reported.

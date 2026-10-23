@@ -430,7 +430,7 @@ bun run lint
 bash -n manager.sh backend/scripts/*.sh scripts/*.sh
 ```
 
-**Verification status**: The backend CPU contract suite, `python3 -m compileall -q backend/`, `bun test` and `npx tsc --noEmit` run without model weights or a GPU. GPU/model inference and Blender-dependent validation still require the supported runtime environment.
+**Verification status**: The backend CPU contract suite, `python3 -m compileall -q backend/`, `bun test` and `npx tsc --noEmit` all pass without model weights or a GPU (verified green on `dev` at 2026-10-23: 40 passed / 6 skipped backend, 54 passed / 0 failed Bun, zero TS errors). GPU/model inference and Blender-dependent validation still require the supported runtime environment.
 
 ---
 

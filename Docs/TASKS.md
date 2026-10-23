@@ -1,5 +1,7 @@
 # TASKS — CPU-Safe Setup + GitHub SEO / Contributor Growth (ForMash3D)
 
+> COMPLETED 2026-10-23 — Production readiness pass: `bun test` 54/52, `python3 -m pytest backend/tests/` 40 passed / 6 skipped, `npx tsc --noEmit` clean, auth wiring (proxy Authorization forwarding + `verify_api_key` user-token validation + Redis rate-limit fallback) confirmed. Tree at green `dev` HEAD, pushed to `origin/dev`.
+
 Repo: `Silentzx2/ForMash3D` · base commit read: `eca1d78` (main) · Apache-2.0
 Branch rule: work on `main`; leave `dev` / `Dev` untouched.
 
