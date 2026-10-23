@@ -123,26 +123,31 @@ else
   FAIL=$((FAIL + 1))
 fi
 
-# The CUDA model stack must remain inside the second (outer) explicit CUDA-mode guard.
+# Check the guarded model dependencies anywhere in the file, including after the guard closes.
 if awk '
-  /^[[:space:]]*if[[:space:]].*COMPUTE_MODE.*== "cuda"/ {
-    cuda_guard_count++
-    if (cuda_guard_count == 2) { in_stack=1; depth=1; next }
-  }
-  in_stack {
-    if (/^[[:space:]]*if[[:space:]]/) depth++
-    if (/^[[:space:]]*fi[[:space:]]*$/) {
-      depth--
-      if (depth == 0) { in_stack=0; guard_closed=1 }
+  {
+    if (/^[[:space:]]*if[[:space:]].*COMPUTE_MODE.*== "cuda"/) {
+      cuda_guard_count++
+      if (cuda_guard_count == 2) { in_stack=1; depth=1; next }
     }
-    if (/(kaolin -f|spconv-cu124|pytorch3d-\\*|torch_scatter|xformers.*cu124|NATTEN_PREBUILT_URL=.*natten)/ && depth < 1) unguarded=1
+    if (in_stack) {
+      if (/^[[:space:]]*if[[:space:]]/) depth++
+      if (/^[[:space:]]*fi[[:space:]]*$/) {
+        depth--
+        if (depth == 0) { in_stack=0; guard_closed=1 }
+      }
+    }
+    if (/(kaolin -f|spconv-cu124|pytorch3d-|torch_scatter|xformers.*cu124|NATTEN_PREBUILT_URL=.*natten)/) {
+      seen_dependency=1
+      if (!in_stack || depth < 1) unguarded=1
+    }
   }
-  END { exit !(cuda_guard_count >= 2 && guard_closed && !unguarded) }
+  END { exit !(cuda_guard_count >= 2 && guard_closed && seen_dependency && !unguarded) }
 ' "$INSTALL"; then
-  echo "  ✓ backend/scripts/install.sh: CUDA-only model stack is inside the CUDA-mode guard"
+  echo "  ✓ backend/scripts/install.sh: CUDA-only model dependencies are inside the CUDA-mode guard"
   PASS=$((PASS + 1))
 else
-  echo "  ✗ backend/scripts/install.sh: CUDA-only model stack is not protected by the CUDA-mode guard"
+  echo "  ✗ backend/scripts/install.sh: CUDA-only model dependencies are not protected by the CUDA-mode guard"
   FAIL=$((FAIL + 1))
 fi
 
