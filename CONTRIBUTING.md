@@ -2,7 +2,7 @@
 
 Thank you for contributing to ForMash3D.
 
-ForMash3D is an active pre-alpha project combining a Next.js 16 frontend, FastAPI backend, GPU model adapters, and production-oriented 3D post-processing. Contributions should preserve the existing architecture and keep changes focused.
+ForMash3D is an active beta phase project combining a Next.js 16 frontend, FastAPI backend, GPU model adapters, and production-oriented 3D post-processing. Contributions should preserve the existing architecture and keep changes focused.
 
 ## Before changing code
 
@@ -30,6 +30,18 @@ git clone https://github.com/Silentzx2/ForMash3D.git
 cd ForMash3D
 bash scripts/setup.sh
 ```
+
+### CPU-only setup (no NVIDIA GPU)
+
+If you do not have an NVIDIA GPU, run setup in CPU mode. Model/CUDA dependencies are skipped; the studio, API, and post-processing tools remain available.
+
+```bash
+git clone https://github.com/Silentzx2/ForMash3D.git
+cd ForMash3D
+bash scripts/setup.sh --cpu
+```
+
+Use `--cpu` to force CPU mode even if a GPU is present, or `--gpu` to force CUDA mode. Use `--with-thirdparty` to initialize third-party model sources.
 
 Third-party model integrations are maintained under `backend/thirdparty/` in this repository. A normal checkout does not require a separate third-party repository.
 
@@ -109,7 +121,7 @@ Never commit credentials, model checkpoints, private URLs, or generated secrets.
 
 ## Security
 
-Do not disclose security vulnerabilities in public issues. Follow [Docs/SECURITY.md](Docs/SECURITY.md).
+Do not disclose security vulnerabilities in public issues. Follow [Docs/SECURITY.md](SECURITY.md).
 
 ## Documentation
 

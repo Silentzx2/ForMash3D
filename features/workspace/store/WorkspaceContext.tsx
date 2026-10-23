@@ -573,6 +573,11 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       enableAutoRig: false,
       autoRigMode: 'full',
       enablePostprocess: true,
+      candidateCount: 1,
+      partCountRange: '1',
+      rigType: 'none',
+      exportFormats: ['glb'],
+      slicerHandoff: false,
       physics: { ...DEFAULT_PHYSICS_SETTINGS },
     });
  
@@ -591,6 +596,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     maps: { albedo: true, normal: true, roughness: true, metallic: true, ao: true, height: false },
     maxNumView: 9,
     generatePBR: true,
+    quadCompatibleUv: false,
   });
 
   const [sculptSettings, setSculptSettings] = useState<SculptSettings>({
@@ -1819,6 +1825,9 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
       const body: Record<string, unknown> = {
         texture_resolution: numericResolution,
         texture_resolution_preset: resolution,
+        ...(textureSettings.quadCompatibleUv
+          ? { topology_mode: 'quad', quad_topology: true }
+          : {}),
         output_format: 'glb',
         model_preference: modelPreference,
         enable_postprocess: false,
@@ -2101,6 +2110,10 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
             lodPreset: batchItem.lodPreset ?? 'high',
             lodCount: batchItem.lodCount ?? 4,
             candidateCount: batchItem.candidateCount ?? 1,
+            partCountRange: batchItem.partCountRange ?? '1',
+            rigType: batchItem.rigType ?? 'none',
+            exportFormats: batchItem.exportFormats ?? ['glb'],
+            slicerHandoff: batchItem.slicerHandoff ?? false,
             generateCollision: batchItem.generateCollision ?? true,
             intent: batchItem.intent,
             preprocessingArtifactId: batchItem.preprocessingArtifactId,

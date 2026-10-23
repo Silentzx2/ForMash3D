@@ -1,0 +1,18 @@
+# GitHub Discussions configuration
+
+categories:
+  - name: General
+    description: General discussion about ForMash3D
+    emoji: 💬
+  - name: Show & Tell
+    description: Share what you've built with ForMash3D
+    emoji: 🚀
+  - name: Questions
+    description: Ask questions about setup, usage, and configuration
+    emoji: ❓
+  - name: Ideas
+    description: Suggest new features or improvements
+    emoji: 💡
+  - name: Bug Reports
+    description: Report bugs and issues
+    emoji: 🐛

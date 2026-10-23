@@ -443,6 +443,7 @@ export interface TextureSettings {
   lowVram?: boolean;
   maxNumView?: number;
   generatePBR?: boolean;
+  quadCompatibleUv?: boolean;
 }
 
 export interface AutoOptimizeSettings {
@@ -505,6 +506,10 @@ export interface GenerationSettings {
   autoRigMode?: 'full' | 'skeleton' | 'skin';
   enablePostprocess?: boolean;
   candidateCount?: number;
+  partCountRange?: '1' | '3-6' | '6-15' | '15+';
+  rigType?: 'none' | 'generic' | 'humanoid' | 'quadruped' | 'bird' | 'insect' | 'custom';
+  exportFormats?: string[];
+  slicerHandoff?: boolean;
 }
 
 

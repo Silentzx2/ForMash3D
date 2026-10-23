@@ -364,3 +364,39 @@ test('parseModelParameterOverrides enforces object safety', () => {
   const unsafe = JSON.parse('{"__proto__":{"polluted":true}}');
   assert.throws(() => parseModelParameterOverrides(unsafe), /safe JSON object/);
 });
+
+test('part_count_range, rig_type, export_formats and slicer_handoff reach the request body as production options', () => {
+  const settings = {
+    imageFileId: 'file-parts',
+    enablePostprocess: true,
+    partCountRange: '6-15',
+    rigType: 'humanoid',
+    exportFormats: ['glb', 'stl'],
+    slicerHandoff: true,
+  };
+  const result = buildGenerationParameters(settings);
+  assert.equal(result.body.part_count_range, '6-15');
+  assert.equal(result.body.rig_type, 'humanoid');
+  assert.deepEqual(result.body.export_formats, ['glb', 'stl']);
+  assert.equal(result.body.slicer_handoff, true);
+  assert.equal(result.modelParameters.part_count_range, undefined);
+  assert.equal(result.modelParameters.rig_type, undefined);
+  assert.equal(result.modelParameters.export_formats, undefined);
+  assert.equal(result.modelParameters.slicer_handoff, undefined);
+});
+
+test('production part/rig/export/slicer options are dropped when post-processing is off', () => {
+  const settings = {
+    imageFileId: 'file-parts-off',
+    enablePostprocess: false,
+    partCountRange: '6-15',
+    rigType: 'humanoid',
+    exportFormats: ['glb', 'stl'],
+    slicerHandoff: true,
+  };
+  const result = buildGenerationParameters(settings);
+  assert.equal(result.body.part_count_range, undefined);
+  assert.equal(result.body.rig_type, undefined);
+  assert.equal(result.body.export_formats, undefined);
+  assert.equal(result.body.slicer_handoff, undefined);
+});

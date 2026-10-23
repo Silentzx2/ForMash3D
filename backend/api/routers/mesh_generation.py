@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from api.dependencies import get_current_settings, get_current_user_or_none, get_file_store, get_scheduler
+from api.dependencies import get_current_settings, get_file_store, get_scheduler
 from api.routers.file_upload import resolve_file_id_async
 from api.utils.asset_name import resolve_asset_name
 from core.file_store import FileStore
@@ -315,6 +315,7 @@ class ImageToRawMeshRequest(BaseModel):
     part_count_range: Optional[str] = Field(None, description="Target part count range for segmentation: '1', '3-6', '6-15', '15+'")
     rig_type: Optional[str] = Field(None, description="Rig type: 'none', 'generic', 'humanoid', 'quadruped', 'bird', 'insect', 'custom'")
     export_formats: Optional[List[str]] = Field(None, description="Export formats: 'glb', 'fbx', 'obj', 'stl', '3mf'")
+    slicer_handoff: Optional[bool] = Field(None, description="Hand the print-ready mesh to a slicer (STL/3MF handoff); omitted values fall back to the intent preset")
     asset_name: Optional[str] = Field(None, description="Asset base stem name")
     image_name: Optional[str] = Field(None, description="Original image filename")
     mesh_style: str = Field("auto", deprecated=True, description="Deprecated mesh style hint. Does not override locked adapter inference profiles.")
@@ -514,6 +515,10 @@ class ImageToTexturedMeshRequest(BaseModel):
     quad_topology: bool = Field(False, description="Request quad-dominant topology")
     enable_postprocess: bool = Field(True, description="Run production postprocessing pipeline after mesh generation. If False, postprocessing is bypassed.")
     candidate_count: int = Field(1, ge=1, le=int(get_quality_config()["seeds"]["max_candidates"]), description="Candidate variations to generate (1-4, default 1)")
+    part_count_range: Optional[str] = Field(None, description="Target part count range for segmentation: '1', '3-6', '6-15', '15+'")
+    rig_type: Optional[str] = Field(None, description="Rig type: 'none', 'generic', 'humanoid', 'quadruped', 'bird', 'insect', 'custom'")
+    export_formats: Optional[List[str]] = Field(None, description="Export formats: 'glb', 'fbx', 'obj', 'stl', '3mf'")
+    slicer_handoff: Optional[bool] = Field(None, description="Hand the print-ready mesh to a slicer (STL/3MF handoff); omitted values fall back to the intent preset")
     asset_name: Optional[str] = Field(None, description="Asset base stem name")
     image_name: Optional[str] = Field(None, description="Original image filename")
     mesh_style: str = Field("auto", deprecated=True, description="Deprecated mesh style hint. Does not override locked adapter inference profiles.")
@@ -895,7 +900,6 @@ async def process_file_input(
 async def text_mesh_painting(
     mesh_request: TextMeshPaintingRequest,
     scheduler: MultiprocessModelScheduler = Depends(get_scheduler),
-    current_user = Depends(get_current_user_or_none),
     file_store: Optional[FileStore] = Depends(get_file_store),
 ):
     """
@@ -911,7 +915,7 @@ async def text_mesh_painting(
     """
     tracked_temp_dirs: List[str] = []
     try:
-        user_id = getattr(current_user, "user_id", None)
+        user_id = None
         
         # Validate model preference
         validate_model_preference(
@@ -1029,7 +1033,6 @@ async def _resolve_generation_plan(request, *, default_model: str, default_featu
 async def image_to_raw_mesh(
     mesh_request: ImageToRawMeshRequest,
     scheduler: MultiprocessModelScheduler = Depends(get_scheduler),
-    current_user = Depends(get_current_user_or_none),
     file_store: Optional[FileStore] = Depends(get_file_store),
 ):
     """
@@ -1045,7 +1048,7 @@ async def image_to_raw_mesh(
     """
     tracked_temp_dirs: List[str] = []
     try:
-        user_id = getattr(current_user, "user_id", None)
+        user_id = None
 
         # A concrete user model choice takes precedence over automatic selection.
         from core.planner import plan_generation, get_planner_apply_config
@@ -1182,7 +1185,16 @@ async def image_to_raw_mesh(
         )
         # Filter out None values from model_parameters so pop() fallbacks work correctly
         params = {k: v for k, v in (mesh_request.model_parameters or {}).items() if v is not None}
-        for key in ("candidate_count", "enable_postprocess", "topology_mode", "quad_topology"):
+        for key in (
+            "candidate_count",
+            "enable_postprocess",
+            "topology_mode",
+            "quad_topology",
+            "part_count_range",
+            "rig_type",
+            "export_formats",
+            "slicer_handoff",
+        ):
             params.pop(key, None)
         # Keep texture-stage controls out of model-specific inference parameters.
         params.pop("texture_resolution", None)
@@ -1246,6 +1258,16 @@ async def image_to_raw_mesh(
         texture_resolution = int(
             _resolve_preset_option(mesh_request.texture_resolution, preset, "texture_resolution", 2048)
         )
+        part_count_range = str(
+            _resolve_preset_option(mesh_request.part_count_range, preset, "part_count_range", "1")
+        )
+        rig_type = str(_resolve_preset_option(mesh_request.rig_type, preset, "rig_type", "none"))
+        export_formats = list(
+            _resolve_preset_option(mesh_request.export_formats, preset, "export_formats", ["glb"])
+        )
+        slicer_handoff = bool(
+            _resolve_preset_option(mesh_request.slicer_handoff, preset, "slicer_handoff", False)
+        )
 
         if not mesh_request.enable_postprocess:
             texture_enabled = False
@@ -1303,6 +1325,10 @@ async def image_to_raw_mesh(
                 "quad_topology": bool(mesh_request.quad_topology or mesh_request.topology_mode == "quad"),
                 "enable_postprocess": mesh_request.enable_postprocess,
                 "candidate_count": int(mesh_request.candidate_count or 1),
+                "part_count_range": part_count_range,
+                "rig_type": rig_type,
+                "export_formats": export_formats,
+                "slicer_handoff": slicer_handoff,
                 **params,
             },
             model_preference=model_id,
@@ -1311,6 +1337,10 @@ async def image_to_raw_mesh(
                 "asset_name": chosen_stem,
                 "image_name": chosen_stem,
                 "candidate_count": int(mesh_request.candidate_count or 1),
+                "part_count_range": part_count_range,
+                "rig_type": rig_type,
+                "export_formats": export_formats,
+                "slicer_handoff": slicer_handoff,
                 "postprocess_mode": "production_mesh" if mesh_request.enable_postprocess else "none",
                 "enable_postprocess": mesh_request.enable_postprocess,
                 "feature_type": feature,
@@ -1376,7 +1406,6 @@ async def image_to_raw_mesh(
 async def image_to_textured_mesh(
     mesh_request: ImageToTexturedMeshRequest,
     scheduler: MultiprocessModelScheduler = Depends(get_scheduler),
-    current_user = Depends(get_current_user_or_none),
     file_store: Optional[FileStore] = Depends(get_file_store),
 ):
     """
@@ -1392,7 +1421,7 @@ async def image_to_textured_mesh(
     """
     tracked_temp_dirs: List[str] = []
     try:
-        user_id = getattr(current_user, "user_id", None)
+        user_id = None
         # A concrete user model choice takes precedence over automatic selection.
         from core.planner import plan_generation, get_planner_apply_config
         apply_cfg = get_planner_apply_config()
@@ -1539,7 +1568,16 @@ async def image_to_textured_mesh(
         )
         # Filter out None values from model_parameters so pop() fallbacks work correctly
         params = {k: v for k, v in (mesh_request.model_parameters or {}).items() if v is not None}
-        for key in ("candidate_count", "enable_postprocess", "topology_mode", "quad_topology"):
+        for key in (
+            "candidate_count",
+            "enable_postprocess",
+            "topology_mode",
+            "quad_topology",
+            "part_count_range",
+            "rig_type",
+            "export_formats",
+            "slicer_handoff",
+        ):
             params.pop(key, None)
         # Preserve nested resolution from old clients, but never pass it to geometry inference.
         source_texture_resolution = params.pop("texture_resolution", None)
@@ -1601,6 +1639,16 @@ async def image_to_textured_mesh(
                 "texture_resolution",
                 source_texture_resolution or 2048,
             )
+        )
+        part_count_range = str(
+            _resolve_preset_option(mesh_request.part_count_range, preset, "part_count_range", "1")
+        )
+        rig_type = str(_resolve_preset_option(mesh_request.rig_type, preset, "rig_type", "none"))
+        export_formats = list(
+            _resolve_preset_option(mesh_request.export_formats, preset, "export_formats", ["glb"])
+        )
+        slicer_handoff = bool(
+            _resolve_preset_option(mesh_request.slicer_handoff, preset, "slicer_handoff", False)
         )
         params.pop("enable_printability_check", None)
         params.pop("enable_auto_repair", None)
@@ -1674,6 +1722,10 @@ async def image_to_textured_mesh(
                 "quad_topology": bool(mesh_request.quad_topology or mesh_request.topology_mode == "quad"),
                 "enable_postprocess": mesh_request.enable_postprocess,
                 "candidate_count": int(mesh_request.candidate_count or 1),
+                "part_count_range": part_count_range,
+                "rig_type": rig_type,
+                "export_formats": export_formats,
+                "slicer_handoff": slicer_handoff,
                 **params,
             },
             model_preference=model_id,
@@ -1682,6 +1734,10 @@ async def image_to_textured_mesh(
                 "asset_name": chosen_stem,
                 "image_name": chosen_stem,
                 "candidate_count": int(mesh_request.candidate_count or 1),
+                "part_count_range": part_count_range,
+                "rig_type": rig_type,
+                "export_formats": export_formats,
+                "slicer_handoff": slicer_handoff,
                 "postprocess_mode": "production_mesh" if mesh_request.enable_postprocess else "none",
                 "enable_postprocess": mesh_request.enable_postprocess,
                 "feature_type": feature,
@@ -1747,7 +1803,6 @@ async def image_to_textured_mesh(
 async def image_mesh_painting(
     mesh_request: ImageMeshPaintingRequest,
     scheduler: MultiprocessModelScheduler = Depends(get_scheduler),
-    current_user = Depends(get_current_user_or_none),
     file_store: Optional[FileStore] = Depends(get_file_store),
 ):
     """
@@ -1763,7 +1818,7 @@ async def image_mesh_painting(
     """
     tracked_temp_dirs: List[str] = []
     try:
-        user_id = getattr(current_user, "user_id", None)
+        user_id = None
         
         if mesh_request.mask_path or mesh_request.mask_base64 or mesh_request.mask_file_id:
             raise HTTPException(
@@ -1825,6 +1880,8 @@ async def image_mesh_painting(
                 "mask_path": mask_file_path,
                 "output_format": mesh_request.output_format,
                 "texture_resolution": mesh_request.texture_resolution,
+                "topology_mode": "quad" if mesh_request.quad_topology or mesh_request.topology_mode == "quad" else mesh_request.topology_mode,
+                "quad_topology": bool(mesh_request.quad_topology or mesh_request.topology_mode == "quad"),
                 "resolution": (
                     (mesh_request.model_parameters or {}).get("resolution")
                     or (
@@ -1877,7 +1934,6 @@ async def image_mesh_painting(
 async def generate_mesh_from_image(
     mesh_request: ImageToRawMeshRequest,
     scheduler: MultiprocessModelScheduler = Depends(get_scheduler),
-    current_user = Depends(get_current_user_or_none),
     file_store: Optional[FileStore] = Depends(get_file_store),
 ):
     """
@@ -1888,7 +1944,6 @@ async def generate_mesh_from_image(
     return await image_to_raw_mesh(
         mesh_request=mesh_request,
         scheduler=scheduler,
-        current_user=current_user,
         file_store=file_store,
     )
 
@@ -1899,7 +1954,6 @@ async def generate_mesh_from_image(
 async def generate_mesh_from_image_batch(
     batch_request: BatchImageToMeshRequest,
     scheduler: MultiprocessModelScheduler = Depends(get_scheduler),
-    current_user = Depends(get_current_user_or_none),
     file_store: Optional[FileStore] = Depends(get_file_store),
 ):
     """
@@ -1911,8 +1965,7 @@ async def generate_mesh_from_image_batch(
         res = await image_to_raw_mesh(
             mesh_request=item,
             scheduler=scheduler,
-            current_user=current_user,
-            file_store=file_store,
+                file_store=file_store,
         )
         job_ids.append(res.job_id)
     return BatchMeshGenerationResponse(
@@ -1953,7 +2006,6 @@ async def cancel_mesh_generation(
     job_id: str,
     request: Request,
     scheduler: MultiprocessModelScheduler = Depends(get_scheduler),
-    current_user = Depends(get_current_user_or_none),
 ):
     """Cancel a queued mesh-generation job without deleting its history record."""
     try:
@@ -1961,11 +2013,6 @@ async def cancel_mesh_generation(
         if job_status is None:
             raise HTTPException(status_code=404, detail="Job not found")
 
-        if current_user:
-            from core.auth.models import UserRole
-            job_user_id = job_status.get("user_id")
-            if current_user.role != UserRole.ADMIN and job_user_id != current_user.user_id:
-                raise HTTPException(status_code=403, detail="Access denied to this job")
 
         current_status = job_status.get("status")
         if current_status not in {"queued", "processing", "running"}:

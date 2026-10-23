@@ -41,7 +41,6 @@ from .routers import (
     mesh_uv_unwrapping,
     motion_generation,
     system,
-    users,
 )
 
 logger = logging.getLogger(__name__)
@@ -319,7 +318,6 @@ async def internal_error_handler(request: Request, exc: Exception):
 app.include_router(system.router, prefix="/api/v1/system", tags=["System"])
 app.include_router(database.router, prefix="/api/v1/system/database", tags=["Database"])
 
-app.include_router(users.router, prefix="/api/v1/users", tags=["Users"])
 
 app.include_router(file_upload.router, prefix="/api/v1", tags=["File Upload"])
 

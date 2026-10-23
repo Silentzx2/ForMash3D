@@ -603,10 +603,32 @@ export const TexturePanel: React.FC = () => {
                 ))}
               </div>
 
+              {/* Quad-compatible smart UV (wired to the texture-generation request) */}
+              <div className="rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] p-2 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-white uppercase tracking-wider">UV Layout</span>
+                  <span className="text-[9px] text-zinc-400">Quad-compatible unwrapping</span>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={Boolean(textureSettings.quadCompatibleUv)}
+                  onClick={() => setTextureSettings(prev => ({ ...prev, quadCompatibleUv: !prev.quadCompatibleUv }))}
+                  className={`w-full p-1.5 rounded-lg border text-left flex items-center justify-between transition-all ${textureSettings.quadCompatibleUv ? 'bg-primary/10 border-primary/30 text-white' : 'bg-[hsl(var(--surface-1))] border-white/[0.06] text-zinc-400 cursor-pointer hover:border-white/[0.15]'}`}
+                >
+                  <div className="flex flex-col min-w-0 pr-1">
+                    <span className="text-xs font-bold text-white">Quad-compatible smart UV</span>
+                    <span className="text-[9px] text-zinc-400">Preserve quad-friendly UV charts on quad-topology meshes</span>
+                  </div>
+                  <div className={`w-8 h-4.5 rounded-full transition-colors relative cursor-pointer ${textureSettings.quadCompatibleUv ? 'bg-primary' : 'bg-zinc-700'}`}>
+                    <div className={`absolute top-0.5 w-3.5 h-3.5 rounded-full bg-black transition-transform ${textureSettings.quadCompatibleUv ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                  </div>
+                </button>
+              </div>
+
               {/* High VRAM Warning for 4K / 8K */}
               {(textureSettings.resolution === '4K' || textureSettings.resolution === '8K') && (
                 <div className="flex items-start gap-1.5 p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[8.5px] leading-tight">
-                  <HugeiconsIcon icon={TriangleAlertIcon} size={14} className="w-3 h-3 flex-shrink-0 mt-0.5 text-amber-400" />
                   <span>{textureSettings.resolution} atlas uses Hunyuan3D-Paint and can require substantially more GPU memory and processing time.</span>
                 </div>
               )}

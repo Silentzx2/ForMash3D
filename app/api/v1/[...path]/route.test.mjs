@@ -16,7 +16,7 @@ afterEach(() => {
   }
 });
 
-test('streams multipart uploads with boundary, auth, size, and upstream status preserved', async () => {
+test('streams multipart uploads with boundary, size, and upstream status preserved', async () => {
   const multipart = new TextEncoder().encode(
     '--mesh-boundary\r\nContent-Disposition: form-data; name="file"; filename="mesh.glb"\r\n\r\nmesh-data\r\n--mesh-boundary--\r\n'
   );
@@ -59,7 +59,6 @@ test('streams multipart uploads with boundary, auth, size, and upstream status p
     headers: {
       'content-type': 'multipart/form-data; boundary=mesh-boundary',
       'content-length': String(multipart.byteLength),
-      authorization: 'Bearer upload-token',
     },
     body,
     duplex: 'half',
@@ -92,10 +91,8 @@ test('streams multipart uploads with boundary, auth, size, and upstream status p
     assert.equal(upstreamInit.duplex, 'half');
     assert.equal(headers.get('content-type'), 'multipart/form-data; boundary=mesh-boundary');
     assert.equal(headers.get('content-length'), String(multipart.byteLength));
-    assert.equal(headers.get('authorization'), 'Bearer upload-token');
     assert.deepEqual(Buffer.concat(receivedChunks), Buffer.from(multipart));
     assert.equal(receivedHeaders['content-type'], 'multipart/form-data; boundary=mesh-boundary');
-    assert.equal(receivedHeaders.authorization, 'Bearer upload-token');
     assert.equal(Number(receivedHeaders['content-length']), multipart.byteLength);
   } finally {
     releaseUpload?.();

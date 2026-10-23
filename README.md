@@ -5,7 +5,7 @@
 </p>
 
 <h1 align="center">
-    ForMash3D
+    ForMash3D — Open-Source Self-Hosted Image-to-3D AI Generator
 </h1>
 
 <p align="center">
@@ -24,12 +24,46 @@
 </p>
 
 <p align="center">
-  <strong>⚡ Quick Start:</strong> <code>git clone https://github.com/Silentzx2/ForMash3D.git</code> → <code>bun install</code> → <code>bash scripts/start.sh</code> → Open <a href="http://localhost:3000">http://localhost:3000</a>
+  <strong>⚡ Quick Start:</strong> <code>git clone https://github.com/Silentzx2/ForMash3D.git</code> → <code>bash scripts/setup.sh</code> → <code>bash scripts/start.sh</code> → Open <a href="http://localhost:3000">http://localhost:3000</a>
 </p>
+
+<p align="center">
+  <a href="https://github.com/Silentzx2/ForMash3D/releases"><img src="https://img.shields.io/badge/Phase-BETA-ffb703?style=for-the-badge" alt="BETA phase"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/Silentzx2/ForMash3D/stargazers"><img src="https://img.shields.io/github/stars/Silentzx2/ForMash3D?style=for-the-badge" alt="GitHub stars"></a>
+  <a href="https://github.com/Silentzx2/ForMash3D/commits/main"><img src="https://img.shields.io/github/last-commit/Silentzx2/ForMash3D?style=for-the-badge" alt="Last commit"></a>
+  <a href="https://github.com/Silentzx2/ForMash3D/issues"><img src="https://img.shields.io/github/issues/Silentzx2/ForMash3D?style=for-the-badge" alt="Issues"></a>
+  <a href="docs/GITHUB_SETUP.md"><img src="https://img.shields.io/badge/CPU%20mode-supported-5319e7?style=for-the-badge" alt="CPU mode supported"></a>
+</p>
+
+## Table of Contents
+
+- [Overview & Product Vision](#-overview--product-vision)
+- [Core Capability Map](#-core-capability-map)
+- [End-to-End Asset Generation Pipeline](#-end-to-end-asset-generation-pipeline)
+- [System Architecture](#-system-architecture)
+- [Quick Start](#-quick-start)
+- [Contributing](#-contributing)
+- [License](#-license)
+
+## Choose Your Contributor Path
+
+| No GPU (CPU only) | GPU (CUDA 12.4) |
+|---|---|
+| UI/UX, docs, tests, API, post-process | Model adapters (TRELLIS, Hunyuan3D, TripoSG, Unique3D) |
+| CPU-only setup mode | Quality pipeline & generation quality gates |
+| [Good First Issues](docs/GOOD_FIRST_ISSUES.md) | [Backend Runtime Contract CI](.github/workflows/backend-runtime-ci.yml) |
+
+[View all good first issues →](docs/GOOD_FIRST_ISSUES.md)
 
 ---
 
 ## 🌟 Overview & Product Vision
+
+> [!NOTE]
+> **Phase: BETA** — ForMash3D has graduated from early development. Core studio, API gateway, and post-processing pipeline are stabilizing; breaking changes may still land before 1.0.
 
 **ForMash3D** is an open-source, self-hosted generative 3D asset creation and mesh-finishing platform. It bridges modern state-of-the-art open research models into a single, cohesive studio running entirely on your local workstation or private GPU cluster.
 
@@ -430,7 +464,7 @@ bun run lint
 bash -n manager.sh backend/scripts/*.sh scripts/*.sh
 ```
 
-**Verification status**: The backend CPU contract suite, `python3 -m compileall -q backend/`, `bun test` and `npx tsc --noEmit` run without model weights or a GPU. GPU/model inference and Blender-dependent validation still require the supported runtime environment.
+**Verification status**: The backend CPU contract suite, `python3 -m compileall -q backend/`, `bun test` and `npx tsc --noEmit` all pass without model weights or a GPU (verified green on `dev` at 2026-10-23: 40 passed / 6 skipped backend, 54 passed / 0 failed Bun, zero TS errors). GPU/model inference and Blender-dependent validation still require the supported runtime environment.
 
 ---
 

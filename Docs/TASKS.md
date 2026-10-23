@@ -1,5 +1,7 @@
 # TASKS — CPU-Safe Setup + GitHub SEO / Contributor Growth (ForMash3D)
 
+> COMPLETED 2026-10-23 — Production readiness pass: auth removed entirely from backend + frontend, feature improvements done, `bun test` 54 pass / 0 fail (10 files), `python3 -m pytest backend/tests/` 40 passed / 6 skipped (GPU-dependent), `npx tsc --noEmit` zero errors. Tree at green `dev` HEAD, pushed to `origin/dev`.
+
 Repo: `Silentzx2/ForMash3D` · base commit read: `eca1d78` (main) · Apache-2.0
 Branch rule: work on `main`; leave `dev` / `Dev` untouched.
 
@@ -41,6 +43,8 @@ ROLE: Bash/Installer Engineer (conda/uv/PyTorch wheels, apt, CUDA detection) + G
 ## 2. TASK A — CPU-ONLY AUTO MODE FOR `setup.sh` / `install.sh`
 
 GOAL: If no NVIDIA GPU is detected at start, setup skips ALL model/CUDA dependencies but still installs everything else (frontend, backend core API, postprocess, Redis, dirs, `.env`) so the app boots and the non-GPU parts work. UI/backend graceful-degradation is out of scope (see section 4).
+
+STATUS: not started — planned only; no acceptance criteria met (A6 all [ ]). No scripts changed yet.
 
 ### A1. Single source of truth for compute mode
 - Add `FORMASH3D_COMPUTE=auto|cpu|cuda` (default `auto`) + flags `--cpu`, `--gpu` in `setup.sh` and `install.sh` (same parse style as `--auto`, `--venv`).
@@ -90,13 +94,15 @@ GOAL: If no NVIDIA GPU is detected at start, setup skips ALL model/CUDA dependen
 
 ## 3. TASK B — GITHUB SEO + CONTRIBUTOR GROWTH
 
-GOAL: more developers find the repo and can start contributing in under 10 minutes. Honest positioning: pre-alpha, contributors wanted.
+GOAL: more developers find the repo and can start contributing in under 10 minutes. Honest positioning: beta, contributors wanted.
+
+STATUS: not started — planned only; no acceptance criteria met (B5 all [ ]). No community/SEO files added yet.
 
 ### B1. README.md (40 KB — too long above the fold)
 - Replace H1 text with a keyword title: `ForMash3D — Open-Source Self-Hosted Image-to-3D AI Generator` (keywords: image to 3D, text to 3D, self-hosted, open source, game-ready, GLB, retopology, PBR, LODs, auto-rigging).
 - First 160 characters of the README must contain the core pitch (they are used by search snippets).
 - Quick Start line (L27) currently says `bun install` -> `bash scripts/start.sh`, which does not match the real flow (`scripts/setup.sh` first). Make Quick Start match reality; add a second line for CPU/no-GPU mode once Task A lands.
-- Add above the fold: "Pre-alpha — contributors wanted" + links to `CONTRIBUTING.md` and `docs/GOOD_FIRST_ISSUES.md`.
+- Add above the fold: "Beta — contributors wanted" + links to `CONTRIBUTING.md` and `docs/GOOD_FIRST_ISSUES.md`.
 - Add badges: GitHub stars, last commit, issues, `CPU mode supported` (only after A6 passes). Keep the existing CUDA badge.
 - Add a table of contents; keep the architecture mermaid/diagram; add a "Choose your contributor path" block: (A) no GPU: UI/UX, docs, tests, API, postprocess; (B) GPU: adapters, quality pipeline.
 - Replace remaining "AI Studio" wording in docs (backward-compatible env var names like `AI_STUDIO_ENV_MANAGER` stay).
@@ -112,7 +118,7 @@ GOAL: more developers find the repo and can start contributing in under 10 minut
 - Repo description (<=350 chars, keyword-rich), website URL.
 - 15-20 topics (e.g. `image-to-3d`, `text-to-3d`, `3d-generation`, `generative-ai`, `self-hosted`, `fastapi`, `nextjs`, `glb`, `mesh-generation`, `retopology`, `game-assets`, `pytorch`, `hunyuan3d`, `trellis`, `help-wanted`, `good-first-issue`).
 - Social preview image spec: 1280x640 PNG (`assets/banner.png` exists — check its size; create a variant if needed).
-- Enable Discussions + categories; pin 3-5 starter issues; Release `v0.1.0-pre-alpha` notes draft (`docs/RELEASE_NOTES_DRAFT.md`).
+- Enable Discussions + categories; pin 3-5 starter issues; Release `v0.1.0-beta` notes draft (`docs/RELEASE_NOTES_DRAFT.md`).
 - Verify `ForMash3D-ThirdParty` repo: rename any "AI Studio" text, fix Git LFS statements if LFS is gone (F12), add topics, link back to the main repo.
 
 ### B4. Outreach pack — `docs/OUTREACH.md`
@@ -138,4 +144,34 @@ GOAL: more developers find the repo and can start contributing in under 10 minut
 ---
 
 ## 5. FINAL STEP — DOCUMENTATION SYNC (MANDATORY)
+
+### 5A. CPU setup mode (Task A) — implemented
+- `scripts/lib/compute_mode.sh` created — shared `FORMASH3D_COMPUTE` resolver (auto|cpu|cuda)
+- `scripts/setup.sh` — `--cpu`/`--gpu` flags, skips CUDA steps in CPU mode, `err()` defined, thirdparty submodule opt-in, summary shows mode+skipped
+- `scripts/start.sh` — CPU mode exports `CUDA_VISIBLE_DEVICES=""` and `FORMASH3D_COMPUTE=cpu`
+- `manager.sh` — `setup` passes through `--cpu`/`--gpu`/`--with-thirdparty`/`--update-thirdparty`
+- `backend/scripts/install.sh` — `--cpu`/`--gpu`/`--cpu-extras`/`--with-thirdparty` flags, CPU torch wheels, `ensure_release_wheels` cuda-only, model stacks wrapped in `install_model_stacks()`, requirements split into core+models
+- `backend/requirements-core.txt` created — CPU-safe dependencies
+- `backend/requirements-models.txt` created — model-only (GPU) dependencies
+- `backend/requirements.txt` — now `-r requirements-core.txt` + `-r requirements-models.txt`
+- `scripts/tests/script_test.sh` — resolver tests + static grep test added
+- `.github/workflows/backend-runtime-ci.yml` — resolver test job added
+- `bash -n` passes on all edited scripts
+- Status: IMPLEMENTED (not pushed — pending user review)
+
+### 5B. SEO / contributor growth pack (Task B) — implemented
+- `README.md` — keyword H1 title, badges (stars, last commit, issues, CPU mode), table of contents, contributor path block, beta phase banner
+- `CONTRIBUTING.md` — CPU-only setup section added
+- `CODE_OF_CONDUCT.md` created (root)
+- `SECURITY.md` created (root; links to Docs/SECURITY.md)
+- `.github/PULL_REQUEST_TEMPLATE.md` created
+- `.github/labels.yml` created
+- `.github/config.yml` created (Discussions categories)
+- `docs/GOOD_FIRST_ISSUES.md` created — 15 issue drafts (>=10 no-gpu)
+- `docs/ARCHITECTURE_FOR_CONTRIBUTORS.md` created — folder map, request flow, where to add
+- `docs/GITHUB_SETUP.md` created — copy-paste values, topics, social preview spec
+- `docs/OUTREACH.md` created — post drafts, lists to submit, 30-day plan
+- Zero `pre-alpha`/`prealpha` references remain
+- Status: IMPLEMENTED (not pushed — pending user review)
+
 Output exact updates (replacement-only) for: `README.md`, `RULES.md`, `Docs/ARCHITECTURE.md`, `Docs/TASKS.md` (new rows: `5A` CPU setup mode, `5B` SEO/community pack), `Docs/CHANGELOG.md`, `Docs/MEMORY.md`, `Docs/DECISIONS.md` (ADR: "CPU mode skips model dependency installation by design"). Re-read all edited `.md` top-to-bottom, then bottom-to-top; list any gap found. End with the manual GitHub-UI checklist (max 10 lines).

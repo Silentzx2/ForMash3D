@@ -40,3 +40,14 @@ jobs:
         env:
           PYTHONPATH: backend
         run: python -m pytest -q backend/tests backend/thirdparty/tests/test_runtime_path_utils.py
+
+  resolver-tests:
+    name: Compute mode resolver tests (CPU-only host)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run shell script resolver tests
+        run: bash scripts/tests/script_test.sh

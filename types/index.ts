@@ -98,6 +98,10 @@ export interface BatchQueueItem {
   lodPreset?: GenerationSettings['lodPreset'];
   lodCount?: GenerationSettings['lodCount'];
   candidateCount?: GenerationSettings['candidateCount'];
+  partCountRange?: GenerationSettings['partCountRange'];
+  rigType?: GenerationSettings['rigType'];
+  exportFormats?: GenerationSettings['exportFormats'];
+  slicerHandoff?: GenerationSettings['slicerHandoff'];
   generateCollision?: GenerationSettings['generateCollision'];
   physics?: GenerationSettings['physics'];
   enablePrintabilityCheck?: GenerationSettings['enablePrintabilityCheck'];
