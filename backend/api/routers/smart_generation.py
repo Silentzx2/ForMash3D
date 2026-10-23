@@ -117,7 +117,7 @@ def _build_smart_request(request: SmartGenerationRequest, resolved: Dict[str, An
         "image_base64": request.image_base64,
         "image_file_id": request.image_file_id,
         "output_format": "glb",
-        "model_preference": model_id,
+        "model_preference": request.model,
         "intent": request.intent,
         "preprocessing_artifact_id": request.preprocessing_artifact_id,
         "preprocessing_review_override": request.preprocessing_review_override,

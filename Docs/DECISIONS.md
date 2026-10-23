@@ -1373,3 +1373,28 @@ The runtime log announced a seed count that no execution honored, for every mode
 - The log can no longer imply that three seeds ran when one did, and the reported seed schedule matches the executed candidates for every adapter.
 - The effective inference values of every adapter are visible without reading the adapter source.
 - Verification: `backend/tests/test_seed_plan_resolution.py` covers the seed policy matrix (user count wins, `auto_seeds` off/on, cap, user seed as base, default configuration) and runs in the Backend Runtime Contract CI job.
+
+## ADR-096: Keep Inference Profiles Adapter-Owned and Final Quality Gates Observable (2026-10-22)
+
+**Context:** The audit found request paths that could obscure explicit seed values, production controls that could leak toward inference, a TRELLIS configured/effective step-count discrepancy, and quality/topology outcomes that were not consistently reflected in final job status.
+
+**Decision:**
+1. Keep model-specific inference profiles in adapters and filter request-side profile overrides in the scheduler. Do not resolve the TRELLIS discrepancy by changing active numerical settings without a measured comparison and explicit approval.
+2. Treat the runtime seed as a supported request input, including explicit zero, while keeping production-only options out of adapter inference inputs.
+3. Evaluate final topology and master-to-derivative quality against the configured policy. A failed or unavailable required comparison must not be reported as a successful production result.
+4. When Auto-Repair is disabled, preserve geometry even if a gate recommends repair; report remaining defects rather than mutating the output silently.
+5. Keep collision artifacts isolated from render geometry and expose convex-hull fallback details when decomposition is unavailable or fails.
+
+**Consequences:** Source-level ownership and failure behavior are covered by focused frontend/backend contract tests. This decision does not claim model-quality improvement; GPU inference, representative asset comparisons, and optional runtime stages remain separate validation requirements.
+
+## ADR-097: Distinguish Automatic Model Fallback and Centralize Physics Policy (2026-10-22)
+
+**Context:** Automatic model choices were treated as explicit preferences after load failure, planner suggestions could cross feature boundaries, and physics/comparison settings had duplicate defaults outside the canonical quality configuration.
+
+**Decision:**
+1. Preserve the origin of a generation model choice as internal request metadata. An explicit user choice is a hard requirement; an automatic choice may fall back only to a feature-compatible model.
+2. Apply planner-selected models only when the scheduler confirms support for the requested generation feature.
+3. Keep comparison and physics defaults, bounds, and collision quality profiles in `backend/config/quality.yaml`. The UI may use only the minimal defaults/bounds mirror in `constants/physicsDefaults.json`, and `backend/tests/test_config_ssot.py` must enforce parity.
+4. Do not change active adapter inference schedules as part of this routing/configuration fix.
+
+**Consequences:** Regression tests cover explicit-versus-automatic fallback, feature-compatible planner choices, configured physics bounds/profiles, and UI mirror parity. Runtime inference and browser interaction remain separate validation requirements.

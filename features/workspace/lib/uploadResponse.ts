@@ -5,3 +5,7 @@ export function requireUploadFileId(fileId: unknown, fileType: 'image' | 'mesh')
   }
   return normalizedId;
 }
+
+export function resolveUploadedImageName(customName: string | undefined, fileName: string): string {
+  return customName?.trim() || fileName;
+}

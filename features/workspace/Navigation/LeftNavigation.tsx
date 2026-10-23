@@ -1,5 +1,5 @@
 import React from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { useWorkspace } from '../store/WorkspaceContext';
 import { ToolType } from '../types';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
@@ -30,6 +30,7 @@ interface NavItemConfig {
 export const LeftNavigation: React.FC<LeftNavigationProps> = ({ isMobileDrawer = false, onToolSelect }) => {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const {
     activeTool,
     mainNav,
@@ -53,6 +54,7 @@ export const LeftNavigation: React.FC<LeftNavigationProps> = ({ isMobileDrawer =
   const isOverviewActive = mainNav === 'dashboard';
   const isAssetsActive = mainNav === 'assets';
   const isJobsActive = mainNav === 'jobs';
+  const isLogsActive = pathname === '/admin' && searchParams.get('tab') === 'logs';
 
   // Check if a specific tool is running a background generation
   const isModelExecuting = isExecuting && (activeTask?.type === 'image-to-3d' || !activeTask?.type);
@@ -184,7 +186,7 @@ export const LeftNavigation: React.FC<LeftNavigationProps> = ({ isMobileDrawer =
         tooltip: 'View system logs • ⌘4',
         shortcut: '⌘4',
         icon: (props: any) => <HugeiconsIcon icon={ScrollTextIcon} size={16} {...props} />,
-        active: false, // TODO: set active based on admin tab
+        active: isLogsActive,
         onClick: () => router.push('/admin?tab=logs'),
       },
     ];

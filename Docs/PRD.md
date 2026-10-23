@@ -30,7 +30,7 @@ Create a centralized, local AI 3D asset factory that takes a reference image and
 - **Raw Geometry Output**: Normal shape generation produces raw geometry only, preserving clean topology without model-level texture baking or auto-chaining.
 - **Low-VRAM Path**: Hunyuan3D-DiT-v2-mini-Turbo for 6GB GPUs
 - **Official-Parity Inference**: Each model uses its own upstream/tuned inference schedule and supported raw extraction ceiling; a generic 75-step contract is not used.
-- **Adapter-Owned Inference Profiles**: The locked schedules live in the adapters, and the UI exposes no step, guidance, sampler, or octree controls. Current profiles: Hunyuan3D-Shape-v2.1 (octree 1300, 150 steps, guidance 5.0), Hunyuan3D-DiT-v2-mini-Turbo (octree 768, 20 steps, guidance 7.5), TripoSG (100 steps, guidance 9.0, dense depth 10, hierarchical depth 11), TRELLIS (100 steps, guidance 7.5), TRELLIS.2 (1536_cascade, 524288 tokens), Pixal3D (1536_cascade, resolution 2048), TaoFlowForge (fill_holes, offload auto; not currently enabled in the registry), Unique3D (input_processing, do_refine, expansion_weight 0.1).
+- **Adapter-Owned Inference Profiles**: Locked schedules live in the adapters, and the UI exposes no step, guidance, sampler, or extraction-resolution controls. Adapters own the values; the scheduler filters request-side overrides. Configured and effective runtime values may differ when the implementation has an explicit safety limit. See `Docs/EXPERIMENTAL-MODEL-SETTINGS.md`; GPU execution and output-quality benchmarking are separate verification requirements.
 - **Immutable Source Fidelity**: Raw model-native geometry is captured before production polycount/LOD optimization; hardware safety guards may reduce density only when required for safe VRAM execution.
 - **Central Source-Fidelity Firewall**: The scheduler removes production-only target, decimation, remesh, LOD, physics, and paint orchestration controls before model inference.
 
@@ -211,6 +211,7 @@ sequenceDiagram
     participant API as FastAPI Router (:7842)
     participant SCHED as VRAM-Aware Scheduler
     participant Adapter as Model Adapter
+    participant PP as Production Postprocess
     participant Storage as backend/storage/
 
     User->>Frontend: Select image + output preset
@@ -218,19 +219,19 @@ sequenceDiagram
     API->>SCHED: Submit job (VRAM-aware)
     SCHED->>Adapter: Run inference (TRELLIS/Hunyuan3D/etc.)
     Adapter-->>SCHED: Raw 3D mesh output
-    SCHED->>Storage: Save master/source.glb (Untouched Master)
-    opt Textured Generation enabled
-        SCHED->>SCHED: Paint3D (1K/2K) or Hunyuan Paint (4K/8K)
-        SCHED->>Storage: Save textured GLB and observed texture maps
+    SCHED->>Storage: Persist raw master/source.glb
+    opt Production post-processing enabled
+        SCHED->>PP: run_postprocess_job(master, options)
+        PP->>Storage: Write game-ready derivative and QA status
+        PP->>Storage: Write requested texture, LOD, and collision artifacts
+        PP->>Storage: Update asset manifest and quality report
     end
-    SCHED->>Storage: Save game_ready.glb (Decimated)
-    SCHED->>Storage: Save lods/lod0..3.glb (LOD Cascade)
-    SCHED->>Storage: Save collision.glb (Convex Hull)
-    SCHED->>Storage: Save quality_report.json (QA 0-100 Score)
     SCHED-->>API: Job complete
     API-->>Frontend: Return {job_id, status: "completed", outputs}
     Frontend->>User: Render 3D model in WebGL Viewport
 ```
+
+The scheduler owns worker selection and job state. `backend/postprocess/pipeline.py` owns derivative generation; disabling production post-processing bypasses these derivative stages and returns raw output.
 
 ## Quality Pipeline
 
@@ -338,6 +339,7 @@ ForMash3D/
 │   ├── core/                          # Scheduler, VRAM manager
 │   ├── adapters/                      # Model adapters
 │   ├── config/                        # models.yaml, system.yaml
+│   ├── postprocess/                   # Production pipeline and mesh-processing services
 │   ├── scripts/                       # install.sh, download_models.sh
 │   ├── thirdparty/                    # Third-party source code
 ├── scripts/                           # Setup and lifecycle scripts
@@ -347,7 +349,7 @@ ForMash3D/
 ├── .env.example                       # Environment template
 ├── README.md
 ├── LICENSE
-├── SECURITY.md
+├── Docs/SECURITY.md
 └── package.json
 ```
 
@@ -381,7 +383,7 @@ uvicorn api.main_multiworker:app --workers 4 --port 7842
 
 ## Current Production Post-Processing Contract — 2026-09-29
 
-Every successful mesh-generation job automatically enters post-processing. The raw generation output is preserved byte-for-byte in `backend/storage/models/meshes/<asset_name>_<job_id>/master/source.glb` before any destructive operation.
+Generation requests enter production post-processing only when `enable_postprocess` is enabled. Native/Raw requests bypass production processing; enabled requests preserve the raw generation output in the immutable master workspace before derivatives are created.
 
 The canonical workspace contains master/, game_ready/, lods/, collision/, textures/, previews/, and metadata/. Only artifacts that actually succeed are written.
 

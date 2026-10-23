@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { fetchHomeTelemetry, UNKNOWN_HOME_TELEMETRY, type HomeTelemetry } from './homeTelemetry';
 import {
   Sparkles,
   Box,
@@ -33,17 +34,6 @@ import {
   Download,
   Share2,
 } from 'lucide-react';
-
-interface SystemTelemetry {
-  status: 'online' | 'busy' | 'offline';
-  gpuName: string;
-  vramUsedGb: number;
-  vramTotalGb: number;
-  queueRunning: number;
-  queuePending: number;
-  modelsLoaded: number;
-  latencyMs: number;
-}
 
 const PRESET_WORKFLOWS = [
   {
@@ -218,48 +208,47 @@ export default function HomePage() {
   const [activeTab, setActiveTab] = useState<'generate' | 'retopo' | 'texture' | 'rigging'>('generate');
 
   // Live Hardware Telemetry State
-  const [telemetry, setTelemetry] = useState<SystemTelemetry>({
-    status: 'online',
-    gpuName: 'Local Dedicated GPU',
-    vramUsedGb: 4.8,
-    vramTotalGb: 24.0,
-    queueRunning: 0,
-    queuePending: 0,
-    modelsLoaded: 2,
-    latencyMs: 14,
-  });
+  const [telemetry, setTelemetry] = useState<HomeTelemetry>(UNKNOWN_HOME_TELEMETRY);
+  const [telemetryLoading, setTelemetryLoading] = useState(true);
 
-  // Fetch live system stats from backend with graceful fallback
+  // Fetch live system stats; unavailable API data stays explicitly unknown.
+  // Polling pauses when the tab is hidden (DESIGN.md §10) and resumes on return.
   useEffect(() => {
     let cancelled = false;
+    let interval: ReturnType<typeof setInterval> | null = null;
+
     const fetchStats = async () => {
-      try {
-        const res = await fetch('/api/v1/system/stats');
-        if (res.ok) {
-          const data = await res.json();
-          if (!cancelled && data) {
-            setTelemetry({
-              status: data.status === 'offline' ? 'offline' : 'online',
-              gpuName: data.gpuType || 'Local Accelerator',
-              vramUsedGb: Number(data.vramUsedGb ?? 4.8),
-              vramTotalGb: Number(data.vramTotalGb ?? 24.0),
-              queueRunning: Number(data.queueRunning ?? 0),
-              queuePending: Number(data.queuePending ?? 0),
-              modelsLoaded: 2,
-              latencyMs: Number(data.lastPingMs || 12),
-            });
-          }
-        }
-      } catch {
-        // Retain default active telemetry if server endpoint is waking up
+      const data = await fetchHomeTelemetry();
+      if (!cancelled) {
+        setTelemetry(data);
+        setTelemetryLoading(false);
       }
     };
 
-    void fetchStats();
-    const interval = setInterval(fetchStats, 10000);
+    const start = () => {
+      stop();
+      void fetchStats();
+      interval = setInterval(fetchStats, 10000);
+    };
+
+    const stop = () => {
+      if (interval) {
+        clearInterval(interval);
+        interval = null;
+      }
+    };
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') start();
+      else stop();
+    };
+
+    start();
+    document.addEventListener('visibilitychange', handleVisibility);
     return () => {
       cancelled = true;
-      clearInterval(interval);
+      stop();
+      document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, []);
 
@@ -411,10 +400,14 @@ export default function HomePage() {
               className="hidden sm:flex items-center gap-2 px-3 py-1 rounded-full bg-[hsl(var(--surface-1))] border border-white/[0.08] hover:border-primary/40 transition-all text-xs font-mono cursor-pointer"
               title="Click to view hardware diagnostics"
             >
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className={`w-2 h-2 rounded-full ${telemetry.status === 'online' ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-500'}`} />
               <span className="text-zinc-400">VRAM</span>
               <span className="text-primary font-bold">
-                {telemetry.vramUsedGb.toFixed(1)} / {telemetry.vramTotalGb.toFixed(0)} GB
+                {telemetryLoading ? (
+                  <span className="skeleton-shimmer h-4 w-32 inline-block font-mono" />
+                ) : telemetry.vramUsedGb !== null && telemetry.vramTotalGb !== null
+                  ? `${telemetry.vramUsedGb.toFixed(1)} / ${telemetry.vramTotalGb.toFixed(0)} GB`
+                  : 'Unavailable'}
               </span>
             </Link>
 
@@ -520,7 +513,7 @@ export default function HomePage() {
                     onChange={(e) => setPromptInput(e.target.value)}
                     placeholder={
                       activeTab === 'generate'
-                        ? 'Describe your 3D asset (e.g., "cyberpunk mech warrior with gold inlays")...'
+                        ? 'Asset name (text-to-3D is unavailable; upload a reference image in Studio)...'
                         : activeTab === 'retopo'
                         ? 'Target polycount budget or remeshing prompt...'
                         : activeTab === 'texture'
@@ -868,17 +861,33 @@ export default function HomePage() {
                       <Cpu className="w-3.5 h-3.5 text-primary" />
                       <span>GPU VRAM</span>
                     </span>
-                    <span className="text-emerald-400 font-bold">Optimal</span>
+                    <span className={`${telemetry.vramUsedGb !== null && telemetry.vramTotalGb !== null ? 'text-emerald-400' : 'text-zinc-500'} font-bold`}>
+                      {telemetryLoading ? (
+                        <span className="skeleton-shimmer h-4 w-16 inline-block" />
+                      ) : telemetry.vramUsedGb !== null && telemetry.vramTotalGb !== null ? 'Reported' : 'Unavailable'}
+                    </span>
                   </div>
                   <div className="text-xl font-bold font-mono text-white mb-2">
-                    {telemetry.vramUsedGb.toFixed(1)}{' '}
-                    <span className="text-xs text-zinc-500 font-normal">/ {telemetry.vramTotalGb.toFixed(0)} GB</span>
+                    {telemetryLoading ? (
+                      <span className="skeleton-shimmer h-6 w-28 inline-block font-mono" />
+                    ) : telemetry.vramUsedGb === null ? 'Unavailable' : telemetry.vramUsedGb.toFixed(1)}{' '}
+                    {telemetry.vramUsedGb !== null && (
+                      <span className="text-xs text-zinc-500 font-normal">
+                        {telemetryLoading ? (
+                          <span className="skeleton-shimmer h-3 w-14 inline-block" />
+                        ) : telemetry.vramTotalGb === null ? 'Unavailable' : `${telemetry.vramTotalGb.toFixed(0)} GB`}
+                      </span>
+                    )}
                   </div>
                   <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
                     <div
                       className="h-full bg-primary rounded-full transition-all duration-500"
                       style={{
-                        width: `${Math.min(100, (telemetry.vramUsedGb / telemetry.vramTotalGb) * 100)}%`,
+                        width: telemetryLoading
+                          ? '100%'
+                          : telemetry.vramUsedGb !== null && telemetry.vramTotalGb !== null && telemetry.vramTotalGb > 0
+                            ? `${Math.min(100, (telemetry.vramUsedGb / telemetry.vramTotalGb) * 100)}%`
+                            : '0%',
                       }}
                     />
                   </div>
@@ -890,14 +899,22 @@ export default function HomePage() {
                       <HardDrive className="w-3.5 h-3.5 text-primary" />
                       <span>Engine Latency</span>
                     </span>
-                    <span className="text-primary font-bold">{telemetry.latencyMs} ms</span>
+                    <span className="text-primary font-bold">
+                      {telemetryLoading ? (
+                        <span className="skeleton-shimmer h-4 w-20 inline-block font-mono" />
+                      ) : telemetry.latencyMs === null ? 'Unavailable' : `${telemetry.latencyMs} ms`}
+                    </span>
                   </div>
                   <div className="text-xl font-bold font-mono text-white mb-2">
-                    {telemetry.queueRunning}{' '}
+                    {telemetryLoading ? (
+                      <span className="skeleton-shimmer h-6 w-16 inline-block font-mono" />
+                    ) : telemetry.queueRunning ?? 'Unavailable'}{' '}
                     <span className="text-xs text-zinc-500 font-normal">Active Jobs</span>
                   </div>
                   <div className="text-xs font-mono text-zinc-500 truncate">
-                    {telemetry.gpuName}
+                    {telemetryLoading ? (
+                      <span className="skeleton-shimmer h-3 w-24 inline-block" />
+                    ) : telemetry.gpuName || 'Unavailable'}
                   </div>
                 </div>
               </div>

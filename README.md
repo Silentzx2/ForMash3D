@@ -208,7 +208,7 @@ The model registry is dynamically configured via `backend/config/models.yaml` an
 
 | Model Architecture | Registered Model ID | Category / Task | VRAM Budget | Key Technical Capabilities |
 |---|---|---|:---:|---|
-| **Hunyuan3D-Shape-v2.1** | `hunyuan3d_shape_v21_image_to_raw_mesh` | Raw Mesh | ~10 GB | 3.3B shape model, official 2.1 pipeline, octree resolution up to 512 |
+| **Hunyuan3D-Shape-v2.1** | `hunyuan3d_shape_v21_image_to_raw_mesh` | Raw Mesh | ~10 GB | 3.3B shape model, official 2.1 pipeline, adapter-owned octree resolution 1300 |
 | **Hunyuan3D-Paint-v2.1** | `hunyuan3d_paint_v21_image_mesh_painting` | PBR Texture | ~12 GB configured scheduler reservation (not a measured peak-memory guarantee) | 2B PBR texture checkpoint, internal RealESRGAN, exported 4K/8K atlas validation |
 | **Hunyuan3D-DiT-v2-mini-Turbo** | `hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh` | Raw Mesh | ~6 GB | 0.6B low-VRAM step-distilled shape model with Turbo path |
 | **TRELLIS** | `trellis_image_to_3d` / `trellis_image_to_raw_mesh` | Raw Mesh | 11.5 GB | Raw FlexiCubes geometry; optional texture generation is a separate stage |
@@ -411,16 +411,9 @@ The FastAPI backend exposes comprehensive REST and SSE streaming endpoints:
 ForMash3D maintains rigorous unit, integration, and regression test suites:
 
 ```bash
-# Backend runtime contracts (lightweight; no torch/trimesh/skimage required).
+# Backend CPU contract tests (includes the geometry dependencies used by the pipeline).
 # This is exactly what the Backend Runtime Contract CI workflow runs.
-PYTHONPATH=backend python -m pytest -q \
-  backend/tests/test_generation_dependency_contract.py \
-  backend/tests/test_runtime_source_contracts.py \
-  backend/tests/test_resource_planner.py \
-  backend/tests/test_manifest_path_resolution.py \
-  backend/tests/test_seed_plan_resolution.py \
-  backend/tests/test_thumbnail_denoise_fallback.py \
-  backend/tests/test_collision_stats_contract.py \
+PYTHONPATH=backend python -m pytest -q backend/tests \
   backend/thirdparty/tests/test_runtime_path_utils.py
 
 # Verify clean compilation across all Python modules
@@ -437,7 +430,7 @@ bun run lint
 bash -n manager.sh backend/scripts/*.sh scripts/*.sh
 ```
 
-**Verification status**: The backend contract subset, `python3 -m compileall -q backend/`, `bun test` and `npx tsc --noEmit` all run on CPU-only environments. The full backend test suite (`pytest backend/tests/`) additionally needs the heavy runtime dependencies (`torch`, `trimesh`, `skimage`, …) and is not part of CI; GPU/model inference validation still requires the supported NVIDIA environment.
+**Verification status**: The backend CPU contract suite, `python3 -m compileall -q backend/`, `bun test` and `npx tsc --noEmit` run without model weights or a GPU. GPU/model inference and Blender-dependent validation still require the supported runtime environment.
 
 ---
 
@@ -559,7 +552,7 @@ These capabilities reuse the existing scheduler, image editor, post-processing, 
 
 ## Generation Experiments & Reusable Presets
 
-Workspace Settings → AI Inference includes a Generation Experiment Lab for editing the active model's schema parameters, seed, guidance, inference steps where supported, and advanced nested JSON overrides. Save/reload local presets, track a revision label, queue current settings, and import/export preset JSON files. Presets exclude images and preprocessing artifacts so reloading a profile does not replace the current input image.
+Inference schedules are adapter-owned and are not editable from the Generate UI. Production choices such as output intent, topology, repair, baking and LODs are separate from model inference. See [Docs/EXPERIMENTAL-MODEL-SETTINGS.md](Docs/EXPERIMENTAL-MODEL-SETTINGS.md) for the profile change-control policy and [Docs/GENERATION-UI-CONTRACT.md](Docs/GENERATION-UI-CONTRACT.md) for the current request boundary. The active UI contract is also summarized in [Docs/GENERATION-CONTROL-AUDIT.md](Docs/GENERATION-CONTROL-AUDIT.md).
 
 ## High-Fidelity Generation Architecture
 

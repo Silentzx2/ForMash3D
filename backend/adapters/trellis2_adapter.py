@@ -391,7 +391,7 @@ class Trellis2ImageToRawMeshAdapter(ImageToMeshModel):
                 "max_num_tokens": {
                     "type": "integer",
                     "description": "Max cascade token budget; a higher budget prevents silent resolution reduction.",
-                    "default": 524288,
+                    "default": _LOCKED_INFERENCE_PROFILE["max_num_tokens"],
                     "minimum": 49152,
                     "maximum": 1048576,
                     "readOnly": True,
@@ -692,4 +692,3 @@ class Trellis2ImageMeshPaintingAdapter(ImageToMeshModel):
 # Aliases
 TRELLIS2ImageToTexturedMeshAdapter = Trellis2ImageToTexturedMeshAdapter
 TRELLIS2ImageMeshPaintingAdapter = Trellis2ImageMeshPaintingAdapter
-

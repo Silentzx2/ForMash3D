@@ -38,8 +38,8 @@ ForMash 3D is an end-to-end generative 3D reconstruction and asset optimization 
 ### Model-Native Source Fidelity Contract
 1. The frontend sends no model-specific inference schedule; numeric inference profiles (steps, guidance, octree/depth resolution, samplers) are owned by each adapter's `_LOCKED_INFERENCE_PROFILE`. Only the seed and the image identity stay caller-controlled.
 2. Scheduler removes post-process-only target, extraction/decimation/remesh, LOD, physics, and paint controls before model inference, and also strips adapter-owned inference keys.
-3. Adapter extraction uses the highest supported source density, with only hardware safety guards allowed to reduce it. Locked adapter profiles: Hunyuan3D-Shape-v2.1 (octree 1300, 150 steps, guidance 5.0, 80,000 chunks), Hunyuan3D-DiT-v2-mini-Turbo (octree 768, 20 steps, guidance 7.5, 80,000 chunks), TripoSG (100 steps, guidance 9.0, dense depth 10, hierarchical depth 11), TRELLIS (100 sparse/slat steps, guidance 7.5, `simplify=0.0`), TRELLIS.2 (`1536_cascade`, 524,288 max tokens), Pixal3D (`1536_cascade`, resolution 2048), Unique3D (`input_processing=true`, `do_refine=true`, `expansion_weight=0.1`), TaoFlowForge (`fill_holes=true`, `offload="auto"`).
-4. Source texture profiles are fixed at TRELLIS 2048 and TRELLIS.2 4096 for maximum source fidelity.
+3. Adapter extraction and inference profiles are adapter-owned; the canonical values live in the adapter implementations and must not be copied into a second documentation table. Configured requests and effective runtime values are not interchangeable; see `Docs/EXPERIMENTAL-MODEL-SETTINGS.md` for known limits and the verification boundary.
+4. Source texture settings are model-owned and separate from downstream production atlas resolution.
 5. master/source.glb is immutable; derived retopo, UV, LOD, collision, and bake artifacts cannot rewrite it.
 
 
@@ -153,6 +153,7 @@ sequenceDiagram
     participant API as FastAPI Router (:7842)
     participant SCHED as VRAM-Aware Scheduler
     participant Adapter as Model Adapter
+    participant PP as Production Postprocess
     participant Storage as backend/storage/
 
     User->>Frontend: Select image + intent preset / polycount budget
@@ -160,15 +161,19 @@ sequenceDiagram
     API->>SCHED: Submit job (VRAM-aware)
     SCHED->>Adapter: Run inference (TRELLIS/Hunyuan3D/etc.)
     Adapter-->>SCHED: Raw 3D mesh output
-    SCHED->>Storage: Save master source.glb (Untouched Master)
-    SCHED->>Storage: Save game_ready.glb (Decimated)
-    SCHED->>Storage: Save lods/lod0..3.glb (LOD Cascade)
-    SCHED->>Storage: Save collision.glb (Convex Hull)
-    SCHED->>Storage: Save quality_report.json (QA 0-100 Score)
+    SCHED->>Storage: Persist raw master/source.glb
+    opt Production post-processing enabled
+        SCHED->>PP: run_postprocess_job(master, options)
+        PP->>Storage: Write game_ready derivative and QA status
+        PP->>Storage: Write requested LOD, texture, and collision artifacts
+        PP->>Storage: Update asset manifest and quality report
+    end
     SCHED-->>API: Job complete
     API-->>Frontend: Return {job_id, status: "completed", outputs}
     Frontend->>User: Render 3D model in WebGL Viewport
 ```
+
+The scheduler owns model workers and job state; `backend/postprocess/pipeline.py` owns derivative generation and final production status. When production post-processing is disabled, the scheduler marks it bypassed and returns the raw master result.
 
 ---
 
@@ -363,7 +368,7 @@ bun run build
 ## Production Asset Lifecycle & Two-Way PostProcess Pipeline
 
 ForMash3D executes post-processing via two complementary pathways:
-1. **Automatic Chaining:** Generation -> maximum-fidelity model output -> immutable `master/source.glb` -> automatic trigger in `multiprocess_scheduler.py` via `run_postprocess_job` (repair -> conditional retopo -> downstream target polycount -> Auto UV -> bake -> optional texture stage -> game-ready formats -> LOD cascade -> collision hulls -> QA) -> production completion -> `WorkspaceContext.tsx` artifacts.
+1. **Conditional Production Chaining:** When `enable_postprocess` is enabled, generation -> raw model output -> immutable `master/source.glb` -> scheduler call to `run_postprocess_job` (repair -> conditional retopo -> target budget -> UV -> bake/texture -> requested LOD/collision -> QA) -> production completion -> `WorkspaceContext.tsx` artifacts. Native/Raw requests with post-processing disabled bypass this chain.
 2. **Manual On-Demand PostProcess: Users can select any workspace model or upload an external mesh (`.glb`, `.obj`, `.stl`, `.ply`) inside `RemeshPanel.tsx`, `UVUnwrapPanel.tsx`, or `MeshSegmentPanel.tsx` to execute discrete operations on demand via REST API (`/api/v1/mesh-retopology/*`, `/api/v1/mesh-uv-unwrapping/*`, `/api/v1/mesh-segmentation/*`).
 The post-processing stage runs in `asyncio.to_thread` so CPU/GPU mesh operations do not block FastAPI's event loop.
 

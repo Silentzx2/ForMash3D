@@ -1006,12 +1006,12 @@ async def get_jobs_history(
     try:
         from datetime import datetime
 
-        from api.dependencies import get_current_user_optional
+        from api.dependencies import get_current_user_or_none
         from core.auth.models import UserRole
         from core.scheduler.job_queue import JobStatus
-        
+
         # Get current user for filtering
-        current_user = await get_current_user_optional(
+        current_user = await get_current_user_or_none(
             request.headers.get("authorization") if request else None,
             request
         )
@@ -1177,6 +1177,8 @@ async def get_jobs_history(
             "timestamp": time.time(),
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to get jobs history: {str(e)}")
         raise HTTPException(
@@ -1188,18 +1190,18 @@ async def get_jobs_history(
 async def get_job_status(job_id: str, request: Request):
     """Get status of a specific job with visitable URLs for files"""
     try:
-        from api.dependencies import get_current_user_optional
-        
+        from api.dependencies import get_current_user_or_none
+        from core.auth.models import UserRole
+
         scheduler = await get_scheduler(request)
         job_status = await scheduler.get_job_status(job_id)
 
         if job_status is None:
             raise HTTPException(status_code=404, detail="Job not found")
-        
+
         # User filtering: non-admin users can only see their own jobs
-        from core.auth.models import UserRole
-        current_user = await get_current_user_optional(
-            request.headers.get("authorization"), 
+        current_user = await get_current_user_or_none(
+            request.headers.get("authorization"),
             request
         )
         
@@ -1437,22 +1439,21 @@ async def download_job_result(
         FileResponse for direct download or JSON with base64 data
     """
     try:
-        from api.dependencies import get_current_user_optional
+        from api.dependencies import get_current_user_or_none
         from core.auth.models import UserRole
-        
+
         scheduler = await get_scheduler(request)
         job_status = await scheduler.get_job_status(job_id)
 
         if job_status is None:
             raise HTTPException(status_code=404, detail="Job not found")
-        
+
         # User filtering: non-admin users can only download their own jobs
-        user_res = get_current_user_optional(
+        current_user = await get_current_user_or_none(
             request.headers.get("authorization"),
             request
         )
-        current_user = await user_res if asyncio.iscoroutine(user_res) or hasattr(user_res, "__await__") else user_res
-        
+
         if current_user:
             job_user_id = job_status.get("user_id")
             if current_user.role != UserRole.ADMIN and job_user_id != current_user.user_id:
@@ -1824,9 +1825,9 @@ async def download_job_thumbnail(
         FileResponse for direct download or JSON with base64 data
     """
     try:
-        from api.dependencies import get_current_user_optional
+        from api.dependencies import get_current_user_or_none
         from core.auth.models import UserRole
-        
+
         raw_status = scheduler.get_job_status(job_id)
         if asyncio.iscoroutine(raw_status):
             job_status = await raw_status
@@ -1835,13 +1836,13 @@ async def download_job_thumbnail(
 
         if job_status is None:
             raise HTTPException(status_code=404, detail="Job not found")
-        
+
         # User filtering: non-admin users can only access their own jobs
-        current_user = await get_current_user_optional(
+        current_user = await get_current_user_or_none(
             request.headers.get("authorization"),
             request
         )
-        
+
         if current_user:
             job_user_id = job_status.get("user_id")
             if current_user.role != UserRole.ADMIN and job_user_id != current_user.user_id:
@@ -2188,6 +2189,21 @@ async def get_job_result_info(job_id: str, request: Request):
         )
 
 
+async def _assert_job_access(request: Request, job_status: Dict[str, Any]) -> None:
+    from api.dependencies import get_current_user_or_none
+    from core.auth.models import UserRole
+
+    current_user = await get_current_user_or_none(
+        request.headers.get("authorization"), request
+    )
+    if (
+        current_user
+        and current_user.role != UserRole.ADMIN
+        and job_status.get("user_id") != current_user.user_id
+    ):
+        raise HTTPException(status_code=403, detail="Access denied to this job")
+
+
 @router.get("/jobs/{job_id}/candidates/{candidate_id}/download", summary="Download specific candidate mesh")
 async def download_candidate_mesh(
     job_id: str,
@@ -2198,6 +2214,7 @@ async def download_candidate_mesh(
     job_status = await scheduler.get_job_status(job_id)
     if not job_status:
         raise HTTPException(status_code=404, detail="Job not found")
+    await _assert_job_access(request, job_status)
     result = job_status.get("result") or {}
     candidates = result.get("candidates") or []
     match = next((c for c in candidates if c.get("candidate_id") == candidate_id), None)
@@ -2223,6 +2240,7 @@ async def download_candidate_thumbnail(
     job_status = await scheduler.get_job_status(job_id)
     if not job_status:
         raise HTTPException(status_code=404, detail="Job not found")
+    await _assert_job_access(request, job_status)
     result = job_status.get("result") or {}
     candidates = result.get("candidates") or []
     match = next((c for c in candidates if c.get("candidate_id") == candidate_id), None)
@@ -2255,6 +2273,7 @@ async def select_candidate_mesh(
     job_status = await scheduler.get_job_status(job_id)
     if not job_status:
         raise HTTPException(status_code=404, detail="Job not found")
+    await _assert_job_access(request, job_status)
     result = job_status.get("result") or {}
     candidates = result.get("candidates") or []
     chosen = next((c for c in candidates if c.get("candidate_id") == candidate_id), None)

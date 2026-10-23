@@ -583,12 +583,10 @@ async def get_current_user_optional(
     request: Request = None,
 ):
     """
-    Get the current authenticated user, but return None if not authenticated or if auth is disabled.
+    Return None when authentication is disabled or no/invalid credentials are provided.
     
-    This is useful for endpoints that work with or without authentication,
-    but provide additional features for authenticated users.
-    
-    If user_auth_enabled is False, always returns None (no authentication).
+    Callers can treat a missing user as the deliberate no-auth/simple-mode case.
+    This is an optional dependency: it never raises for missing credentials.
     """
     settings = get_settings()
     

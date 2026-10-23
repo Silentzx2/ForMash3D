@@ -1,244 +1,141 @@
-# ForMash3D — Dev Codebase Cleanup & Wiring Tasks
+# TASKS — CPU-Safe Setup + GitHub SEO / Contributor Growth (ForMash3D)
 
-Repository: Silentzx2/ForMash3D
-Target branch: dev
-Scope: backend, core, quality, API, model adapters, post-processing, frontend/features, shared components, configuration, tests, scripts, tooling, deployment, assets, plugins, and documentation.
+Repo: `Silentzx2/ForMash3D` · base commit read: `eca1d78` (main) · Apache-2.0
+Branch rule: work on `main`; leave `dev` / `Dev` untouched.
 
-This file replaces the former task index with an actionable cleanup/wiring plan. The previous file is preserved in Docs/TASKS_BEFORE_CODEBASE_CLEANUP_2026-10-21.md. The consolidated repair context remains in Docs/MASTER_AUDIT_AND_REPAIR_PLAN.md.
+---
 
-## Rules before changing code
+## 0. AGENT OPERATING RULES (MANDATORY)
 
-- Do not delete a file only because a simple text search did not find an import. Check dynamic imports, reflection, registries, CLI entry points, Next.js conventions, plugin loading, tests, deployment scripts, and the backend/thirdparty Git submodule.
-- Every removal must include the file's reverse-dependency check, its replacement/consumer decision, and tests proving that no supported workflow regressed.
-- Every visible control and every API field must either reach a real downstream consumer or be removed/deprecated at the boundary. No fake success, mock capability claims, or fields that are accepted but ignored without explanation.
-- Keep one source of truth for each model registry, production preset, quality threshold, and runtime artifact/hash contract.
-- Do not retune model inference numbers during cleanup. Adapter-owned runtime profiles are out of scope unless a separate measured regression justifies a change.
-- Preserve raw/native mesh output, immutable master/source.glb lineage, user-selected models, and current artifact contracts.
-- Treat all findings below as static-audit candidates until the relevant checks are run on the latest dev HEAD. No source-code deletion or runtime test success is implied by this plan.
+ROLE: Bash/Installer Engineer (conda/uv/PyTorch wheels, apt, CUDA detection) + GitHub OSS Growth Engineer.
 
-## P0 — Fix confirmed wiring problems first
+1. FIRST verify startup flow: `scripts/setup.sh`, `scripts/start.sh`, `backend/scripts/install.sh`, `manager.sh`, `Dockerfile`, `docker-compose.yml`, `.env.example`. The existing GPU/CUDA path must behave EXACTLY as today (same commands, same order).
+2. NO full-repo scan. Read only: `RULES.md`, `README.md`, `Docs/ARCHITECTURE.md`, `Docs/TASKS.md`, `Docs/api-documentation.md`, `CONTRIBUTING.md`, and the exact files named in this task.
+3. Never invent features, metrics, or status. Unverifiable => write `TODO: user to confirm`.
+4. Output: ZERO filler. No blank-line padding. Do not reprint unchanged code. Replacement-only diffs with exact file paths + line anchors. Explanations max 2 sentences per item.
+5. Deliver ONE zip containing only new/modified files. Push to `main`/PR only if possible.
+6. Final step: sync docs (section 5).
 
-### P0-1. Repair the graph helper import boundary
+---
 
-File: features/graph/utils/graphHelpers.js
+## 1. VERIFIED FINDINGS (read from repo; install NOT executed — no GPU/conda in review sandbox. `bash -n` syntax check passed on both scripts)
 
-- [ ] Replace the duplicated implementation with a compatibility re-export from features/utils/graphHelpers.js. The root helper is the canonical implementation.
-- [ ] The current copied file uses relative imports such as ./workflowFileInputs and ./ids, but those sibling files are absent from features/graph/utils in the tracked tree. The duplicate therefore points at missing modules.
-- [ ] Keep the nested path as a re-export shim because GraphPage imports through that path; do not remove the path before updating all imports.
-- [ ] Confirm root utility exports cover every symbol imported by GraphPage and graph node components.
-- [ ] Run the frontend typecheck, lint, and production build; add a small route/import contract test if the build does not cover this import boundary.
+| # | Finding | Where |
+|---|---------|-------|
+| F1 | CPU-only detect only prints a warning ("proceeding with CPU fallback") and then continues the FULL CUDA install | `scripts/setup.sh` `detect_gpu()` |
+| F2 | `detect_gpu` results (`GPU_AVAILABLE`, `CUDA_VERSION`) are NOT exported, so `install.sh` (separate process) never knows the mode | `scripts/setup.sh` -> `backend/scripts/install.sh` |
+| F3 | `install.sh` hard-installs `torch==2.6.0 ... --index-url .../whl/cu124` and exits 1 on failure | `install.sh` ~L331-338 |
+| F4 | CUDA-only wheels downloaded even on CPU (`download_release_wheels` in setup.sh, `ensure_release_wheels` in install.sh) | `setup.sh`, `install.sh` ~L124, L350 |
+| F5 | All model stacks installed unconditionally: TRELLIS/TRELLIS.2 + kaolin (L369-455), Hunyuan3D shared/shape/paint/DiT (L457-590), UniRig, partuv, FastMesh (L592-640), Unique3D incl. pytorch3d source build + torch_scatter cu124 + xformers cu124 (L640-713), ARDY (L715), Paint3D (L728), TripoSG (L738), Pixal3D (L751), natten cu124 wheel (L767), TaoFlowForge (L802) | `install.sh` |
+| F6 | `err` is called but never defined in setup.sh (only `log/info/warn/fail` exist) -> "command not found" on old NVIDIA driver path | `scripts/setup.sh` L242-243 |
+| F7 | `ensure_thirdparty_submodule` runs `git submodule update --remote --merge` on every setup (moves to latest remote HEAD; non-reproducible, heavy) | `scripts/setup.sh` |
+| F8 | `install.sh` has no `set -e`; failed model installs can be silently skipped | `install.sh` |
+| F9 | `backend/requirements.txt` has `--extra-index-url .../cu124`; with `--index-strategy unsafe-best-match` a transitive `torch` dependency could replace a CPU torch with a `+cu124` build | `backend/requirements.txt` |
+| F10 | Runtime already tolerates missing/CPU torch in core: guarded imports in `core/config.py`, `gpu_monitor.py`, `runtime_probe.py`, `api/routers/system.py`; adapters are lazy-loaded via `adapters/__init__.py` `_ADAPTER_MAP` | backend |
+| F11 | ARDY is documented CPU-only (README) -> optional CPU-capable extra | README, `thirdparty/ardy` |
+| F12 | Main repo has no `.gitattributes`; wheels now come from GitHub Release tag `Wheels` (not LFS). `ForMash3D-ThirdParty` README may still say "Git LFS mandatory" (not re-checked) | verify |
+| F13 | `Dockerfile` base is `nvidia/cuda:12.4.1`, compose uses `runtime: nvidia` -> Docker has no CPU path | Docker |
 
-### P0-2. Make the quality gate outcome real and observable
+---
 
-Files: backend/core/quality/evaluation.py, backend/core/quality/metrics.py, backend/postprocess/pipeline.py, backend/core/scheduler/multiprocess_scheduler.py
+## 2. TASK A — CPU-ONLY AUTO MODE FOR `setup.sh` / `install.sh`
 
-- [ ] Trace the production quality report from master mesh comparison to the final result/status. pipeline.py calls compare_meshes and quality_gate; verify whether a failed gate changes the result, blocks an unsafe promotion, or is merely recorded as metadata.
-- [ ] Define and test the actual policy for pass, warning, fail, skipped, and missing metrics. Do not silently turn missing metrics into a pass.
-- [ ] Ensure the quality decision applies to derived output only and never mutates master/source.glb.
-- [ ] Reuse quality.yaml thresholds; do not add another hard-coded threshold table.
-- [ ] Keep diagnostics honest: a diagnostic comparison without ground truth must not be described as competitive parity or proof of visual superiority.
+GOAL: If no NVIDIA GPU is detected at start, setup skips ALL model/CUDA dependencies but still installs everything else (frontend, backend core API, postprocess, Redis, dirs, `.env`) so the app boots and the non-GPU parts work. UI/backend graceful-degradation is out of scope (see section 4).
 
-### P0-3. Verify the graph/UI integration and test coverage
+### A1. Single source of truth for compute mode
+- Add `FORMASH3D_COMPUTE=auto|cpu|cuda` (default `auto`) + flags `--cpu`, `--gpu` in `setup.sh` and `install.sh` (same parse style as `--auto`, `--venv`).
+- `auto`: `nvidia-smi -L` returns >=1 device -> `cuda`, else `cpu`. Keep `CUDA_FORCE_PRESENT=1` test hook working.
+- Put the resolver in one shared file `scripts/lib/compute_mode.sh` (sourced by both scripts) to avoid duplicated logic. `install.sh` must also resolve on its own when run standalone.
+- `export FORMASH3D_COMPUTE`, persist to `.env` (reuse `persist_env_config` pattern), print one clear line: `[SETUP] Compute mode: cpu (no NVIDIA GPU detected) — model dependencies will be skipped`.
+- `REQUIRE_GPU=1` must still abort when mode resolves to `cpu`.
 
-- [ ] Run a full frontend typecheck, ESLint, and production build against dev after P0-1.
-- [ ] Check actual route mounts and navigation entry points before deleting pages/panels. Keep Next.js conventional files such as app/icon.svg and app/apple-icon.png unless metadata and public references prove they are redundant.
-- [ ] Keep root/shared UI components until a complete import graph and build prove they are unused; tiny files are not automatically dead code.
-- [ ] Add any missing lightweight import/route contracts to CI so future dangling relative imports fail before merge.
+### A2. `scripts/setup.sh` changes (CPU mode only)
+- SKIP: `setup_cuda_124`, `_sanitize_apt_cuda_sources`, `download_release_wheels`, `build_deps` (ninja/CUDA arch exports).
+- `ensure_thirdparty_submodule`: SKIP init in CPU mode unless `--with-thirdparty`. (Also fix F7: use `git submodule update --init --recursive` only; make `--remote --merge` opt-in via `--update-thirdparty`.)
+- KEEP: `require_commands`, `ensure_bun_or_npm`, `ensure_uv`, `ensure_redis`, `create_directories`, `install_frontend_deps`, `install_backend`, `summary`.
+- Fix F6: define `err(){ printf "${RED}[ERROR]${NC} %s\n" "$*" >&2; }`.
+- Replace the misleading "Generation jobs will fail" warning with an accurate CPU-mode message.
+- Summary screen: show mode (`cpu`/`cuda`) and list what was skipped.
 
-## P1 — Remove high-confidence dead-code candidates after the mandatory reference check
+### A3. `backend/scripts/install.sh` changes
+1. Torch step (F3): in `cpu` mode install CPU wheels: `torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cpu`. `cuda` mode: unchanged cu124 command.
+2. Guard `ensure_release_wheels` (F4) -> `cuda` only. Keep `ensure_blender` (it is optional and already env-gated by `BLENDER_ENABLED`).
+3. Wrap the model-specific blocks (F5: TRELLIS … TaoFlowForge, ~L369-815) in one function `install_model_stacks()`, call it only when mode = `cuda`. Keep outside the guard: `backend/requirements.txt` core install, test requirements (~L792-799), system runtime libs (~L826+), runtime validation (~L860+).
+4. In CPU mode, optionally install ARDY (F11) only with `--cpu-extras` (default OFF); needs `--with-thirdparty`.
+5. Split requirements to remove F9 risk without changing GPU flow:
+   - `backend/requirements-core.txt` = API, postprocess, trimesh/open3d/pymeshlab/scipy/etc. (CPU-safe)
+   - `backend/requirements-models.txt` = model-only packages (diffusers/transformers/realesrgan/peft/timm/kornia/accelerate/datasets… — agent must classify by reading imports, not guess)
+   - `backend/requirements.txt` = `-r requirements-core.txt` + `-r requirements-models.txt` (GPU flow identical).
+   - CPU mode installs `requirements-core.txt` with a constraints file pinning torch to the installed CPU build (`-c`), and WITHOUT the `cu124` extra-index-url.
+6. Validation block: in CPU mode print `Compute mode: cpu` and do not warn about missing CUDA; do not call the `Paint3DAdapter` import check in CPU mode.
+7. Do NOT add `set -e` globally (F8 would change GPU behavior). Instead make the CPU path fail loudly on core-install errors only.
 
-Before deleting each item, search all tracked source plus the initialized submodule for imports, dynamic paths, symbol references, tests, and docs. Exclude the definition itself from the usage count. If a reference exists, migrate it first and leave a compatibility shim when external imports may be supported.
+### A4. `scripts/start.sh` / `manager.sh`
+- Verify `start.sh` boots in CPU mode (it already skips `CUDA_VISIBLE_DEVICES` when `nvidia-smi` is absent). In CPU mode explicitly export `CUDA_VISIBLE_DEVICES=""` and `FORMASH3D_COMPUTE=cpu`.
+- `manager.sh` option that runs setup (L313): pass through `--cpu/--gpu`.
 
-### P1-1. Frontend utilities with an apparently unused duplicate copy
+### A5. Tests (CPU-only, no GPU needed)
+- Extend `scripts/tests/script_test.sh`: resolver returns `cpu` when `nvidia-smi` is absent (PATH-stub), `cuda` with `CUDA_FORCE_PRESENT=1`, flags override env, `REQUIRE_GPU=1` aborts on cpu.
+- Static grep test: in CPU mode the script text path contains no `cu124` / `kaolin` / `natten` / `pytorch3d` invocation reachable (guard check).
+- `.github/workflows/backend-runtime-ci.yml`: add a job that runs the resolver tests on `ubuntu-latest` (it has no GPU, which is the CPU case).
 
-- [ ] Remove features/hooks/useImageEditorHistory.js if latest-dev reverse-reference scanning confirms there are no callers. The active Image Editor page imports features/image-editor/hooks/useImageEditorHistory.js.
-- [ ] Remove features/image-editor/hooks/usePasteImageFiles.js if no caller exists. The shared features/hooks/usePasteImageFiles.js is used by features/graph/pages/GraphPage.jsx and must be retained.
-- [ ] Remove features/utils/shadowRemoverGPU.js if no caller exists. features/image-editor/pages/ImageEditorPage.jsx uses features/image-editor/utils/shadowRemoverGPU.js.
-- [ ] Remove features/mesh-extras/ids.js if no caller exists. Keep features/utils/ids.js, which is used by shared graph/kanban/mesh-texturing helpers.
-- [ ] Remove features/mesh-extras/meshFlatten.js if no caller exists. The current export dialog imports the canonical features/utils/meshFlatten.js implementation.
-- [ ] Remove features/mesh-extras/meshExport.js and features/mesh-extras/meshTools.js if they have no callers. They are shallow re-export wrappers; preserve the canonical features/utils/meshExport.js and features/utils/meshTools.js used by current panels.
-- [ ] Decide the ZIP utility explicitly: features/utils/zipArchive.js and features/mesh-extras/zipArchive.js have identical implementations, and no in-tree createZip call was found in this audit. If ZIP download is not a product requirement, remove both. If ZIP batch export is required, keep one canonical implementation under features/utils, wire it to an actual user action, test it, and make the other path a compatibility re-export or remove it.
-- [ ] Do not remove features/hooks/usePasteImageFiles.js, features/image-editor/hooks/useImageEditorHistory.js, features/image-editor/utils/shadowRemoverGPU.js, or features/utils/ids.js merely because they have duplicate-looking counterparts. Their known consumers must continue to work.
+### A6. Acceptance criteria
+- [ ] On a machine WITHOUT NVIDIA: `bash scripts/setup.sh --auto` finishes with exit 0, no CUDA/torch-cu124/wheel/thirdparty downloads, `.env` has `FORMASH3D_COMPUTE=cpu`.
+- [ ] `bash scripts/start.sh` -> frontend `:3000` and backend `:7842/health` respond; `/docs` loads; `GET /api/models` does not return 500.
+- [ ] On a machine WITH NVIDIA (or `CUDA_FORCE_PRESENT=1` dry run): command sequence identical to current behavior (diff of executed commands = empty).
+- [ ] `bash -n` passes on every edited script; `shellcheck` warnings not worse than before.
+- [ ] `--gpu` forces the cuda path; `--cpu` forces cpu even if a GPU exists.
 
-### P1-2. Consolidate exact duplicate shared utilities without breaking import paths
+---
 
-- [ ] Convert features/graph/utils/graphHelpers.js into the re-export shim described in P0-1.
-- [ ] Consolidate the identical features/utils/imageEditorCanvas.js and features/image-editor/utils/imageEditorCanvas.js implementations. Keep the root shared implementation as canonical if its exported API covers both callers; make the Image Editor path a re-export shim because ImageEditorPage imports it.
-- [ ] Consolidate the identical features/utils/seamlessTexture.js and features/image-editor/utils/seamlessTexture.js implementations. Keep both import paths operational because different Image Editor components currently resolve the two paths.
-- [ ] Review repeated helpers in features/mesh-extras and features/utils. Prefer a single implementation with small path-compatibility exports rather than duplicated business logic.
-- [ ] Preserve features/board/config.js, features/graph/config.js, features/image-editor/config.js, features/mesh-extras/config.js, and features/wiki/config.js while their feature modules rely on those path shims. Remove a shim only after updating and testing its callers.
-- [ ] Do not collapse app/apple-icon.png with public/icons/icon-180.png or app/icon.svg with public/icons/icon.svg based only on identical bytes. Verify framework conventions, metadata, and external/public URL consumers first.
+## 3. TASK B — GITHUB SEO + CONTRIBUTOR GROWTH
 
-### P1-3. Backend placeholder and wrapper candidates
+GOAL: more developers find the repo and can start contributing in under 10 minutes. Honest positioning: pre-alpha, contributors wanted.
 
-- [ ] Review backend/core/preprocess/hi3dgen_bridging.py. No in-repository caller was found, and its function is a passthrough placeholder. Remove it if no vendor, script, or supported external import requires it; otherwise wire it into one canonical provider interface and add real contract tests.
-- [ ] Review the separate _hi3dgen_normal_bridging implementation in backend/core/preprocess/image_enhancement.py. It explicitly labels itself as a mock and returns provider hi3dgen_mock. Keep the experimental profile only if its mock nature is clearly exposed and it cannot be mistaken for real normal conditioning. Otherwise disable the profile or replace the mock with a verified real provider. Do not claim actual geometry-quality improvement from the edge-filter blend.
-- [ ] Review backend/postprocess/services/rigging.py. No internal caller for run_rigging_export/is_rigging_available was found. Choose one canonical route: wire the facade into the current auto-rigging/export flow if it adds needed behavior, or remove the unused facade after checking external imports. Keep backend/api/routers/auto_rigging.py and backend/postprocess/services/convert_fbx.py as long as their actual API/pipeline paths remain active.
-- [ ] Review backend/postprocess/services/baking.py. It only re-exports from .bake and no internal caller was found. Remove this compatibility alias if vendor/submodule/external compatibility checks confirm it is unnecessary. Keep backend/postprocess/services/bake.py; backend/postprocess/pipeline.py imports and invokes run_bake.
-- [ ] Search all package-qualified and dynamically assembled imports before removing compatibility aliases. Record the search result in the commit.
+### B1. README.md (40 KB — too long above the fold)
+- Replace H1 text with a keyword title: `ForMash3D — Open-Source Self-Hosted Image-to-3D AI Generator` (keywords: image to 3D, text to 3D, self-hosted, open source, game-ready, GLB, retopology, PBR, LODs, auto-rigging).
+- First 160 characters of the README must contain the core pitch (they are used by search snippets).
+- Quick Start line (L27) currently says `bun install` -> `bash scripts/start.sh`, which does not match the real flow (`scripts/setup.sh` first). Make Quick Start match reality; add a second line for CPU/no-GPU mode once Task A lands.
+- Add above the fold: "Pre-alpha — contributors wanted" + links to `CONTRIBUTING.md` and `docs/GOOD_FIRST_ISSUES.md`.
+- Add badges: GitHub stars, last commit, issues, `CPU mode supported` (only after A6 passes). Keep the existing CUDA badge.
+- Add a table of contents; keep the architecture mermaid/diagram; add a "Choose your contributor path" block: (A) no GPU: UI/UX, docs, tests, API, postprocess; (B) GPU: adapters, quality pipeline.
+- Replace remaining "AI Studio" wording in docs (backward-compatible env var names like `AI_STUDIO_ENV_MANAGER` stay).
 
-### P1-4. Consolidate duplicate SHA-256 logic; do not weaken master immutability
+### B2. New / extended community files
+- `CONTRIBUTING.md` (exists, 3.7 KB): add dev setup (GPU + CPU), branch/PR flow, how to pick an issue, PR checklist.
+- Create `CODE_OF_CONDUCT.md`, `SECURITY.md` (root; link to `Docs/SECURITY.md`), `.github/PULL_REQUEST_TEMPLATE.md`, `.github/labels.yml` (good first issue, help wanted, no-gpu, needs-gpu, adapter, ui/ux, docs, quality).
+- Inspect `.github/ISSUE_TEMPLATE/repo.json` (unexpected file in a template folder); report, do not delete without confirmation. Add `config.yml` linking to Discussions.
+- `docs/GOOD_FIRST_ISSUES.md`: 15-20 issue drafts derived from real gaps in `Docs/TASKS.md` (e.g. `1C.1` pending GPU benchmark), `Docs/MEMORY.md`, `RULES.md`. >=10 must be `no-gpu`. Each: title, files, acceptance criteria, difficulty, est. hours, labels.
+- `docs/ARCHITECTURE_FOR_CONTRIBUTORS.md` (<=1.5 pages): folder map, request flow, where to add an adapter / UI panel / test.
 
-Locations to review: backend/core/quality/metrics.py, backend/core/utils/artifact_utils.py, backend/postprocess/pipeline.py, backend/core/scheduler/multiprocess_scheduler.py.
+### B3. Discoverability pack — `docs/GITHUB_SETUP.md` (copy-paste values; the agent CANNOT set these)
+- Repo description (<=350 chars, keyword-rich), website URL.
+- 15-20 topics (e.g. `image-to-3d`, `text-to-3d`, `3d-generation`, `generative-ai`, `self-hosted`, `fastapi`, `nextjs`, `glb`, `mesh-generation`, `retopology`, `game-assets`, `pytorch`, `hunyuan3d`, `trellis`, `help-wanted`, `good-first-issue`).
+- Social preview image spec: 1280x640 PNG (`assets/banner.png` exists — check its size; create a variant if needed).
+- Enable Discussions + categories; pin 3-5 starter issues; Release `v0.1.0-pre-alpha` notes draft (`docs/RELEASE_NOTES_DRAFT.md`).
+- Verify `ForMash3D-ThirdParty` repo: rename any "AI Studio" text, fix Git LFS statements if LFS is gone (F12), add topics, link back to the main repo.
 
-- [ ] Select one canonical streaming SHA-256 implementation and route runtime callers to it where import layering permits.
-- [ ] Keep compatibility exports for sha256_file where tests or callers use the current public import.
-- [ ] Decide whether audit_master_immutability should become the production helper used by the post-process/master lifecycle or remain a test utility. Do not remove it just because current tests are its obvious caller.
-- [ ] Remove backend/core/utils/artifact_utils.py's duplicate sha256_file definition only after all callers are migrated and tests prove the exported hash contract is preserved. Keep artifact_utils.py itself: resolve_manifest_path is used to align model-readiness and smart-preset path resolution.
-- [ ] Test source/master hashes before and after post-processing, cancellation, failure, retries, export, and auto-rigging. Master bytes must remain unchanged.
+### B4. Outreach pack — `docs/OUTREACH.md`
+- Ready-to-post drafts: Reddit (r/opensource, r/gamedev, r/StableDiffusion, r/LocalLLaMA, r/3Dprinting only if relevant), Hacker News "Show HN", Dev.to/Hashnode, X/LinkedIn, Hugging Face community.
+- Lists to submit to: up-for-grabs.net, goodfirstissue.dev, awesome-lists for 3D generation / self-hosted.
+- 60-second demo video script + GIF checklist (GIF/screenshots are the single biggest star driver; use only real captures — placeholders marked `TODO: user to add`).
+- 30-day plan: wk1 setup+CPU mode, wk2 launch, wk3 first-PR welcome, wk4 recognition (all-contributors).
 
-## P1 — Wire real behavior end-to-end or remove dead controls/fields
+### B5. Acceptance criteria
+- [ ] README top 160 chars + H1 contain target keywords; Quick Start is verified against real scripts.
+- [ ] `CODE_OF_CONDUCT.md`, `SECURITY.md`, PR template, labels, >=15 issue drafts exist.
+- [ ] `docs/GITHUB_SETUP.md` has ready-to-paste values; manual checklist <=10 lines at the end of the agent's reply.
+- [ ] No claim in README/outreach that is not backed by `Docs/*` or code.
 
-### P1-5. Generation UI, request builder, API, scheduler, and presets
+---
 
-Files to trace: features/workspace/Panels/GeneratePanel.tsx, features/workspace/Modals/GenerationPresetDrawer.tsx, features/workspace/types.ts, features/workspace/store/WorkspaceContext.tsx, features/workspace/utils/buildGenerationParameters.ts, backend/api/routers/mesh_generation.py, backend/api/routers/smart_generation.py, backend/core/smart_presets.py, backend/core/planner.py, backend/core/scheduler/multiprocess_scheduler.py.
+## 4. OUT OF SCOPE (LATER — per owner)
+- UI: capability-aware model selector ("Requires NVIDIA GPU" badges, CPU-mode banner).
+- Backend: `/api/capabilities`, `MockAdapter` (sample GLB, real postprocess on CPU), graceful job rejection on CPU, `FORMASH3D_COMPUTE` read by runtime.
+- `Dockerfile.cpu` + compose `cpu` profile (F13).
+- Optional remote GPU adapter (`REMOTE_GPU_URL`).
 
-- [ ] For every visible control, document UI state → request-builder field → API schema/handler → scheduler/post-process consumer → observable artifact/diagnostic.
-- [ ] Remove controls, stale state, constants, and handlers that have no real consumer. A request field existing in Pydantic is not evidence of implementation.
-- [ ] Keep adapter-specific steps, guidance, sampler, decoder/extraction resolution, and inference flags inside the adapter-owned locked profile. Do not restore a second frontend/scheduler profile table.
-- [ ] Remove inference-only modelParameterOverrides from the normal request path. Safely accept old saved preset files where required, but ignore legacy inference overrides and test that they never reach an adapter.
-- [ ] Keep only the canonical production preset source. Align mobile, game_ready, cinematic, animation, 3d_print and native/raw identifiers across backend presets and the frontend fallback; the native sentinel is not automatically a YAML preset entry.
-- [ ] Preserve explicit request value > intent preset > backend default precedence for supported production options. Omitted tri-state values must remain distinguishable from explicit false.
-- [ ] Verify target_polycount, texture_resolution, candidate_count, enable_postprocess, generate_lod/lod_preset/lod_count, UV, topology, printability, repair, rigging, physics/collision, and preprocessing artifact/review fields individually.
-- [ ] Ensure Native/Raw actually avoids incompatible downstream production operations and budget overrides; it must not merely change the selected card styling.
-- [ ] Ensure selecting a preset never submits a generation job. Generation must remain a deliberate user action.
-- [ ] Preserve user model choice. A preset may not silently replace an explicitly selected model.
-- [ ] Reconcile candidate_count, planned seed count, auto-seeds feature flags, best-candidate scoring, and the runtime telemetry. Logs and UI must report what actually executes, not just a plan value.
-- [ ] For deprecated fields such as requested_quality, mesh_style, object_type, and symmetry, either prove a supported consumer or remove them from the normal generation surface while keeping only intentional backwards-compatibility handling.
-- [ ] Update request-builder, preset-parity, API lifecycle, adapter regression, and seed-plan tests after every field/control migration.
+---
 
-### P1-6. Model registry, adapters, and runtime entry points
-
-- [ ] Keep backend/core/scheduler/model_factory.py and backend/adapters/__init__.py registry entries aligned with backend/config/models.yaml, enabled model IDs, legacy aliases, and the model manifests. These registries use dynamic imports and cannot be audited by static import count alone.
-- [ ] Do not delete legacy Hunyuan/TRELLIS aliases or adapter modules until current config, persisted jobs/assets, tests, and public API compatibility have been checked and a migration is documented.
-- [ ] Keep backend/api/main_multiworker.py and backend/scripts/scheduler_service.py: Docker/Supervisor starts this multi-worker API plus a separate scheduler service.
-- [ ] Keep backend/api/main_singleworker.py as the documented alternate deployment until product docs and deployment requirements explicitly retire single-worker mode.
-- [ ] Keep Dockerfile, Dockerfile.runpod, docker-compose.yml, supervisord.conf, backend/scripts/run_server.sh, backend/scripts/install.sh, and model download/setup scripts while their respective deployment paths exist. Review drift between deployment variants rather than deleting one because it looks similar.
-- [ ] Check backend/core/runtime_probe.py, backend/core/config.py, backend/core/smart_presets.py, backend/core/planner.py, scheduler factories, resource planner, Redis queue and database managers as runtime-connected infrastructure before any removal.
-
-### P1-7. Third-party proxy and compatibility modules — submodule scan required
-
-Files requiring explicit review include backend/utils/image_super_utils.py, multiview_utils.py, pipeline_utils.py, simplify_mesh_utils.py, uvwrap_utils.py, torchvision_fix.py, dinov3_vit.py, flex_gemm_fallback.py, fastmesh_utils.py, partuv_utils.py, trellis2_utils.py, and unirig_utils.py.
-
-- [ ] Initialize and scan the recursive submodule at backend/thirdparty (repository Silentzx2/ForMash3D-ThirdParty) before deciding these files are unused.
-- [ ] Trace package imports, sys.path changes, lazy imports, importlib, and model-specific paths in the Hunyuan/TRELLIS/PartUV/UniRig code.
-- [ ] Keep the proxy modules needed to prevent vendor package shadowing or preserve upstream import paths. Remove only wrappers proven unused after the submodule and runtime startup paths are checked.
-- [ ] Do not merge model-specific compatibility implementations into a global helper if doing so changes package resolution or makes one model select another model's vendored utility.
-
-## P1 — Core backend and quality system: keep, wire, then optimize
-
-### P1-8. Quality code that must be retained
-
-The following code is not a deletion target based on this audit:
-
-- backend/core/quality/metrics.py: mesh topology/geometry metrics and sha256_file are used by scheduler quality/candidate paths; tests cover mesh metrics and master immutability.
-- backend/core/scheduler/seed_scorer.py: score_seed_candidate and select_best_candidate are imported by the multi-process scheduler for multi-candidate scoring.
-- backend/core/quality/evaluation.py: compare_meshes and quality_gate are connected to post-process evaluation; compare_model_runs and render_multi_view support benchmark tooling; compare_render_directories has test coverage.
-- backend/core/quality/parity_scorecard.py and root parity_scorecard.json: scorecard schema/source-attribution contracts are checked by tests and the module has an explicit CLI entry point.
-- backend/config/quality.yaml: canonical quality/seed/hole-repair/decimation/bake/UV thresholds are loaded and validated by backend/core/config.py.
-- backend/core/utils/artifact_utils.py: resolve_manifest_path is used to keep readiness and smart-preset path resolution consistent.
-- backend/core/preprocess/image_enhancement.py: active preprocessing path that creates approved artifacts; the separate hi3dgen mock must be treated honestly.
-- backend/core/mesh_processor.py, backend/postprocess/pipeline.py, backend/postprocess/services/gate.py, hole_repair.py, memory_safe_decimate.py, uv_backend_resolver.py, pbr_validator.py, bake.py, collision.py, repair.py, simplify.py, auto_uv.py and auto_retopo.py: retain while the production pipeline and API endpoints call these services.
-
-Tasks:
-
-- [ ] Audit every metric and gate output: identify which ones block, warn, or report only. Wire missing critical production checks; explicitly label optional diagnostics and benchmark-only helpers.
-- [ ] Verify the multi-candidate path calls the scorer only when candidates actually exist and that selected output metadata is persisted correctly.
-- [ ] Verify quality.yaml is the sole authoritative thresholds file. Remove duplicate hard-coded threshold values only after tests prove the central config supplies them.
-- [ ] Decide whether compare_render_directories should remain a developer/test helper or be wired into the A/B benchmark command. Do not add a production dependency on headless rendering solely to eliminate an unused-reference warning.
-- [ ] Keep parity scorecard values source-attributed measured values or null; no invented competitor metrics.
-- [ ] Add CPU-only CI tests for the quality contracts where dependencies are available, separately from GPU/checkpoint runtime smoke tests.
-- [ ] Keep backend/core/animation/ardy_converter.py: it is called by the ARDY adapter and the integration verification script.
-- [ ] Keep backend/core/utils/mesh_utils.py while adapters import its MeshProcessor and shared mesh operations.
-
-### P1-9. API routers and backend services
-
-- [ ] Confirm every router in backend/api/routers/__init__.py is mounted by both intended app entry points and its UI/API client callers still exist.
-- [ ] Keep routes used by services/apiClient.ts, features/workspace/lib/api.ts and the Next runtime proxy app/api/v1/[...path]/route.ts.
-- [ ] For each endpoint, decide whether it is part of the supported product, maintenance/admin surface, or compatibility-only. Remove a route only with the frontend/client/docs/tests migrated.
-- [ ] Audit file upload IDs, path validation, auth, rate limiting, cancellation, polling/SSE, job cleanup and download artifact routes as contracts—not merely references.
-- [ ] Remove stale endpoint wrappers only after tracing client aliases and saved URLs; update route-contract tests in the same change.
-- [ ] Check whether backend/postprocess/services/rigging.py and baking.py add any real behavior beyond existing route/pipeline services; follow P1-3.
-
-## P2 — Repository-wide duplicate, stale-code, and dependency pass
-
-### P2-1. Import graph and dead-code proof
-
-- [ ] Build a report of tracked source files and exportable symbols by reverse references. Treat Python dynamic imports, React lazy imports, config-selected components, and string-selected model IDs separately.
-- [ ] Search for unused exports, unused imports, unreferenced functions/classes, stale constants, duplicate utilities, unreachable branches, dead feature flags, unconsumed configuration keys, and obsolete request aliases.
-- [ ] For JavaScript/TypeScript, combine imports with Next routes, dynamic imports, JSX references, CSS imports, tests, and package exports. Do not count public assets only by source imports.
-- [ ] For Python, combine AST/import analysis with string-based registries, module __getattr__, importlib, command-line entry points, worker subprocess scripts and submodule imports.
-- [ ] For YAML/JSON/env configuration, map every key to the loader and consumer. Remove a key only after proving no reflective lookup, environment override, alternate deployment, or test contract uses it.
-- [ ] For scripts/tools, trace package scripts, CI jobs, Docker/Supervisor commands, documentation commands, release/packaging workflows and external plugin calls before removal.
-- [ ] For files with no internal callers but clear operator/benchmark use, classify them as developer tooling, not dead code. Keep a short README or package-script entry for intentionally supported tools.
-
-### P2-2. Dependency and packaging hygiene
-
-- [ ] Audit package.json and bun.lock dependencies against imports, Next build plugins, postinstall scripts, dynamic imports and optional tooling. Do not remove a package used only by a rare feature without exercising that feature.
-- [ ] Audit backend/requirements.txt and backend/requirements-test.txt against runtime imports, subprocess workers, optional model adapters and deployment/install scripts. Shared baseline dependencies must remain consistent with adapter dependency contracts.
-- [ ] Verify tools/check-generated-db.mjs, check-packaged-modules.mjs, check-unity-plugin.mjs, gen-db-names.mjs, gen-pg-schema.mjs, migrate-sqlite-to-postgres.mjs, pack-unity-plugin.mjs and view-asset-e2e.mjs are connected to a workflow or explicitly document them as manual tools.
-- [ ] Audit plugins/unreal, plugins/unity, assets, tools/meshoptimizer and public files with the corresponding build/packaging workflows before considering any binary or data removal.
-- [ ] Treat the Git submodule as a separately versioned dependency; do not duplicate vendor code into this repository as a cleanup shortcut.
-- [ ] Compare Dockerfile and Dockerfile.runpod dependency/runtime contracts. Consolidate shared fragments only if both targets retain their GPU, model-download and deployment requirements.
-
-### P2-3. Tests, CI, and truthful status reporting
-
-- [ ] Run backend Python source compilation and all applicable lightweight CPU-only tests.
-- [ ] Run backend runtime-contract, security-boundary, file-upload, quality, model-registry, API lifecycle, resource planner, preset parity, seed-plan, UV resolver, PBR, and post-process regression tests as their dependencies permit.
-- [ ] Run frontend TypeScript checking, ESLint, workspace/route/request-builder tests, and production build.
-- [ ] Update .github/workflows/backend-runtime-ci.yml and frontend-ci.yml only after determining which extra tests are deterministic and CPU-only. Do not put checkpoint/GPU inference tests in a lightweight CI job that cannot support them.
-- [ ] Keep a separate explicitly labelled GPU/model smoke-test matrix for installed checkpoints, actual inference, actual peak VRAM, UV/PBR output, and preview rendering. Do not claim CPU contract CI proves these things.
-- [ ] Report every check as PASS, FAIL, BLOCKED, or NOT RUN with the actual command and relevant output. Do not mark a task complete from static inspection alone.
-- [ ] Add regression tests for every deleted symbol/path where there was a previously supported import or endpoint.
-
-## P2 — Directories and files to preserve unless an explicit migration proves otherwise
-
-- backend/adapters: registry/dynamic loading and model-specific inference contracts.
-- backend/core/auth, config, models, preprocess, quality, scheduler, utils: core runtime, validated config and service contracts.
-- backend/postprocess: pipeline, schemas, geometry operations, workers, licensing/attribution, and output artifact production.
-- backend/tests and frontend *.test.mjs files: executable contracts and regression evidence; low reference counts do not make tests dead.
-- app, features, components, hooks, lib, services, stores, types: routes, user flows, shared state, API contracts and utility surfaces; audit by dependency graph.
-- constants, backend/config, .env.example, package.json, bun.lock, requirements files: configuration/dependency sources that must stay synchronized with loaders and tests.
-- scripts, tools, Dockerfiles, docker-compose.yml, supervisord.conf, .github/workflows: deployment, packaging, developer operations and CI entry points.
-- Docs, README.md, RULES.md, CONTRIBUTING.md, LICENSE, CITATION.cff: policy, design, user/setup instructions, third-party obligations and public project metadata.
-- public, assets, plugins, native tools and backend/thirdparty: assets, plugin packages, binaries, vendored runtime code and separately versioned dependencies. Inspect packaging/use before deleting.
-- features/workspace/lib/uploadProgress.ts, uploadResponse.ts, workspaceRouteContract.ts and the respective tests: these small modules are used by workspace upload and route contracts.
-- constants/smartPresetFallback.json and constants/smartPresets.ts: preserve frontend offline fallback/parity with backend production presets.
-- app/api/v1/[...path]/route.ts and app/static/[...path]/route.ts: preserve runtime proxy/static path behavior unless routes are replaced with tested equivalents.
-
-## Required execution order
-
-1. [ ] Update/confirm dev HEAD and clean working tree; initialize the recursive submodule.
-2. [ ] Fix P0 graph import boundary and prove frontend build.
-3. [ ] Add or update reverse-reference inventory and classify each candidate as REMOVE, WIRE, CONSOLIDATE, KEEP, or DEFER.
-4. [ ] Remove only the P1 high-confidence candidates in a small isolated commit after their reference checks; no mass deletion.
-5. [ ] Consolidate duplicate utilities via re-export shims where current paths are active.
-6. [ ] Wire quality gates, generation controls, request fields, presets, artifact hashes and service wrappers to real consumers; delete controls/aliases that cannot be supported.
-7. [ ] Run backend and frontend tests, plus the correct smoke tests for any affected route/model/post-process path.
-8. [ ] Update docs and CI, scan for removed names and stale imports, review the complete diff.
-9. [ ] Commit the task implementation with the exact tests/results in the message or report. Do not claim push or runtime success unless the tool output confirms it.
-
-## Verification commands
-
-Run from the current repository checkout; adapt environment activation and available dependencies to the deployment image.
-
-    git status --short
-    git rev-parse HEAD
-    git submodule update --init --recursive
-    git grep -n -E 'hi3dgen_bridging|run_rigging_export|is_rigging_available|createZip|useImageEditorHistory|usePasteImageFiles|shadowRemoverGPU|mesh-extras/meshFlatten|mesh-extras/meshExport|mesh-extras/meshTools' -- .
-    cd backend && python -m compileall -q .
-    cd .. && bun run test
-    bun run lint
-    bun run build
-
-A successful grep is not by itself proof of use or lack of use: inspect import direction, definition-only matches, config-driven paths, submodule/vendor imports, and the resulting build/test output.
-
-## Definition of done
-
-- [ ] Every removal has a confirmed no-consumer result, replacement decision, and passing regression/build tests.
-- [ ] Every retained feature control has a proven path to a real consumer or is explicitly labelled experimental/unavailable.
-- [ ] The graph relative-import issue is fixed, and frontend typecheck/build proves it.
-- [ ] Quality/seed/master hash contracts remain active, honest, config-backed, and regression-tested.
-- [ ] Model adapters, dynamic registries, runtime proxies, API routes, tests, third-party assets and deployment entry points were not accidentally deleted.
-- [ ] The repository can identify REMOVE, WIRE, CONSOLIDATE, KEEP and DEFER decisions for each candidate; unresolved vendor/external compatibility questions remain marked DEFER.
-- [ ] Final report distinguishes static findings, passing tests, blocked tests, and GPU/runtime behavior that was not tested.
+## 5. FINAL STEP — DOCUMENTATION SYNC (MANDATORY)
+Output exact updates (replacement-only) for: `README.md`, `RULES.md`, `Docs/ARCHITECTURE.md`, `Docs/TASKS.md` (new rows: `5A` CPU setup mode, `5B` SEO/community pack), `Docs/CHANGELOG.md`, `Docs/MEMORY.md`, `Docs/DECISIONS.md` (ADR: "CPU mode skips model dependency installation by design"). Re-read all edited `.md` top-to-bottom, then bottom-to-top; list any gap found. End with the manual GitHub-UI checklist (max 10 lines).

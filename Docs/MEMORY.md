@@ -1,3 +1,15 @@
+## 2026-10-22 — Parallel Audit Repair Execution
+
+- The user authorized implementation across all batches in parallel. This task-specific authorization supersedes the older one-batch pause, but does not authorize speculative inference-profile retuning or overwriting collaborator changes.
+- Sample SVG inputs now rasterize to PNG and use the standard upload path. Generation request contracts preserve an explicit seed of zero, honor explicit model choice, and keep production settings separate from adapter-owned inference.
+- Auto-Repair OFF preserves geometry; final topology and master-drift gate failures or missing required comparisons affect production status. Safe hole repair is bounded/configured, collision artifacts remain isolated, and fallback/error details are retained.
+- Artifact hashing uses the canonical helper. Quality thresholds remain configured in `backend/config/quality.yaml`.
+- The audit follow-up fixed automatic-vs-explicit model fallback and feature compatibility for planner-selected models. Physics defaults, bounds, comparison sampling, and collision quality profiles are configured in `backend/config/quality.yaml`; the UI uses a minimal defaults/bounds mirror enforced by `backend/tests/test_config_ssot.py`.
+- The full Python 3.10 backend suite passed 50 tests before the final config-mirror test was added. Both config SSOT tests pass in the current Python 3.14 environment; the full backend suite was not rerun there because the required Python 3.10 test dependencies are not currently installed.
+- Frontend validation: 52 Bun tests passed, TypeScript passed, production build passed, and targeted ESLint on changed files reported 0 errors and 58 warnings. Browser interaction, GPU/model inference, deployed API smoke tests, Blender bake/retopology, and UniRig execution are NOT RUN.
+- Commit `ce51e212` is on local `dev`. `git push origin dev` failed with `fatal: unable to get password from user`; `gh auth status` confirms no GitHub login; SSH retry failed with `Permission denied (publickey)`. The remote branch is unchanged, so no PR was created.
+- TRELLIS's requested/effective step-count discrepancy remains unresolved pending measured comparison and explicit approval; do not change the active profile or call cap without that approval.
+
 ## 2026-10-21 — Route / Page / Function Mount Fix Follow-up
 
 - Tool-context help buttons now have real Markdown backing files for all six active article IDs; frontend CI guards against missing or empty articles.
@@ -399,21 +411,13 @@
   - `validate_image_aspect_and_occupancy`: reports foreground occupancy ratio, aspect ratio, bbox occupancy, border contact flags (top, bottom, left, right), and border coverage.
 - Tests in `backend/tests/test_image_prep.py` (13/13 passing) verify input immutability, crop margins, centering, aspect preservation, upscaling, and occupancy calculations.
 
-## 2026-10-20 — Generation Experiment Presets
+## 2026-10-20 — Generation Experiment Presets (HISTORICAL; superseded)
 
-- Workspace Settings → AI Inference has a Generation Experiment Lab drawer using the existing model-parameter schema API, workspace settings, generation queue, and parameter builder.
-- Presets persist locally under ai3d:generation:presets:v1. Save/update/delete, load while preserving the current image, export one or all profiles as JSON, and import validated profiles are supported.
-- Controls include seed, guidance, schema-driven model parameters, inference steps where declared, advanced nested JSON overrides, Run Current Settings, and revision/experiment ID metadata. Revision is not sent to inference.
-- Explicit modelParameterOverrides merge after model-specific profiles so final body.model_parameters preserves experiment values. Schema caching now stores each field's default rather than the schema descriptor object.
-- Regression coverage verifies outgoing request overrides and rejects malformed/unsafe JSON. Browser interaction, frontend static checks, and GPU inference remain unverified until actually run.
+Earlier notes describing editable inference experiments and client-side model-parameter overrides are obsolete. The current contract keeps inference profiles adapter-owned and does not expose those overrides in the Generate UI. Refer to `Docs/GENERATION-UI-CONTRACT.md` and `Docs/EXPERIMENTAL-MODEL-SETTINGS.md`; historical values here are intentionally not repeated.
 
-## 2026-10-20 — Experimental Max-Detail Model Settings
+## 2026-10-20 — Experimental Max-Detail Model Settings (HISTORICAL SNAPSHOT)
 
-- The frontend requests Hunyuan Shape-v2.1 / legacy Hunyuan at octree 1300 and 150 steps, although adapter schemas retain 512-octree / 100-step declarations. These are deliberate stress-test requests, not upstream-supported guarantees; OOM risk and output quality remain unbenchmarked.
-- Mini Turbo requests octree 768 and 20 steps while its adapter schema documents 380 and 5. This is an intentional experiment-profile divergence with VRAM/checkpoint risk.
-- TRELLIS sparse/SLAT settings request 100 steps despite schema defaults of 50. TRELLIS.2 uses 100 steps per sampler stage, a 524288-token budget, and raw-master decimation target -1.
-- The EXPERIMENTAL_MAX_DETAIL profile is an unbenchmarked stress-test snapshot. Comments and schema declarations must not be confused with effective frontend request values; no GPU inference or output-quality A/B benchmark is claimed.
-- Change-control stays locked: ask once and obtain explicit user confirmation before changing profile values in a later task.
+This section previously duplicated numerical profiles and implied that requested settings were effective runtime settings. It is superseded by the adapter-owned profile policy and the configured/effective discrepancy note in `Docs/EXPERIMENTAL-MODEL-SETTINGS.md`. No GPU inference or output-quality A/B result is claimed.
 
 ## 2026-10-19 — Animation Export and Status Recovery
 

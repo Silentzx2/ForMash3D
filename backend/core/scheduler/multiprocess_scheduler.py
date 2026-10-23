@@ -88,13 +88,26 @@ def retry_transient_errors_enabled() -> bool:
     return parse_bool_env("RETRY_TRANSIENT_ERRORS", False)
 
 
+def _may_fallback_after_model_load_failure(
+    model_preference: Optional[str], metadata: Dict[str, Any]
+) -> bool:
+    selection = metadata.get("model_selection")
+    if selection == "explicit":
+        return False
+    if selection == "automatic":
+        return True
+    return not model_preference
+
+
 def auto_unload_after_job_enabled() -> bool:
     """Read the VRAM unload switch at decision time."""
     return parse_bool_env("AUTO_UNLOAD_AFTER_JOB", False)
 
 # Production budgets belong to post-processing. Never let them reach model inference.
 _POSTPROCESS_ONLY_INPUTS = frozenset({
+    "candidate_count", "enable_postprocess", "plan", "fallback_chain",
     "target_polycount", "auto_optimize", "generateLOD", "lodPreset", "lodCount",
+    "quality", "meshQuality", "mesh_quality", "topology_mode", "quad_topology", "auto_uv",
     "physics_enabled", "physics_config", "auto_paint", "paint_model_preference", "paint_resolution",
     "texture_enabled", "generate_texture", "generateTexture", "texture_resolution",
     "texture_resolution_preset", "production_texture_resolution",
@@ -867,7 +880,7 @@ def _process_job_in_worker(
             "model": model_id,
             "model_version": getattr(loaded_model, "version", "1.0"),
             "checkpoint": getattr(loaded_model, "model_path", model_config.get("model_path", "unknown")),
-            "requested_quality": model_inputs.get("quality", model_inputs.get("meshQuality", "not_specified")),
+            "requested_quality": request_inputs.get("quality", request_inputs.get("meshQuality", "not_specified")),
             "source_quality_contract": model_inputs.get("source_quality", "max"),
             "postprocess_target_polycount": request_inputs.get("target_polycount", "native"),
             "actual_inference_steps": model_inputs.get("num_inference_steps", model_inputs.get("num_steps",
@@ -1764,7 +1777,9 @@ class MultiprocessModelScheduler:
                 )
                 # Explicit model selections are hard requirements. Automatic routes may
                 # fall back to the next compatible retained model instead of failing the job.
-                if not job_request.model_preference:
+                if _may_fallback_after_model_load_failure(
+                    job_request.model_preference, job_request.metadata
+                ):
                     feature_models = self.model_features.get(job_request.feature, [])
                     routing_inputs = dict(job_request.inputs or {})
                     routing_inputs["available_gpu_count"] = len(self.gpu_monitor.get_gpu_status())

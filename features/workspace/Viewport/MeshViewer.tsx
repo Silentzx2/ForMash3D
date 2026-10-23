@@ -26,6 +26,7 @@ import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { getCachedGLB, setCachedGLB, loadGLBWithProgress } from '../lib/glbCache';
 import { PhysicsRuntime } from '../physics/PhysicsRuntime';
+import { DEFAULT_PHYSICS_SETTINGS } from '../utils/physicsSettings';
 import { analyzeGeometryTelemetry, prepareMeshTangentsAndNormals } from '../lib/meshTelemetry';
 import { taskPersistence } from '@/services/taskPersistence';
 import { QualityBadge } from '../Panels/GeneratePanel';
@@ -2921,16 +2922,16 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
 
       try {
         await runtime.init(scene, group, collisionUrl, {
-          bodyType: body.type || 'auto',
+          bodyType: body.type || DEFAULT_PHYSICS_SETTINGS.bodyType,
           massMode: metadata.provenance?.mass === 'user' ? 'manual' : 'auto',
-          massKg: Number(body.mass_kg || 1),
-          densityMode: 'auto',
-          densityKgM3: Number(body.density_kg_m3 || 500),
-          friction: Number(material.dynamic_friction ?? 0.5),
-          restitution: Number(material.restitution ?? 0.1),
-          linearDamping: Number(body.linear_damping ?? 0.05),
-          angularDamping: Number(body.angular_damping ?? 0.05),
-          gravityEnabled: Boolean(body.gravity_enabled ?? true),
+          massKg: Number(body.mass_kg ?? DEFAULT_PHYSICS_SETTINGS.massKg),
+          densityMode: DEFAULT_PHYSICS_SETTINGS.densityMode,
+          densityKgM3: Number(body.density_kg_m3 ?? DEFAULT_PHYSICS_SETTINGS.densityKgM3),
+          friction: Number(material.dynamic_friction ?? DEFAULT_PHYSICS_SETTINGS.friction),
+          restitution: Number(material.restitution ?? DEFAULT_PHYSICS_SETTINGS.restitution),
+          linearDamping: Number(body.linear_damping ?? DEFAULT_PHYSICS_SETTINGS.linearDamping),
+          angularDamping: Number(body.angular_damping ?? DEFAULT_PHYSICS_SETTINGS.angularDamping),
+          gravityEnabled: Boolean(body.gravity_enabled ?? DEFAULT_PHYSICS_SETTINGS.gravityEnabled),
         });
         if (cancelled) {
           try { runtime.dispose(); } catch (_) {}
@@ -5922,5 +5923,3 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     </div>
   );
 };
-
-
