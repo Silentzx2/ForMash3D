@@ -9,6 +9,7 @@ from starlette.requests import Request
 import api.dependencies as dependencies
 from api.routers import system
 from core.auth.models import UserRole
+import core.config as core_config
 
 
 class _AuthService:

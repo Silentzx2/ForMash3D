@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useCallback, useState } from 'react';
+import React, { useEffect, useCallback, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
 import dynamic from 'next/dynamic';
@@ -128,6 +128,51 @@ export const WorkspaceShell: React.FC = () => {
 
   // Mobile menu state: left navigation drawer
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+  const mobileNavRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!isMobileNavOpen) return;
+
+    const drawer = mobileNavRef.current;
+    const previouslyFocused = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    const focusableElements = drawer?.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    );
+    const firstFocusable = focusableElements?.[0];
+    const lastFocusable = focusableElements?.[focusableElements.length - 1];
+    firstFocusable?.focus();
+
+    const handleDrawerKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setIsMobileNavOpen(false);
+        return;
+      }
+      if (event.key !== 'Tab' || !firstFocusable || !lastFocusable) return;
+
+      if (event.shiftKey && document.activeElement === firstFocusable) {
+        event.preventDefault();
+        lastFocusable.focus();
+      } else if (!event.shiftKey && document.activeElement === lastFocusable) {
+        event.preventDefault();
+        firstFocusable.focus();
+      }
+    };
+
+    document.addEventListener('keydown', handleDrawerKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleDrawerKeyDown);
+      if (previouslyFocused?.isConnected) {
+        if (previouslyFocused.getClientRects().length > 0) {
+          previouslyFocused.focus();
+        } else {
+          document.querySelector<HTMLElement>('#left-tool-rail button')?.focus();
+        }
+      }
+    };
+  }, [isMobileNavOpen]);
 
   // Global Workspace Navigation Keyboard Shortcuts (⌘1, ⌘2, ⌘3, ⌘4→Logs, G, R, T, A, S, ⌘,)
   // Global Workspace Navigation Keyboard Shortcuts with Custom Remapping Support (T-04)
@@ -326,6 +371,9 @@ export const WorkspaceShell: React.FC = () => {
   // Ensure mutual exclusion on mobile resize as well
   useEffect(() => {
     const handleResize = () => {
+      if (window.innerWidth >= 768 && isMobileNavOpen) {
+        setIsMobileNavOpen(false);
+      }
       if (typeof window !== 'undefined' && window.innerWidth < 768) {
         if (isLeftPanelOpen && isRightPanelOpen) {
           setIsRightPanelOpen(false);
@@ -334,7 +382,7 @@ export const WorkspaceShell: React.FC = () => {
     };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, [isLeftPanelOpen, isRightPanelOpen, setIsRightPanelOpen]);
+  }, [isLeftPanelOpen, isRightPanelOpen, isMobileNavOpen, setIsRightPanelOpen]);
 
 
 
@@ -379,18 +427,24 @@ export const WorkspaceShell: React.FC = () => {
               />
               {/* Drawer */}
               <motion.aside
+                ref={mobileNavRef}
                 initial={{ x: '-100%' }}
                 animate={{ x: 0 }}
                 exit={{ x: '-100%' }}
                 transition={MOTION_SPRING}
                 className="fixed left-0 top-0 bottom-0 w-[260px] max-w-[85vw] z-50 md:hidden"
+                role="dialog"
+                aria-modal="true"
+                aria-label="Studio navigation"
               >
                 <div className="h-full flex flex-col">
                   <div className="flex items-center justify-between px-3 py-3 bg-[hsl(var(--surface-0))] border-b border-white/[0.08]">
                     <span className="font-extrabold text-xs tracking-wider text-white uppercase">Tools</span>
                     <button
+                      type="button"
                       onClick={() => setIsMobileNavOpen(false)}
                       className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-[hsl(var(--surface-1))] transition-colors"
+                      aria-label="Close navigation menu"
                     >
                       <HugeiconsIcon icon={Cancel} size={16} className="w-4 h-4" />
                     </button>
@@ -429,8 +483,10 @@ export const WorkspaceShell: React.FC = () => {
                 <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-white/[0.08] bg-[hsl(var(--surface-0))] md:hidden flex-shrink-0">
                   <span className="font-bold text-xs text-white">Tool Panel</span>
                   <button
+                    type="button"
                     onClick={() => toggleLeftPanel(false)}
                     className="p-1.5 rounded-lg text-zinc-400 hover:text-primary hover:bg-[hsl(var(--surface-2))] transition-all cursor-pointer"
+                    aria-label="Close tool panel"
                   >
                     <HugeiconsIcon icon={Cancel} size={16} className="w-4 h-4" />
                   </button>
@@ -441,8 +497,10 @@ export const WorkspaceShell: React.FC = () => {
                   <div className="absolute top-2 right-2 z-20 hidden md:block">
                     <SimpleTooltip label="Collapse panel" side="left">
                       <button
+                        type="button"
                         onClick={() => toggleLeftPanel(false)}
                         className="p-1 rounded-lg bg-[hsl(var(--surface-2))] border border-white/[0.08] text-zinc-400 hover:text-primary hover:bg-[hsl(var(--surface-3))] transition-all cursor-pointer"
+                        aria-label="Collapse tool panel"
                       >
                         <HugeiconsIcon icon={PanelLeftClose} size={16} className="w-3.5 h-3.5" />
                       </button>
@@ -471,6 +529,7 @@ export const WorkspaceShell: React.FC = () => {
             <div className="absolute left-0.5 top-1/2 -translate-y-1/2 z-20 hidden md:block">
               <SimpleTooltip label="Open Tool Panel">
                 <button
+                  type="button"
                   onClick={() => toggleLeftPanel(true)}
                   className="w-5 h-11 rounded-r-lg bg-[hsl(var(--surface-1))]/90 backdrop-blur-md border border-l-0 border-white/[0.1] text-zinc-400 hover:text-primary hover:border-primary/40 hover:bg-[hsl(var(--surface-2))] transition-all flex items-center justify-center shadow-xl cursor-pointer active:scale-95"
                 >
@@ -495,8 +554,10 @@ export const WorkspaceShell: React.FC = () => {
                 <div className="flex items-center justify-between px-3.5 py-2 border-b border-white/[0.08] bg-[hsl(var(--surface-0))] md:hidden flex-shrink-0">
                   <span className="font-bold text-xs text-white">Inspector &amp; Assets</span>
                   <button
+                    type="button"
                     onClick={() => toggleRightPanel(false)}
                     className="p-1.5 rounded-lg text-zinc-400 hover:text-primary hover:bg-[hsl(var(--surface-2))] transition-all cursor-pointer"
+                    aria-label="Close inspector and assets panel"
                   >
                     <HugeiconsIcon icon={Cancel} size={16} className="w-4 h-4" />
                   </button>
@@ -511,6 +572,7 @@ export const WorkspaceShell: React.FC = () => {
             <div className="absolute right-0.5 top-1/2 -translate-y-1/2 z-20 hidden md:block">
               <SimpleTooltip label="Open Asset Store / Inspector">
                 <button
+                  type="button"
                   onClick={() => toggleRightPanel(true)}
                   className="w-5 h-11 rounded-l-lg bg-[hsl(var(--surface-1))]/90 backdrop-blur-md border border-r-0 border-white/[0.1] text-zinc-400 hover:text-primary hover:border-primary/40 hover:bg-[hsl(var(--surface-2))] transition-all flex items-center justify-center shadow-xl cursor-pointer active:scale-95"
                 >
@@ -524,6 +586,7 @@ export const WorkspaceShell: React.FC = () => {
           {mainNav === 'workspace' && !isLeftPanelOpen && !isRightPanelOpen && (
             <div className="md:hidden absolute bottom-2.5 inset-x-3 z-20 flex items-center justify-between pointer-events-none">
               <button
+                type="button"
                 onClick={() => toggleLeftPanel(true)}
                 className="pointer-events-auto flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-primary text-black font-black text-xs shadow-xl shadow-black/50 hover:bg-primary/90 transition-all active:scale-95 cursor-pointer border border-primary/40"
                 aria-label="Open tool panel"
@@ -533,6 +596,7 @@ export const WorkspaceShell: React.FC = () => {
               </button>
 
               <button
+                type="button"
                 onClick={() => toggleRightPanel(true)}
                 className="pointer-events-auto flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-[hsl(var(--surface-1))]/95 backdrop-blur-md border border-white/[0.15] text-zinc-200 hover:text-white font-bold text-xs shadow-xl shadow-black/50 transition-all active:scale-95 cursor-pointer"
                 aria-label="Open inspector and assets"

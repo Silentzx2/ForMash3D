@@ -17,7 +17,7 @@ except ImportError:
 
 CONFIG = Path(__file__).resolve().parents[1] / "config" / "smart_presets.yaml"
 
-CANONICAL_INTENTS = frozenset({"mobile", "game_ready", "cinematic", "animation", "3d_print", "native"})
+CANONICAL_INTENTS = frozenset({"mobile", "game_ready", "cinematic", "animation", "3d_print", "native", "game_ready_quad", "multi_variant"})
 
 NATIVE_PRESET: Dict[str, Any] = {
     "label": "Native / Raw",
@@ -32,6 +32,12 @@ NATIVE_PRESET: Dict[str, Any] = {
     "enable_auto_rig": False,
     "enable_printability_check": False,
     "enable_auto_repair": False,
+    "topology_mode": "triangle",
+    "quad_topology": False,
+    "candidate_count": 1,
+    "part_count_range": "1",
+    "rig_type": "none",
+    "export_formats": ["glb"],
     "preferred_features": ["image_to_raw_mesh", "image_to_textured_mesh"],
     "model_priority": [
         "hunyuan3d_shape_v21_image_to_raw_mesh",

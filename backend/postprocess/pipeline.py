@@ -1272,6 +1272,10 @@ def _build_result(
         (generated.get("collision") is None and generated.get("artifact_errors", {}).get("collision"))
         or (physics_enabled and not generated.get("collision"))
     )
+    collision_stats = generated.get("collision_stats") or {}
+    collision_fallback_used = bool(
+        collision_stats.get("fallback") or collision_stats.get("fallback_reason")
+    )
     retopo_stats = generated.get("retopo_stats", {})
     retopo_requested = bool(
         inputs.get("quad_topology")
@@ -1513,7 +1517,7 @@ def _build_result(
         "failed"
         if required_failed
         else "degraded"
-        if any_failed or quality_failed or lod_failed or final_topology_unverified or final_topology_failed or master_drift_failed or retopo_skipped_native or pbr_validation_failed or bake_degraded
+        if any_failed or quality_failed or lod_failed or final_topology_unverified or final_topology_failed or master_drift_failed or retopo_skipped_native or pbr_validation_failed or bake_degraded or collision_fallback_used
         else "ready"
     )
     degraded_reasons = []
@@ -1535,6 +1539,8 @@ def _build_result(
         degraded_reasons.append("pbr_validation_failed")
     if collision_failed and physics_enabled:
         degraded_reasons.append("collision_generation_failed")
+    if collision_fallback_used:
+        degraded_reasons.append("collision_fallback_used")
     if retopo_skipped_native and retopo_requested:
         degraded_reasons.append("quad_topology_unsupported_native_textures")
     if master_drift_failed:
@@ -2935,6 +2941,7 @@ def run_postprocess_job(
         "lods": lods,
         "final_topology_gate": final_topology_gate,
         "collision": str(collision_path) if collision_path else None,
+        "collision_stats": collision_stats,
         "physics": str(metadata_dir / "physics.json") if physics_metadata else None,
         "physics_metadata": physics_metadata,
         "textures": texture_paths,

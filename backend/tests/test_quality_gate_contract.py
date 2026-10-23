@@ -70,11 +70,15 @@ def test_passed_final_topology_gate_does_not_degrade_result(tmp_path: Path):
     build_result = _pipeline_result_builder()
     output_path = tmp_path / "game_ready.glb"
     output_path.touch()
+    collision_path = tmp_path / "collision.glb"
+    collision_path.touch()
     generated = {
         "game_ready": {"glb": str(output_path)},
         "lods": {},
         "textures": {},
         "final_topology_gate": {"passed_clean": True},
+        "collision": str(collision_path),
+        "collision_stats": {"method": "decomposition", "fallback": None},
     }
 
     result = build_result(
@@ -87,6 +91,38 @@ def test_passed_final_topology_gate_does_not_degrade_result(tmp_path: Path):
     )
 
     assert result["production_status"] == "ready"
+
+
+def test_collision_fallback_degrades_production_result(tmp_path: Path):
+    build_result = _pipeline_result_builder()
+    output_path = tmp_path / "game_ready.glb"
+    output_path.touch()
+    collision_path = tmp_path / "collision.glb"
+    collision_path.touch()
+    generated = {
+        "game_ready": {"glb": str(output_path)},
+        "lods": {},
+        "textures": {},
+        "final_topology_gate": {"passed_clean": True},
+        "collision": str(collision_path),
+        "collision_stats": {
+            "method": "convex_hull",
+            "requested_method": "decomposition",
+            "fallback": "CoACD is unavailable; used a convex-hull fallback.",
+        },
+    }
+
+    result = build_result(
+        job_id="test-job",
+        asset_dir=tmp_path,
+        asset_name="test-asset",
+        qa_report={},
+        generated=generated,
+        master_quality_report={"quality_gate": {"passed": True, "status": "ok"}},
+    )
+
+    assert result["production_status"] == "degraded"
+    assert "collision_fallback_used" in result["degraded_reasons"]
 
 
 def test_missing_final_topology_gate_degrades_production_result(tmp_path: Path):

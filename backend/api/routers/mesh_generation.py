@@ -291,7 +291,7 @@ class ImageToRawMeshRequest(BaseModel):
         None,
         description="Optional input image preparation overrides (e.g. remove_background, tight_crop, margin, resize, upscale_small).",
     )
-    intent: Optional[str] = Field(None, description="Deterministic smart-generation intent: 'mobile', 'game_ready', 'cinematic', 'animation', '3d_print', 'native'")
+    intent: Optional[str] = Field(None, description="Deterministic smart-generation intent: 'mobile', 'game_ready', 'cinematic', 'animation', '3d_print', 'native', 'game_ready_quad', 'multi_variant'")
     preprocessing_artifact_id: Optional[str] = Field(None, description="Approved preprocessing artifact ID")
     preprocessing_review_override: bool = Field(False, description="Explicitly allow a flagged preprocessing preview after review")
     enhancement_enabled: bool = Field(False, description="Use the approved preprocessing artifact")
@@ -312,6 +312,9 @@ class ImageToRawMeshRequest(BaseModel):
     quad_topology: bool = Field(False, description="Request quad-dominant topology")
     enable_postprocess: bool = Field(True, description="Run production postprocessing pipeline after mesh generation. If False, postprocessing is bypassed.")
     candidate_count: int = Field(1, ge=1, le=int(get_quality_config()["seeds"]["max_candidates"]), description="Candidate variations to generate (1-4, default 1)")
+    part_count_range: Optional[str] = Field(None, description="Target part count range for segmentation: '1', '3-6', '6-15', '15+'")
+    rig_type: Optional[str] = Field(None, description="Rig type: 'none', 'generic', 'humanoid', 'quadruped', 'bird', 'insect', 'custom'")
+    export_formats: Optional[List[str]] = Field(None, description="Export formats: 'glb', 'fbx', 'obj', 'stl', '3mf'")
     asset_name: Optional[str] = Field(None, description="Asset base stem name")
     image_name: Optional[str] = Field(None, description="Original image filename")
     mesh_style: str = Field("auto", deprecated=True, description="Deprecated mesh style hint. Does not override locked adapter inference profiles.")
@@ -336,6 +339,27 @@ class ImageToRawMeshRequest(BaseModel):
         if normalized not in {"triangle", "quad"}:
             raise ValueError("Invalid topology_mode. Must be one of: 'triangle', 'quad'")
         return normalized
+
+    @field_validator("rig_type")
+    @classmethod
+    def validate_rig_type(cls, value):
+        if value is None:
+            return None
+        normalized = str(value).strip().lower()
+        if normalized not in {"none", "generic", "humanoid", "quadruped", "bird", "insect", "custom"}:
+            raise ValueError("Invalid rig_type. Must be one of: 'none', 'generic', 'humanoid', 'quadruped', 'bird', 'insect', 'custom'")
+        return normalized
+
+    @field_validator("export_formats")
+    @classmethod
+    def validate_export_formats(cls, value):
+        if value is None:
+            return None
+        allowed = {"glb", "fbx", "obj", "stl", "3mf"}
+        for fmt in value:
+            if fmt not in allowed:
+                raise ValueError(f"Invalid export format '{fmt}'. Allowed: {sorted(allowed)}")
+        return value
 
     @field_validator("lod_preset")
     @classmethod

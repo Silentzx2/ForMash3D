@@ -1439,21 +1439,21 @@ async def download_job_result(
         FileResponse for direct download or JSON with base64 data
     """
     try:
-            from api.dependencies import get_current_user_or_none
-            from core.auth.models import UserRole
+        from api.dependencies import get_current_user_or_none
+        from core.auth.models import UserRole
 
-            scheduler = await get_scheduler(request)
-            job_status = await scheduler.get_job_status(job_id)
+        scheduler = await get_scheduler(request)
+        job_status = await scheduler.get_job_status(job_id)
 
-            if job_status is None:
-                raise HTTPException(status_code=404, detail="Job not found")
+        if job_status is None:
+            raise HTTPException(status_code=404, detail="Job not found")
 
-            # User filtering: non-admin users can only download their own jobs
-            current_user = await get_current_user_or_none(
-                request.headers.get("authorization"),
-                request
-            )
-        
+        # User filtering: non-admin users can only download their own jobs
+        current_user = await get_current_user_or_none(
+            request.headers.get("authorization"),
+            request
+        )
+
         if current_user:
             job_user_id = job_status.get("user_id")
             if current_user.role != UserRole.ADMIN and job_user_id != current_user.user_id:
@@ -1825,9 +1825,9 @@ async def download_job_thumbnail(
         FileResponse for direct download or JSON with base64 data
     """
     try:
-        from api.dependencies import get_current_user_optional
+        from api.dependencies import get_current_user_or_none
         from core.auth.models import UserRole
-        
+
         raw_status = scheduler.get_job_status(job_id)
         if asyncio.iscoroutine(raw_status):
             job_status = await raw_status
@@ -1836,13 +1836,13 @@ async def download_job_thumbnail(
 
         if job_status is None:
             raise HTTPException(status_code=404, detail="Job not found")
-        
+
         # User filtering: non-admin users can only access their own jobs
-        current_user = await get_current_user_optional(
+        current_user = await get_current_user_or_none(
             request.headers.get("authorization"),
             request
         )
-        
+
         if current_user:
             job_user_id = job_status.get("user_id")
             if current_user.role != UserRole.ADMIN and job_user_id != current_user.user_id:

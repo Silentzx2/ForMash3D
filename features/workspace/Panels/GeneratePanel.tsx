@@ -1,17 +1,20 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+
+const noticeTimeoutsRef = { current: [] as ReturnType<typeof setTimeout>[] };
 import { motion, AnimatePresence } from 'motion/react';
 import { useWorkspace } from '../store/WorkspaceContext';
 import { useAppStore } from '@/stores/useAppStore';
 import type { GenerationSettings, PhysicsSettings, ModelAsset } from '../types';
 import { useUploadProgress } from '@/hooks/useUploadProgress';
 import { getApiClient } from '@/services/apiClient';
-import { requireUploadFileId } from '../lib/uploadResponse';
+import { requireUploadFileId, resolveUploadedImageName } from '../lib/uploadResponse';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 import { ShimmerButton } from '@/components/ui/shimmer-button';
 import { getModelDefinition, isMeshGenerationModel } from '@/constants/models';
 import { SMART_PRESET_FALLBACK } from '@/constants/smartPresets';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { DEFAULT_PHYSICS_SETTINGS, PHYSICS_LIMITS } from '../utils/physicsSettings';
+import { getModelFromSearch, getPresetIntentFromSearch, getPromptFromSearch } from '../lib/presetIntent';
 
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Box, Cancel, CheckIcon, ChevronDown, ChevronUp, ImageIcon, InfoIcon, LayersIcon, LoaderCircle, Plus, RefreshCw, Settings2, SparklesIcon, TriangleAlertIcon, UploadIcon, ZapIcon } from '@hugeicons/core-free-icons';
@@ -172,7 +175,7 @@ export interface QualityBadgeProps {
   size?: 'sm' | 'md';
 }
 
-export const QualityBadge: React.FC<QualityBadgeProps> = ({
+export const QualityBadge: React.FC<QualityBadgeProps> = React.memo(({
   asset,
   rawResult,
   metrics: customMetrics,
@@ -263,7 +266,7 @@ export const QualityBadge: React.FC<QualityBadgeProps> = ({
       </span>
     </SimpleTooltip>
   );
-};
+});
 
 interface DiscoveredModel {
   id: string;
@@ -397,6 +400,8 @@ export const GeneratePanel: React.FC = () => {
   } = useAppStore();
   
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const routeSearch = searchParams.toString();
 
   const currentMode = 'image-to-3d';
   const [modelRegistry, setModelRegistry] = useState<Record<string, string[]> | null>(null);
@@ -503,6 +508,14 @@ export const GeneratePanel: React.FC = () => {
   const modelDropdownRef = useRef<HTMLDivElement>(null);
   const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
 
+  // Clean up all notice timeouts on unmount
+  useEffect(() => {
+    return () => {
+      noticeTimeoutsRef.current.forEach((id) => clearTimeout(id));
+      noticeTimeoutsRef.current = [];
+    };
+  }, []);
+
   // Close model dropdown when clicking outside
   useEffect(() => {
     if (!modelDropdownOpen) return;
@@ -551,6 +564,13 @@ export const GeneratePanel: React.FC = () => {
 
   const providersList = meshCapableModels;
   const statusInfo = getStatusInfo();
+  const appliedRouteModel = useRef<string | null>(null);
+  useEffect(() => {
+    const model = getModelFromSearch(routeSearch, providersList.map(provider => provider.id));
+    if (!model || appliedRouteModel.current === model) return;
+    appliedRouteModel.current = model;
+    setGenerationSettings(prev => ({ ...prev, aiModel: model }));
+  }, [providersList, routeSearch, setGenerationSettings]);
 
   // Auto-correct selected model: if current selection is invalid, prefer the first ready model, or first available model
   useEffect(() => {
@@ -666,7 +686,7 @@ export const GeneratePanel: React.FC = () => {
         preprocessingMetadata: null,
         enhancementEnabled: false,
         prompt: cleanPrompt,
-        imageName: cleanPrompt,
+        imageName: resolveUploadedImageName(prev.imageName, cleanPrompt),
         mode: 'image-to-3d',
       }));
       setApprovalStatus(primary.response.approval_status ?? null);
@@ -690,7 +710,8 @@ export const GeneratePanel: React.FC = () => {
           ? `${heldCount} additional image${heldCount === 1 ? '' : 's'} held for backend review.`
           : '';
         setNoticeMessage([queuedText, heldText].filter(Boolean).join(' '));
-        setTimeout(() => setNoticeMessage(null), 5000);
+        const timeoutId = setTimeout(() => setNoticeMessage(null), 5000);
+        noticeTimeoutsRef.current.push(timeoutId);
       }
     }
 
@@ -837,7 +858,7 @@ export const GeneratePanel: React.FC = () => {
     }
   };
 
-  const selectOutputPreset = (presetId: 'mobile' | 'game_ready' | 'cinematic' | 'animation' | '3d_print' | 'native') => {
+  const selectOutputPreset = useCallback((presetId: 'mobile' | 'game_ready' | 'cinematic' | 'animation' | '3d_print' | 'native') => {
     if (presetId === 'native') {
       setGenerationSettings(prev => ({
         ...prev,
@@ -881,7 +902,23 @@ export const GeneratePanel: React.FC = () => {
         targetPolycount: Number(presetData.target_polycount ?? 0),
       },
     }));
-  };
+  }, [setGenerationSettings, smartPresets]);
+
+  const appliedRouteIntent = useRef<string | null>(null);
+  useEffect(() => {
+    const intent = getPresetIntentFromSearch(routeSearch, SMART_PRESET_FALLBACK);
+    if (!intent || appliedRouteIntent.current === intent) return;
+    appliedRouteIntent.current = intent;
+    selectOutputPreset(intent as 'mobile' | 'game_ready' | 'cinematic' | 'animation' | '3d_print');
+  }, [routeSearch, selectOutputPreset]);
+
+  const appliedRoutePrompt = useRef<string | null>(null);
+  useEffect(() => {
+    const prompt = getPromptFromSearch(routeSearch);
+    if (!prompt || appliedRoutePrompt.current === prompt) return;
+    appliedRoutePrompt.current = prompt;
+    setGenerationSettings(prev => ({ ...prev, prompt, imageName: prompt }));
+  }, [routeSearch, setGenerationSettings]);
 
   const previewEnhancement = async () => {
     if (!generationSettings.imageFileId) {
@@ -943,27 +980,32 @@ export const GeneratePanel: React.FC = () => {
     const hasImage = Boolean(generationSettings.image);
     if (!hasImage) {
       setNoticeMessage('Please upload a reference image first.');
-      setTimeout(() => setNoticeMessage(null), 4000);
+      const timeoutId = setTimeout(() => setNoticeMessage(null), 4000);
+      noticeTimeoutsRef.current.push(timeoutId);
       return;
     }
     if (approvalStatus === 'failed') {
       setNoticeMessage(approvalWarning || 'Backend validation failed. Choose another image before generating.');
-      setTimeout(() => setNoticeMessage(null), 5000);
+      const timeoutId = setTimeout(() => setNoticeMessage(null), 5000);
+      noticeTimeoutsRef.current.push(timeoutId);
       return;
     }
     if (approvalStatus === 'needs_review' && !approvalAcknowledged) {
       setNoticeMessage('Review the backend upload warning and confirm it before generating.');
-      setTimeout(() => setNoticeMessage(null), 5000);
+      const timeoutId = setTimeout(() => setNoticeMessage(null), 5000);
+      noticeTimeoutsRef.current.push(timeoutId);
       return;
     }
     if (generationSettings.preprocessingArtifactId && !generationSettings.enhancementEnabled) {
       setNoticeMessage('Choose the validated preview, confirm its review warning, or disable enhancement to use the original image.');
-      setTimeout(() => setNoticeMessage(null), 5000);
+      const timeoutId = setTimeout(() => setNoticeMessage(null), 5000);
+      noticeTimeoutsRef.current.push(timeoutId);
       return;
     }
     if (generationSettings.enhancementEnabled && preprocessingApprovalStatus === 'failed') {
       setNoticeMessage('Preprocessing failed. Disable enhancement to use the original image.');
-      setTimeout(() => setNoticeMessage(null), 5000);
+      const timeoutId = setTimeout(() => setNoticeMessage(null), 5000);
+      noticeTimeoutsRef.current.push(timeoutId);
       return;
     }
     if (
@@ -972,12 +1014,14 @@ export const GeneratePanel: React.FC = () => {
       !generationSettings.preprocessingReviewOverride
     ) {
       setNoticeMessage('Review the preprocessing warning and confirm it before generating.');
-      setTimeout(() => setNoticeMessage(null), 5000);
+      const timeoutId = setTimeout(() => setNoticeMessage(null), 5000);
+      noticeTimeoutsRef.current.push(timeoutId);
       return;
     }
     if (generationSettings.enhancementEnabled && !generationSettings.preprocessingArtifactId) {
       setNoticeMessage('Approve the Generation Preview or disable enhancement before generating.');
-      setTimeout(() => setNoticeMessage(null), 5000);
+      const timeoutId = setTimeout(() => setNoticeMessage(null), 5000);
+      noticeTimeoutsRef.current.push(timeoutId);
       return;
     }
     // If batch generation is enabled, add current image to batch queue instead of generating immediately
@@ -987,7 +1031,8 @@ export const GeneratePanel: React.FC = () => {
         const uploaded = await uploadReferenceImage(imageBlob);
         if (!uploaded) {
           setNoticeMessage('The image could not be uploaded, so it was not queued.');
-          setTimeout(() => setNoticeMessage(null), 5000);
+          const timeoutId = setTimeout(() => setNoticeMessage(null), 5000);
+          noticeTimeoutsRef.current.push(timeoutId);
           return;
         }
         setGenerationSettings(prev => ({ ...prev, imageFileId: uploaded.fileId, image: uploaded.url }));
@@ -999,17 +1044,20 @@ export const GeneratePanel: React.FC = () => {
           setNoticeMessage(uploaded.response.approval_status === 'failed'
             ? uploaded.response.warning || 'Backend validation failed. The image was not queued.'
             : 'Review the backend upload warning, confirm it, then click Generate to queue this image.');
-          setTimeout(() => setNoticeMessage(null), 5000);
+          const timeoutId = setTimeout(() => setNoticeMessage(null), 5000);
+          noticeTimeoutsRef.current.push(timeoutId);
           return;
         }
         addToBatchQueue([uploaded.fileId]);
         setNoticeMessage('Image added to batch queue.');
-        setTimeout(() => setNoticeMessage(null), 5000);
+        const timeoutId = setTimeout(() => setNoticeMessage(null), 5000);
+        noticeTimeoutsRef.current.push(timeoutId);
       } else if (generationSettings.imageFileId) {
         // Image already uploaded, add to batch queue
         addToBatchQueue([generationSettings.imageFileId]);
         setNoticeMessage('Image added to batch queue.');
-        setTimeout(() => setNoticeMessage(null), 5000);
+        const timeoutId = setTimeout(() => setNoticeMessage(null), 5000);
+        noticeTimeoutsRef.current.push(timeoutId);
       }
     } else {
       // Standard single image generation
@@ -1070,7 +1118,9 @@ export const GeneratePanel: React.FC = () => {
                 <span className="leading-tight font-medium">{noticeMessage}</span>
               </div>
               <button 
+                type="button"
                 onClick={() => setNoticeMessage(null)}
+                aria-label="Dismiss notice"
                 className="text-zinc-400 hover:text-white p-0.5 rounded transition-colors cursor-pointer"
               >
                 <HugeiconsIcon icon={Cancel} size={16} className="w-3.5 h-3.5" />
@@ -2437,14 +2487,16 @@ export const GeneratePanel: React.FC = () => {
                   const hasImage = Boolean(generationSettings.image || generationSettings.imageFileId);
                   if (!hasImage) {
                     setNoticeMessage('Upload or select an image to queue.');
-                    setTimeout(() => setNoticeMessage(null), 4000);
+                    const timeoutId = setTimeout(() => setNoticeMessage(null), 4000);
+                    noticeTimeoutsRef.current.push(timeoutId);
                     return;
                   }
                   if (approvalStatus === 'failed' || (approvalStatus === 'needs_review' && !approvalAcknowledged)) {
                     setNoticeMessage(approvalStatus === 'failed'
                       ? approvalWarning || 'Backend validation failed. Choose another image before queuing.'
                       : 'Review and confirm the backend upload warning before queuing.');
-                    setTimeout(() => setNoticeMessage(null), 5000);
+                    const timeoutId = setTimeout(() => setNoticeMessage(null), 5000);
+                    noticeTimeoutsRef.current.push(timeoutId);
                     return;
                   }
                   setNoticeMessage('Submitting next generation job to background queue...');
@@ -2456,7 +2508,8 @@ export const GeneratePanel: React.FC = () => {
                   } catch (err) {
                     setNoticeMessage('Failed to queue job.');
                   }
-                  setTimeout(() => setNoticeMessage(null), 5000);
+                  const timeoutId = setTimeout(() => setNoticeMessage(null), 5000);
+                  noticeTimeoutsRef.current.push(timeoutId);
                 }}
                 className="h-10 px-3 rounded-xl bg-gradient-to-r from-amber-500/20 to-primary/20 border border-primary/40 hover:border-primary text-primary font-bold text-[11px] flex items-center gap-1.5 transition-all shadow-md active:scale-95 cursor-pointer whitespace-nowrap"
               >
