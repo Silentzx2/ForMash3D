@@ -92,13 +92,13 @@ GOAL: If no NVIDIA GPU is detected at start, setup skips ALL model/CUDA dependen
 
 ## 3. TASK B — GITHUB SEO + CONTRIBUTOR GROWTH
 
-GOAL: more developers find the repo and can start contributing in under 10 minutes. Honest positioning: pre-alpha, contributors wanted.
+GOAL: more developers find the repo and can start contributing in under 10 minutes. Honest positioning: beta, contributors wanted.
 
 ### B1. README.md (40 KB — too long above the fold)
 - Replace H1 text with a keyword title: `ForMash3D — Open-Source Self-Hosted Image-to-3D AI Generator` (keywords: image to 3D, text to 3D, self-hosted, open source, game-ready, GLB, retopology, PBR, LODs, auto-rigging).
 - First 160 characters of the README must contain the core pitch (they are used by search snippets).
 - Quick Start line (L27) currently says `bun install` -> `bash scripts/start.sh`, which does not match the real flow (`scripts/setup.sh` first). Make Quick Start match reality; add a second line for CPU/no-GPU mode once Task A lands.
-- Add above the fold: "Pre-alpha — contributors wanted" + links to `CONTRIBUTING.md` and `docs/GOOD_FIRST_ISSUES.md`.
+- Add above the fold: "Beta — contributors wanted" + links to `CONTRIBUTING.md` and `docs/GOOD_FIRST_ISSUES.md`.
 - Add badges: GitHub stars, last commit, issues, `CPU mode supported` (only after A6 passes). Keep the existing CUDA badge.
 - Add a table of contents; keep the architecture mermaid/diagram; add a "Choose your contributor path" block: (A) no GPU: UI/UX, docs, tests, API, postprocess; (B) GPU: adapters, quality pipeline.
 - Replace remaining "AI Studio" wording in docs (backward-compatible env var names like `AI_STUDIO_ENV_MANAGER` stay).
@@ -114,7 +114,7 @@ GOAL: more developers find the repo and can start contributing in under 10 minut
 - Repo description (<=350 chars, keyword-rich), website URL.
 - 15-20 topics (e.g. `image-to-3d`, `text-to-3d`, `3d-generation`, `generative-ai`, `self-hosted`, `fastapi`, `nextjs`, `glb`, `mesh-generation`, `retopology`, `game-assets`, `pytorch`, `hunyuan3d`, `trellis`, `help-wanted`, `good-first-issue`).
 - Social preview image spec: 1280x640 PNG (`assets/banner.png` exists — check its size; create a variant if needed).
-- Enable Discussions + categories; pin 3-5 starter issues; Release `v0.1.0-pre-alpha` notes draft (`docs/RELEASE_NOTES_DRAFT.md`).
+- Enable Discussions + categories; pin 3-5 starter issues; Release `v0.1.0-beta` notes draft (`docs/RELEASE_NOTES_DRAFT.md`).
 - Verify `ForMash3D-ThirdParty` repo: rename any "AI Studio" text, fix Git LFS statements if LFS is gone (F12), add topics, link back to the main repo.
 
 ### B4. Outreach pack — `docs/OUTREACH.md`

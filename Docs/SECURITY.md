@@ -4,7 +4,7 @@
 > **Last Updated**: October 2026
 > **Status**: Active development
 
-The ForMash 3D project takes the security and safety of developers and users seriously. As an early experimental, pre-alpha project that incorporates local AI model runners, file processors, and system execution scripts, security vigilance is essential.
+The ForMash 3D project takes the security and safety of developers and users seriously. As an early experimental, beta project that incorporates local AI model runners, file processors, and system execution scripts, security vigilance is essential.
 
 ---
 
@@ -14,7 +14,7 @@ Only the latest commit on the `main` branch is actively monitored for security v
 
 | Version | Supported |
 |---|---|
-| `main` (0.1.0-prealpha) | :white_check_mark: |
+| `main` (0.1.0-beta) | :white_check_mark: |
 | Older commits / forks | :x: |
 
 ---

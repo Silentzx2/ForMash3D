@@ -2,7 +2,7 @@
 
 Thank you for contributing to ForMash3D.
 
-ForMash3D is an active pre-alpha project combining a Next.js 16 frontend, FastAPI backend, GPU model adapters, and production-oriented 3D post-processing. Contributions should preserve the existing architecture and keep changes focused.
+ForMash3D is an active beta phase project combining a Next.js 16 frontend, FastAPI backend, GPU model adapters, and production-oriented 3D post-processing. Contributions should preserve the existing architecture and keep changes focused.
 
 ## Before changing code
 

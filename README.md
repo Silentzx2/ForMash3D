@@ -27,9 +27,16 @@
   <strong>⚡ Quick Start:</strong> <code>git clone https://github.com/Silentzx2/ForMash3D.git</code> → <code>bun install</code> → <code>bash scripts/start.sh</code> → Open <a href="http://localhost:3000">http://localhost:3000</a>
 </p>
 
+<p align="center">
+  <a href="https://github.com/Silentzx2/ForMash3D/releases"><img src="https://img.shields.io/badge/Phase-BETA-ffb703?style=for-the-badge" alt="BETA phase"></a>
+</p>
+
 ---
 
 ## 🌟 Overview & Product Vision
+
+> [!NOTE]
+> **Phase: BETA** — ForMash3D has graduated from early development. Core studio, API gateway, and post-processing pipeline are stabilizing; breaking changes may still land before 1.0.
 
 **ForMash3D** is an open-source, self-hosted generative 3D asset creation and mesh-finishing platform. It bridges modern state-of-the-art open research models into a single, cohesive studio running entirely on your local workstation or private GPU cluster.
 
