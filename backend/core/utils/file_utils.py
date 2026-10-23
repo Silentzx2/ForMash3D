@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 # Supported file formats
 SUPPORTED_IMAGE_FORMATS = [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff", ".tga"]
-SUPPORTED_MESH_FORMATS = [".glb", ".obj", ".fbx", ".ply", ".stl", ".gltf"]
+SUPPORTED_MESH_FORMATS = [".glb", ".obj", ".fbx", ".ply", ".stl", ".gltf", ".usdz"]
 SUPPORTED_TEXTURE_FORMATS = [".jpg", ".jpeg", ".png", ".tga", ".exr", ".hdr"]
 
 # Validation limits
@@ -48,6 +48,8 @@ MIME_TYPE_MAPPING = {
     "model/fbx": ".fbx",
     "model/ply": ".ply",
     "model/stl": ".stl",
+    "model/vnd.usdz+zip": ".usdz",
+    "model/usdz": ".usdz",
     "application/octet-stream": None,  # Generic binary
 }
 

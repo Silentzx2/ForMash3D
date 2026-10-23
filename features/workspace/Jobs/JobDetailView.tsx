@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useWorkspace } from '../store/WorkspaceContext';
 import { useUIStore } from '@/stores/useUIStore';
 import { getApiClient } from '@/services/apiClient';
 import { toast } from 'sonner';
 import dynamic from 'next/dynamic';
+import { getJobPresentation } from '../lib/jobPresentation';
 
 
 import { HugeiconsIcon } from '@hugeicons/react';
@@ -61,6 +62,16 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
   const [isRawJsonOpen, setIsRawJsonOpen] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
   const [retryingPostprocess, setRetryingPostprocess] = useState(false);
+  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Clean up copy timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (copyTimeoutRef.current) {
+        clearTimeout(copyTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // 1. Fetch real jobs list from backend
   const fetchJobs = useCallback(async () => {
@@ -116,7 +127,8 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
           inputs: (res as any).inputs,
           parameters: (res as any).parameters || (res as any).inputs?.model_parameters,
           logs: (res as any).logs || (res as any).metadata?.logs || [],
-          productionStatus: (res as any).production_status || (res.result as any)?.production_status,
+          productionStatus: (res as any).production_status || (res as any).productionStatus ||
+            (res.result as any)?.production_status || (res.result as any)?.productionStatus,
         });
       }
     } catch (err) {
@@ -146,7 +158,8 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
     navigator.clipboard.writeText(selectedJobId);
     setCopiedId(true);
     toast.success('Job ID copied to clipboard');
-    setTimeout(() => setCopiedId(false), 2000);
+    if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+    copyTimeoutRef.current = setTimeout(() => setCopiedId(false), 2000);
   };
 
   const handleCancelOrDeleteJob = async () => {
@@ -204,9 +217,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
       setGenerationSettings((prev) => ({
         ...prev,
         aiModel: selectedJob.model_preference || params.aiModel || prev.aiModel,
-        meshQuality: params.quality || params.meshQuality || prev.meshQuality,
         seed: typeof params.seed === 'number' ? params.seed : (Number(params.seed) || prev.seed),
-        guidanceScale: typeof params.guidance_scale === 'number' ? params.guidance_scale : prev.guidanceScale,
       }));
     } else if (targetTool === 'remesh') {
       setRemeshSettings((prev) => ({
@@ -237,7 +248,9 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
 
   const handleLoadResultToViewport = () => {
     if (!selectedJob) return;
-    const downloadUrl = `/api/v1/system/jobs/${selectedJob.id}/download`;
+    const presentation = getJobPresentation(selectedJob);
+    if (!presentation.outputUrl) return;
+    const downloadUrl = presentation.outputUrl;
     setCurrentAsset({
       id: selectedJob.id,
       name: `${selectedJob.feature || 'Generated_Mesh'}_${selectedJob.id.slice(0, 6)}.glb`,
@@ -253,7 +266,13 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
         fileId: `job-${selectedJob.id}`,
       },
     } as any);
-    toast.success('Loaded 3D result into active viewport');
+    toast.success(`Loaded ${
+      presentation.outputKind === 'game-ready'
+        ? 'game-ready output'
+        : presentation.outputKind === 'master'
+          ? 'source master'
+          : 'available inference output'
+    } into active viewport`);
     if (onBack) onBack();
   };
 
@@ -275,6 +294,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
   const isCompleted = selectedJob?.status === 'completed';
   const isFailed = selectedJob?.status === 'failed';
   const isRunning = selectedJob?.status === 'processing' || selectedJob?.status === 'running' || selectedJob?.status === 'queued';
+  const jobPresentation = selectedJob ? getJobPresentation(selectedJob) : null;
 
   return (
     <div id="job-detail-view" className="flex flex-col h-full w-full bg-[hsl(var(--surface-0))] text-white overflow-hidden select-none">
@@ -302,7 +322,9 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
 
         <div className="flex items-center gap-2">
           <button
+            type="button"
             onClick={fetchJobs}
+            aria-label="Refresh jobs"
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[hsl(var(--surface-2))] border border-white/[0.08] hover:border-white/[0.16] text-xs text-zinc-300 hover:text-white transition-colors cursor-pointer"
           >
             <HugeiconsIcon icon={RefreshCw} size={16} className="w-3.5 h-3.5" />
@@ -405,8 +427,18 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
         <div className="flex-1 overflow-y-auto p-5">
           {!selectedJob ? (
             <div className="flex flex-col items-center justify-center h-full text-zinc-500 space-y-2">
-              <HugeiconsIcon icon={Box} size={16} className="w-10 h-10 stroke-[1.5] text-zinc-600" />
-              <p className="text-xs">Select a job from the list to view its real parameters and output</p>
+              {loading ? (
+                <>
+                  <div className="skeleton-shimmer w-16 h-16 rounded-full mx-auto mb-2" />
+                  <div className="skeleton-shimmer w-48 h-4 mx-4" />
+                  <div className="skeleton-shimmer w-32 h-4 mx-4" />
+                </>
+              ) : (
+                <>
+                  <HugeiconsIcon icon={Box} size={16} className="w-10 h-10 stroke-[1.5] text-zinc-600" />
+                  <p className="text-xs">Select a job from the list to view its real parameters and output</p>
+                </>
+              )}
             </div>
           ) : (
             <div className="max-w-5xl mx-auto space-y-5">
@@ -415,9 +447,11 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-bold font-mono text-white">Job ID: {selectedJob.id}</span>
-                    <button
-                      onClick={handleCopyId}
-                      className="p-1 rounded text-zinc-400 hover:text-white hover:bg-white/[0.06] cursor-pointer"
+                      <button
+                        type="button"
+                        onClick={handleCopyId}
+                        aria-label="Copy job ID to clipboard"
+                        className="p-1 rounded text-zinc-400 hover:text-white hover:bg-white/[0.06] cursor-pointer"
                     >
                       {copiedId ? <HugeiconsIcon icon={CheckIcon} size={16} className="w-3.5 h-3.5 text-emerald-400" /> : <HugeiconsIcon icon={Copy} size={16} className="w-3.5 h-3.5" />}
                     </button>
@@ -451,36 +485,32 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
                       }`}
                     >
                       <HugeiconsIcon
-                        icon={
-                          selectedJob.productionStatus === 'ready'
-                            ? CheckmarkCircle02Icon
-                            : selectedJob.productionStatus === 'degraded'
-                            ? AlertCircle
-                            : ActivityIcon
-                        }
+                        icon={selectedJob.productionStatus === 'ready' ? CheckmarkCircle02Icon : AlertCircle}
                         size={16}
                         className="w-3.5 h-3.5"
                       />
                       {selectedJob.productionStatus === 'ready'
                         ? 'Production Ready'
                         : selectedJob.productionStatus === 'degraded'
-                        ? 'Production Ready — Some exports unavailable'
+                        ? 'Production Degraded'
                         : 'Production Failed'}
                     </span>
                   )}
 
                   <button
+                    type="button"
                     onClick={handleCloneAndEdit}
+                    aria-label="Clone & edit parameters"
                     className="p-1.5 rounded-lg bg-[hsl(var(--surface-0))] hover:bg-primary/20 text-zinc-400 hover:text-primary border border-white/[0.06] transition-colors cursor-pointer"
-                    title="Clone & Edit Parameters"
                   >
                     <HugeiconsIcon icon={Copy} size={16} className="w-4 h-4" />
                   </button>
 
                   <button
+                    type="button"
                     onClick={handleCancelOrDeleteJob}
+                    aria-label={selectedJobIsRunning ? 'Cancel Job' : 'Delete Job'}
                     className="p-1.5 rounded-lg bg-[hsl(var(--surface-0))] hover:bg-rose-500/20 text-zinc-400 hover:text-rose-300 border border-white/[0.06] transition-colors cursor-pointer"
-                    title={selectedJobIsRunning ? 'Cancel Job' : 'Delete Job'}
                   >
                     {selectedJobIsRunning ? <HugeiconsIcon icon={StopCircleIcon} size={16} className="w-4 h-4" /> : <HugeiconsIcon icon={Trash2} size={16} className="w-4 h-4" />}
                   </button>
@@ -506,7 +536,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
                 </div>
               )}
 
-              {isFailed && (
+              {isFailed && selectedJob.productionStatus !== 'failed' && (
                 <div className="rounded-xl bg-rose-500/10 border border-rose-500/30 p-4 space-y-2">
                   <div className="flex items-center gap-2 text-rose-300 font-bold text-xs">
                     <HugeiconsIcon icon={AlertCircle} size={16} className="w-4 h-4" />
@@ -519,47 +549,83 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
               )}
 
               {/* Output Actions & Details Card */}
-              {isCompleted && (
-                <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/30 p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+              {isCompleted && jobPresentation && (
+                <div className={`rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 ${
+                  jobPresentation.productionStatus === 'ready' && jobPresentation.outputKind === 'game-ready'
+                    ? 'bg-emerald-500/10 border border-emerald-500/30'
+                    : jobPresentation.productionStatus === 'failed'
+                      ? 'bg-rose-500/10 border border-rose-500/30'
+                      : 'bg-amber-500/10 border border-amber-500/30'
+                }`}>
                   <div className="space-y-1 text-left w-full sm:w-auto">
-                    <div className="text-xs font-bold text-emerald-300 flex items-center gap-1.5">
-                      <HugeiconsIcon icon={CheckmarkCircle02Icon} size={16} className="w-4 h-4" />
-                      <span>Production Asset Ready</span>
+                    <div className={`text-xs font-bold flex items-center gap-1.5 ${
+                      jobPresentation.productionStatus === 'ready' && jobPresentation.outputKind === 'game-ready'
+                        ? 'text-emerald-300'
+                        : jobPresentation.productionStatus === 'failed'
+                          ? 'text-rose-300'
+                          : 'text-amber-200'
+                    }`}>
+                      <HugeiconsIcon
+                        icon={jobPresentation.productionStatus === 'ready' ? CheckmarkCircle02Icon : AlertCircle}
+                        size={16}
+                        className="w-4 h-4"
+                      />
+                      <span>{jobPresentation.title}</span>
                     </div>
-                    <p className="text-[11px] text-zinc-300">The canonical production artifacts are available for preview and export.</p>
+                    <p className="text-[11px] text-zinc-300">
+                      {jobPresentation.productionStatus === 'failed'
+                        ? 'Inference completed, but production processing failed. The preserved source master is available here.'
+                        : jobPresentation.productionStatus === 'ready'
+                          ? jobPresentation.outputKind === 'game-ready'
+                            ? 'The backend reports production complete and the game-ready output is available.'
+                            : 'The backend reports production complete, but no game-ready GLB is available.'
+                          : jobPresentation.productionStatus === 'degraded'
+                            ? 'Inference completed; production artifacts may be incomplete.'
+                            : 'Inference completed. Production readiness has not been reported.'}
+                    </p>
                   </div>
-                  <div className="flex items-center gap-2 w-full sm:w-auto">
-                    <button
-                      onClick={handleLoadResultToViewport}
-                      className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-primary hover:brightness-105 text-black font-extrabold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md"
-                    >
-                      <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5" />
-                      <span>Load into Viewport</span>
-                    </button>
-                    <a
-                      href={`/api/v1/system/jobs/${selectedJob.id}/download`}
-                      download
-                      className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-[hsl(var(--surface-2))] hover:bg-white/[0.12] text-white font-bold text-xs flex items-center justify-center gap-1.5 border border-white/[0.08] transition-colors"
-                    >
-                      <HugeiconsIcon icon={DownloadIcon} size={16} className="w-3.5 h-3.5" />
-                      <span>Download Game-ready GLB</span>
-                    </a>
-                  </div>
+                  {jobPresentation.outputUrl && (
+                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                      <button
+                        onClick={handleLoadResultToViewport}
+                        className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-primary hover:brightness-105 text-black font-extrabold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md"
+                      >
+                        <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5" />
+                        <span>Load into Viewport</span>
+                      </button>
+                      <a
+                        href={jobPresentation.outputUrl}
+                        download
+                        className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-[hsl(var(--surface-2))] hover:bg-white/[0.12] text-white font-bold text-xs flex items-center justify-center gap-1.5 border border-white/[0.08] transition-colors"
+                      >
+                        <HugeiconsIcon icon={DownloadIcon} size={16} className="w-3.5 h-3.5" />
+                        <span>
+                          {jobPresentation.outputKind === 'game-ready'
+                            ? 'Download Game-ready GLB'
+                            : jobPresentation.outputKind === 'master'
+                              ? 'Download Source Master'
+                              : 'Download Available Output'}
+                        </span>
+                      </a>
+                    </div>
+                  )}
                 </div>
               )}
 
-              {isFailed && (selectedJob.result as any)?.asset_root && (
-                <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="text-xs font-bold text-amber-200">Production processing failed</div>
+              {jobPresentation?.canRetryPostprocess && (
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div className="min-w-0 w-full sm:w-auto">
+                    <div className="text-xs font-bold text-amber-200">
+                      {jobPresentation.productionStatus === 'failed' ? 'Production processing failed' : 'Production retry available'}
+                    </div>
                     <div className="text-[10px] text-amber-100/70 mt-0.5">The immutable master is preserved, so production processing can be retried without rerunning AI inference.</div>
                   </div>
-                  <div className="shrink-0 flex items-center gap-2">
-                    <button type="button" onClick={() => void handleRetryPostprocess()} disabled={retryingPostprocess} className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-[10px] font-bold text-black disabled:opacity-50 cursor-pointer">
+                  <div className="w-full sm:w-auto flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                    <button type="button" onClick={() => void handleRetryPostprocess()} disabled={retryingPostprocess} className="w-full sm:w-auto inline-flex justify-center items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-[10px] font-bold text-black disabled:opacity-50 cursor-pointer">
                       <HugeiconsIcon icon={RefreshCw} size={16} className={retryingPostprocess ? 'animate-spin' : ''} />
                       {retryingPostprocess ? 'Retrying…' : 'Retry Production Processing'}
                     </button>
-                    <button type="button" onClick={handleCloneAndEdit} className="inline-flex items-center gap-1.5 rounded-lg bg-[hsl(var(--surface-2))] hover:bg-white/[0.08] border border-white/[0.1] px-3 py-2 text-[10px] font-bold text-white transition-colors cursor-pointer">
+                    <button type="button" onClick={handleCloneAndEdit} className="w-full sm:w-auto inline-flex justify-center items-center gap-1.5 rounded-lg bg-[hsl(var(--surface-2))] hover:bg-white/[0.08] border border-white/[0.1] px-3 py-2 text-[10px] font-bold text-white transition-colors cursor-pointer">
                       <HugeiconsIcon icon={Copy} size={14} className="w-3.5 h-3.5 text-primary" />
                       <span>Clone &amp; Edit</span>
                     </button>
@@ -640,16 +706,16 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
                   </div>
 
                   <div className="flex items-center gap-3 p-2.5 rounded-lg bg-[hsl(var(--surface-0))] border border-white/[0.04]">
-                    <div className="w-12 h-12 rounded-lg bg-[hsl(var(--surface-2))] border border-white/[0.06] flex items-center justify-center overflow-hidden flex-shrink-0">
+                    <div className="relative w-12 h-12 rounded-lg bg-[hsl(var(--surface-2))] border border-white/[0.06] flex items-center justify-center overflow-hidden flex-shrink-0">
+                      <HugeiconsIcon icon={Box} size={16} className="w-5 h-5 text-zinc-500" />
                       <img
                         src={`/api/v1/system/jobs/${selectedJob.id}/input`}
                         alt="Input"
-                        className="w-full h-full object-cover"
+                        className="absolute inset-0 w-full h-full object-cover"
                         onError={(e) => {
                           (e.target as HTMLElement).style.display = 'none';
                         }}
                       />
-                      <HugeiconsIcon icon={Box} size={16} className="w-5 h-5 text-zinc-500" />
                     </div>
                     <div className="min-w-0 flex-1 text-xs">
                       <div className="font-bold text-white truncate">Input Reference</div>

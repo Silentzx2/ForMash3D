@@ -26,6 +26,7 @@ from PIL import Image
 
 from core.utils.file_utils import get_storage_base_dir, resolve_server_file_path
 from core.utils.log_formatters import format_banner, format_box, format_bytes
+from core.utils.artifact_utils import sha256_file
 from core.quality.evaluation import compare_meshes, quality_gate
 from core.scheduler.resource_planner import configure_cpu_runtime, cpu_count
 from .config import blender_expr_argv, blender_runtime_available
@@ -435,15 +436,6 @@ def canonical_asset_workspace(
     return _storage_root() / f"{asset_name}_{clean_job_id}"
 
 
-def _sha256_file(path: "Path | str") -> str:
-    path = Path(path)
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
 def _ensure_master_source(raw_path: Path | str, master_path: Path | str) -> tuple[bool, str]:
     """Refresh master/source.glb by content identity, not file size."""
     source = Path(raw_path)
@@ -451,8 +443,8 @@ def _ensure_master_source(raw_path: Path | str, master_path: Path | str) -> tupl
     if not source.is_file():
         raise FileNotFoundError(f"Raw source mesh is missing: {source}")
 
-    source_sha256 = _sha256_file(source)
-    master_sha256 = _sha256_file(master) if master.is_file() else None
+    source_sha256 = sha256_file(source)
+    master_sha256 = sha256_file(master) if master.is_file() else None
     if source_sha256 == master_sha256:
         return False, source_sha256
 
@@ -460,7 +452,7 @@ def _ensure_master_source(raw_path: Path | str, master_path: Path | str) -> tupl
     temp_path = master.with_name(f".{master.name}.{time.time_ns()}.tmp")
     try:
         shutil.copy2(source, temp_path)
-        if _sha256_file(temp_path) != source_sha256:
+        if sha256_file(temp_path) != source_sha256:
             raise RuntimeError("Raw source mesh changed while copying to master/source.glb.")
         temp_path.replace(master)
     finally:
@@ -568,7 +560,7 @@ def persist_manual_mesh_result(
     """Save a mesh-tool result as a derivative of its selected immutable source."""
     source = Path(job_inputs["mesh_path"]).resolve(strict=True)
     expected_source_hash = job_metadata.get("source_sha256")
-    source_hash = _sha256_file(source)
+    source_hash = sha256_file(source)
     if expected_source_hash and source_hash != expected_source_hash:
         raise RuntimeError("Selected source mesh changed while the mesh tool was running.")
 
@@ -603,7 +595,7 @@ def persist_manual_mesh_result(
         except Exception as poly_err:
             logger.warning("[MANUAL MESH TOOL] Could not decimate derivative to target_polycount=%s: %s", target_polycount, poly_err)
 
-    if _sha256_file(source) != source_hash:
+    if sha256_file(source) != source_hash:
         derivative.unlink(missing_ok=True)
         raise RuntimeError("Selected source mesh changed while saving the tool derivative.")
 
@@ -793,7 +785,7 @@ def _collect_input_hashes(inputs: Dict[str, Any]) -> Dict[str, str]:
         candidate = Path(value)
         if candidate.is_file():
             try:
-                hashes[key] = _sha256_file(candidate)
+                hashes[key] = sha256_file(candidate)
             except OSError:
                 logger.debug("Unable to hash input %s", candidate, exc_info=True)
     return hashes
@@ -1194,6 +1186,27 @@ def _save_file(path: Path, payload: bytes) -> str:
     return str(path)
 
 
+def _run_pbr_validation(glb_path: Path, *, required: bool) -> Dict[str, Any]:
+    """Run the PBR checker without letting an optional validator crash a finished mesh job."""
+    try:
+        report = validate_pbr_asset(glb_path)
+        report = dict(report) if isinstance(report, dict) else {
+            "valid": False,
+            "warnings": ["PBR validator returned an invalid report shape."],
+        }
+        report["status"] = "pass" if report.get("valid") is True else "fail"
+    except Exception as exc:
+        logger.warning("PBR validation failed for %s: %s", glb_path, exc)
+        report = {
+            "valid": False,
+            "status": "error",
+            "warnings": ["PBR validator raised an exception."],
+            "error": str(exc),
+        }
+    report["required"] = bool(required)
+    return report
+
+
 def _build_result(
     job_id: str,
     asset_dir: Path,
@@ -1206,6 +1219,7 @@ def _build_result(
     job_metadata: Optional[Dict[str, Any]] = None,
     texture_enabled: bool = False,
     master_quality_report: Optional[Dict[str, Any]] = None,
+    pbr_validation_report: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     primary = generated["game_ready"].get("glb") or generated["game_ready"].get("obj")
     base_url = f"/api/v1/system/jobs/{job_id}"
@@ -1238,7 +1252,15 @@ def _build_result(
         or meta.get("bake_normal_maps")
         or meta.get("bake_textures")
     )
-    bake_failed = bake_status == "failed" or (bake_requested and bake_status != "completed")
+    bake_degraded = bake_status == "degraded"
+    bake_failed = bake_status == "failed" or (
+        bake_requested and bake_status not in {"completed", "degraded"}
+    )
+    pbr_validation_report = pbr_validation_report if isinstance(pbr_validation_report, dict) else {}
+    pbr_validation_required = bool(pbr_validation_report.get("required"))
+    pbr_validation_failed = bool(
+        pbr_validation_required and pbr_validation_report.get("valid") is not True
+    )
     physics_enabled = bool(
         inputs.get("enable_physics")
         or inputs.get("physics_enabled")
@@ -1249,6 +1271,10 @@ def _build_result(
     collision_failed = bool(
         (generated.get("collision") is None and generated.get("artifact_errors", {}).get("collision"))
         or (physics_enabled and not generated.get("collision"))
+    )
+    collision_stats = generated.get("collision_stats") or {}
+    collision_fallback_used = bool(
+        collision_stats.get("fallback") or collision_stats.get("fallback_reason")
     )
     retopo_stats = generated.get("retopo_stats", {})
     retopo_requested = bool(
@@ -1372,10 +1398,30 @@ def _build_result(
                 "required": False,
             },
             "bake": {
-                "status": "ready" if bake_status == "completed" else ("failed" if bake_failed else "skipped"),
-                "url": f"{base_url}/download?artifact_format=normal_map" if bake_status == "completed" else None,
+                "status": (
+                    "ready" if bake_status == "completed"
+                    else "degraded" if bake_degraded
+                    else "failed" if bake_failed
+                    else "skipped"
+                ),
+                "url": f"{base_url}/download?artifact_format=normal_map" if bake_status in {"completed", "degraded"} else None,
                 "required": False,
-                "error": generated.get("bake_stats", {}).get("error") if bake_failed else None,
+                "error": (
+                    generated.get("bake_stats", {}).get("error")
+                    or generated.get("bake_stats", {}).get("reason")
+                ) if (bake_failed or bake_degraded) else None,
+            },
+            "pbr_validation": {
+                "status": (
+                    "ready" if pbr_validation_report.get("valid") is True
+                    else "failed" if pbr_validation_required
+                    else "skipped"
+                ),
+                "url": f"{base_url}/download?artifact_format=qa_report",
+                "path": "metadata/quality_report.json",
+                "required": False,
+                "error": pbr_validation_report.get("error"),
+                "warnings": pbr_validation_report.get("warnings", []),
             },
             "retopology": {
                 "status": retopo_stats.get("status", "skipped"),
@@ -1442,28 +1488,66 @@ def _build_result(
         and qa_report["qa"].get("status") == "fail"
     )
     lod_failed = generated.get("lod_validation", {}).get("status") == "fail"
+    final_topology_gate = generated.get("final_topology_gate")
+    final_topology_unverified = (
+        not isinstance(final_topology_gate, dict)
+        or not isinstance(final_topology_gate.get("passed_clean"), bool)
+    )
+    final_topology_failed = (
+        isinstance(final_topology_gate, dict)
+        and final_topology_gate.get("passed_clean") is False
+    )
+    # Master/derivative gate is a real outcome: a failed drift gate (or an
+    # unusable gate metric) must degrade the result, never pass silently.
+    master_quality_gate = (
+        master_quality_report.get("quality_gate")
+        if isinstance(master_quality_report, dict)
+        else None
+    )
+    master_drift_unverified = (
+        not isinstance(master_quality_gate, dict)
+        or master_quality_gate.get("status") != "ok"
+        or not isinstance(master_quality_gate.get("passed"), bool)
+    )
+    master_drift_failed = (
+        master_drift_unverified
+        or master_quality_gate.get("passed") is False
+    )
     result["production_status"] = (
         "failed"
         if required_failed
         else "degraded"
-        if any_failed or quality_failed or lod_failed or retopo_skipped_native
+        if any_failed or quality_failed or lod_failed or final_topology_unverified or final_topology_failed or master_drift_failed or retopo_skipped_native or pbr_validation_failed or bake_degraded or collision_fallback_used
         else "ready"
     )
     degraded_reasons = []
     if quality_failed:
         degraded_reasons.append("final_quality_gate_failed")
+    if final_topology_failed:
+        degraded_reasons.append("final_topology_gate_failed")
+    elif final_topology_unverified:
+        degraded_reasons.append("final_topology_gate_unverified")
     if lod_failed:
         degraded_reasons.append("lod_validation_failed")
     if texture_failed and texture_enabled:
         degraded_reasons.append("texture_generation_failed")
     if bake_failed and (bake_requested or generated.get("bake_requested")):
         degraded_reasons.append("bake_failed")
+    if bake_degraded:
+        degraded_reasons.append("bake_incomplete")
+    if pbr_validation_failed:
+        degraded_reasons.append("pbr_validation_failed")
     if collision_failed and physics_enabled:
         degraded_reasons.append("collision_generation_failed")
+    if collision_fallback_used:
+        degraded_reasons.append("collision_fallback_used")
     if retopo_skipped_native and retopo_requested:
         degraded_reasons.append("quad_topology_unsupported_native_textures")
-    if master_quality_report and master_quality_report.get("quality_gate", {}).get("passed") is False:
-        degraded_reasons.append("master_to_derivative_quality_drift")
+    if master_drift_failed:
+        if master_drift_unverified:
+            degraded_reasons.append("master_to_derivative_quality_unverified")
+        else:
+            degraded_reasons.append("master_to_derivative_quality_drift")
     if degraded_reasons:
         result["degraded_reasons"] = degraded_reasons
 
@@ -1725,7 +1809,7 @@ def run_postprocess_job(
         "adapter": plan_dict.get("adapter"),
         "preset": plan_dict.get("preset"),
         "num_seeds": plan_dict.get("num_seeds"),
-        "fallback_chain": plan_dict.get("fallback_chain"),
+        "fallback_chain": plan_dict.get("fallback_chain") or job_inputs.get("fallback_chain") or job_metadata.get("fallback_chain") or [],
         "reasons": plan_dict.get("reasons", []),
         "warnings": plan_dict.get("warnings", []),
         "would_have_chosen": plan_dict.get("would_have_chosen"),
@@ -1791,7 +1875,7 @@ def run_postprocess_job(
 
     _check_cancelled(cancel_checker)
     repair_t0 = time.time()
-    _emit(progress, 0.18, "repair", "Checking and repairing topology.")
+    _emit(progress, 0.18, "repair", "Checking topology and applying enabled repairs.")
     repair_opts = RepairOptions(
         method="remove",
         preserve_uv=True,
@@ -1822,10 +1906,11 @@ def run_postprocess_job(
             "reason": "Topology gate evaluated mesh as clean; structural repair skipped.",
             "gate_report": gate_eval,
         }
-    elif gate_repair_decision == "minimal_repair":
+    elif gate_repair_decision == "minimal_repair" and printability_auto_repair:
         repaired, hole_stats = repair_holes_targeted(
             mesh.copy(),
-            max_hole_vertices=int(get_quality_config()["holes"]["max_hole_vertices"])
+            max_hole_vertices=int(get_quality_config()["holes"]["max_hole_vertices"]),
+            max_hole_perimeter=float(get_quality_config()["holes"]["max_hole_perimeter"]),
         )
         repair_stats = {
             "before": source_topology,
@@ -1835,6 +1920,19 @@ def run_postprocess_job(
             "preserve_uv": True,
             "uv_preserved": bool(getattr(getattr(repaired, "visual", None), "uv", None) is not None),
             "skipped": False,
+            "gate_report": gate_eval,
+        }
+    elif gate_repair_decision == "minimal_repair":
+        repaired = mesh.copy()
+        repair_stats = {
+            "before": source_topology,
+            "after": source_topology.copy(),
+            "removed_faces": 0,
+            "method": "skipped_auto_repair_disabled",
+            "preserve_uv": True,
+            "uv_preserved": bool(getattr(getattr(mesh, "visual", None), "uv", None) is not None),
+            "skipped": True,
+            "reason": "Automatic repair is disabled; source geometry was preserved as a copy.",
             "gate_report": gate_eval,
         }
     elif _should_run_structural_repair(source_topology, printability_auto_repair):
@@ -1872,7 +1970,12 @@ def run_postprocess_job(
         "\n" + format_box(
             "POSTPROCESS: STAGE 2/8 - TOPOLOGY REPAIR",
             [
-                ("Operations", f"Weld coincident verts, remove non-manifold, close holes (<= {repair_opts.max_hole_size})"),
+                (
+                    "Operations",
+                    repair_stats.get("reason")
+                    if repair_stats.get("skipped")
+                    else f"Weld coincident verts, remove non-manifold, close holes (<= {repair_opts.max_hole_size})",
+                ),
                 ("Before Repair", f"{len(mesh.faces):,} faces | {len(mesh.vertices):,} vertices"),
                 ("After Repair", f"{len(repaired.faces):,} faces | {len(repaired.vertices):,} vertices"),
                 ("Watertight", rep_after.get("watertight", False)),
@@ -2142,15 +2245,15 @@ def run_postprocess_job(
                 ],
             )
         )
-    elif not auto_uv and not native_textures:
-        # Preserve watertightness for 3D printing: when auto_uv is False and not native_textures,
-        # skip run_auto_uv so vertices are not split along seams.
+    elif not auto_uv and not (native_textures and retopo_ran):
+        # Preserve watertightness / native state: when auto_uv is False (and retopo did not discard UVs on a textured mesh),
+        # skip UV unwrapping so vertices are not split along seams and native vertex colors/geometry are preserved.
         uv_mesh = optimized
         uv_stats = {
             "status": "skipped",
             "auto_uv": False,
-            "native_textures": False,
-            "reason": "auto_uv disabled and not native_textures; preserving watertightness for 3D printing",
+            "native_textures": bool(native_textures),
+            "reason": "auto_uv disabled; UV unwrapping skipped",
         }
         uv_duration = time.time() - uv_t0
         logger.info(
@@ -2159,7 +2262,7 @@ def run_postprocess_job(
                 [
                     ("Status", "Skipped (auto_uv=False)"),
                     ("Watertight Preserved", True),
-                    ("Reason", "auto_uv disabled; seam vertex splitting skipped for 3D printing"),
+                    ("Reason", "auto_uv disabled; seam vertex splitting skipped"),
                     ("Stage Elapsed", f"{uv_duration:.2f}s"),
                 ],
             )
@@ -2280,21 +2383,59 @@ def run_postprocess_job(
                 target_img_path = texture_dir / f"{map_name}.png"
                 target_img_path.write_bytes(img_bytes)
                 texture_paths[map_name] = str(target_img_path)
-            bake_stats = {"status": "completed", **worker_stats}
+            required_bake_maps = set(maps_to_bake)
+            if len(required_bake_maps.intersection({"ao", "roughness", "metallic"})) >= 2:
+                required_bake_maps.add("orm")
+            missing_bake_maps = sorted(required_bake_maps - set(baked_images))
+            bake_stats = {
+                "status": "degraded" if missing_bake_maps else "completed",
+                **worker_stats,
+            }
+            if missing_bake_maps:
+                bake_stats["missing_requested_maps"] = missing_bake_maps
+                bake_stats["reason"] = (
+                    "The active bake backend did not produce all requested maps: "
+                    + ", ".join(missing_bake_maps)
+                )
+                artifact_errors["bake"] = bake_stats["reason"]
+                logger.warning("%s", bake_stats["reason"])
             texture_status = "baked"
 
-            # Attach normal map and PBR material to uv_mesh if normal was baked
+            # Attach only maps that were genuinely baked. Keep native material
+            # channels when a fallback backend cannot bake albedo/ORM for them.
             if "normal" in baked_images:
                 try:
                     norm_img = Image.open(io.BytesIO(baked_images["normal"]))
                     base_img = Image.open(io.BytesIO(baked_images["base_color"])) if "base_color" in baked_images else None
-                    pbr_mat = trimesh.visual.material.PBRMaterial(
-                        name="GameReady_PBR",
-                        normalTexture=norm_img,
-                        baseColorTexture=base_img,
-                    )
+                    orm_img = Image.open(io.BytesIO(baked_images["orm"])) if "orm" in baked_images else None
+                    ao_img = Image.open(io.BytesIO(baked_images["ao"])) if "ao" in baked_images else None
                     uvs = getattr(getattr(uv_mesh, "visual", None), "uv", None)
-                    if uvs is not None:
+                    existing_material = getattr(getattr(uv_mesh, "visual", None), "material", None)
+
+                    if native_textures and base_img is None and isinstance(
+                        existing_material, trimesh.visual.material.PBRMaterial
+                    ):
+                        # Native PBR data is authoritative when the fallback cannot bake semantic maps.
+                        pbr_mat = existing_material
+                        pbr_mat.normalTexture = norm_img
+                        if orm_img is not None:
+                            pbr_mat.metallicRoughnessTexture = orm_img
+                        pbr_mat.occlusionTexture = orm_img if orm_img is not None else ao_img
+                    elif native_textures and base_img is None and existing_material is not None:
+                        # Do not replace a non-PBR material with fake flat maps.
+                        logger.warning(
+                            "Preserving native material: the active baker did not produce a baked base-color map."
+                        )
+                        pbr_mat = None
+                    else:
+                        pbr_mat = trimesh.visual.material.PBRMaterial(
+                            name="GameReady_PBR",
+                            normalTexture=norm_img,
+                            baseColorTexture=base_img,
+                            metallicRoughnessTexture=orm_img,
+                            occlusionTexture=orm_img if orm_img is not None else ao_img,
+                        )
+                    if uvs is not None and pbr_mat is not None:
                         uv_mesh.visual = trimesh.visual.TextureVisuals(uv=uvs, material=pbr_mat)
                 except Exception as mat_err:
                     logger.warning("Could not attach baked textures to GLB material: %s", mat_err)
@@ -2313,8 +2454,7 @@ def run_postprocess_job(
         master_quality_report = compare_meshes(
             mesh,
             uv_mesh,
-            sample_count=4096,
-            seed=0,
+            seed=1,
         )
         master_quality_report["interpretation"] = "master_vs_derivative_diagnostic"
         master_quality_report["quality_gate"] = quality_gate(master_quality_report)
@@ -2423,12 +2563,9 @@ def run_postprocess_job(
         game_ready_glb_bytes = _export_glb(game_ready_mesh)
     _save_file(glb_path, game_ready_glb_bytes)
     game_ready["glb"] = str(glb_path)
-    try:
-        pbr_report = validate_pbr_asset(glb_path)
-        quality_trace["pbr_validation"] = pbr_report
-    except Exception as pbr_err:
-        logger.warning("PBR validation failed: %s", pbr_err)
-        quality_trace["pbr_validation"] = {"status": "warn", "error": str(pbr_err)}
+    pbr_validation_required = bool(texture_enabled or native_textures or should_bake)
+    pbr_report = _run_pbr_validation(glb_path, required=pbr_validation_required)
+    quality_trace["pbr_validation"] = pbr_report
 
     if retopo_stats.get("quad_faces"):
         try:
@@ -2558,6 +2695,8 @@ def run_postprocess_job(
                 game_ready_mesh, physics_config, collision_stats
             )
             _write_json(metadata_dir / "physics.json", physics_metadata)
+        except InterruptedError:
+            raise
         except Exception as exc:
             logger.warning("Collision generation failed for %s, falling back to simple convex hull: %s", job_id, exc)
             try:
@@ -2568,7 +2707,15 @@ def run_postprocess_job(
                     collision_payload = collision_payload.encode("utf-8")
                 collision_path = collision_dir / "collision.glb"
                 collision_path.write_bytes(collision_payload)
-                collision_stats = {"hull_count": 1, "fallback": True, "total_triangles": len(getattr(hull, "faces", []))}
+                collision_stats = {
+                    "method": "convex_hull",
+                    "parts": 1,
+                    "faces": int(len(getattr(hull, "faces", []))),
+                    "vertices": int(len(getattr(hull, "vertices", []))),
+                    "source_faces": int(len(game_ready_mesh.faces)),
+                    "fallback": True,
+                    "fallback_reason": str(exc),
+                }
                 physics_metadata = build_physics_metadata(game_ready_mesh, physics_config, collision_stats)
                 _write_json(metadata_dir / "physics.json", physics_metadata)
             except Exception as inner_exc:
@@ -2584,10 +2731,10 @@ def run_postprocess_job(
                 "POSTPROCESS: STAGE 8/8 - PHYSICS & COLLISION PROXY",
                 [
                     ("Quality Preset", collision_quality),
-                    ("Convex Hulls", collision_stats.get("hull_count", "N/A") if collision_stats else "N/A"),
-                    ("Collision Triangles", collision_stats.get("total_triangles", "N/A") if collision_stats else "N/A"),
+                    ("Convex Hulls", collision_stats.get("parts", "N/A") if collision_stats else "N/A"),
+                    ("Collision Triangles", collision_stats.get("faces", "N/A") if collision_stats else "N/A"),
                     ("Proxy File", f"{collision_path} ({format_bytes(collision_path.stat().st_size)})"),
-                    ("Center of Mass", physics_metadata.get("center_of_mass", "N/A") if physics_metadata else "N/A"),
+                    ("Body Mass", physics_metadata.get("body", {}).get("mass_kg", "N/A") if physics_metadata else "N/A"),
                     ("Stage Elapsed", f"{collision_duration:.2f}s"),
                 ],
             )
@@ -2664,6 +2811,12 @@ def run_postprocess_job(
         "uv_seam_vertex_delta": len(uv_mesh.vertices) - len(mesh.vertices),
         "qa": qa_report,
     }
+    final_topology_gate = evaluate_topology_gate(
+        mesh=uv_mesh.copy(),
+        plan=generation_result.get("plan") or job_inputs.get("plan"),
+        strict=bool(job_inputs.get("strict_topology_gate", False)),
+    )
+    quality_trace["final_topology_gate"] = final_topology_gate
 
     now = datetime.now(timezone.utc).isoformat()
     _write_json(
@@ -2705,13 +2858,15 @@ def run_postprocess_job(
             "generation_result": generation_result,
         },
     )
-    if _sha256_file(master_path) != source_sha256:
+    if sha256_file(master_path) != source_sha256:
         raise RuntimeError("Immutable master source.glb changed during post-processing.")
 
     badge_cfg = get_quality_config().get("badge", {})
     sharp_cutoff = float(badge_cfg.get("sharp_min_score", 0.85))
     passed_clean = bool(gate_eval.get("passed_clean", False)) if isinstance(gate_eval, dict) else False
-    pbr_valid = (pbr_report.get("valid", True)) if isinstance(pbr_report, dict) else True
+    pbr_valid = (not pbr_validation_required) or (
+        isinstance(pbr_report, dict) and pbr_report.get("valid") is True
+    )
     has_flaws = (
         (not passed_clean)
         or (not pbr_valid)
@@ -2784,7 +2939,9 @@ def run_postprocess_job(
     generated = {
         "game_ready": game_ready,
         "lods": lods,
+        "final_topology_gate": final_topology_gate,
         "collision": str(collision_path) if collision_path else None,
+        "collision_stats": collision_stats,
         "physics": str(metadata_dir / "physics.json") if physics_metadata else None,
         "physics_metadata": physics_metadata,
         "textures": texture_paths,
@@ -2797,6 +2954,7 @@ def run_postprocess_job(
         "lod_validation": lod_validation,
         "bake_stats": bake_stats,
         "retopo_stats": retopo_stats,
+        "pbr_validation": pbr_report,
     }
     final_result = _build_result(
         job_id, asset_dir, asset_name, qa_report, generated,
@@ -2806,8 +2964,10 @@ def run_postprocess_job(
         job_metadata=job_metadata,
         texture_enabled=texture_enabled,
         master_quality_report=master_quality_report,
+        pbr_validation_report=pbr_report,
     )
     final_result["quality_trace"] = quality_trace
+    final_result["final_topology_gate"] = final_topology_gate
     final_result["quality_tier"] = backend_quality_tier
     final_result["generation_info"] = generation_info
     final_result["raw_geometry_telemetry"] = raw_geometry_telemetry or None

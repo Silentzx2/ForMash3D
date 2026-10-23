@@ -25,6 +25,22 @@ logger = logging.getLogger(__name__)
 
 # EXPERIMENTAL_MAX_DETAIL snapshot (2026-10-20): Hunyuan3D-2.1 uses up to 100 UI-supported steps and upstream default guidance 5.0.
 # Ask the user once and obtain explicit confirmation before future changes to these locked settings.
+# LOCKED / ACTIVE: values used by inference (legacy Hunyuan3D-2.1 aliases).
+# BASELINE: previous effective runtime values (source_quality="max", octree_resolution=512, num_inference_steps=100, guidance_scale=5.0)
+# EXPERIMENTAL: selected experimental values, snapshot (2026-10-20) for stress-test; use only for benchmarking.
+# SUPPORTED BY: Hunyuan3D 2.1 legacy adapter, EXPERIMENTAL-MODEL-SETTINGS.md section "Legacy Hunyuan3D-2.1 aliases".
+# ROLLBACK: previous effective values; scheduler strips frontend overrides before adapter applies lock.
+_LOCKED_INFERENCE_PROFILE = {
+    "source_quality": "max",
+    "octree_resolution": 512,
+    "num_inference_steps": 100,
+    "guidance_scale": 5.0,
+}
+
+_LOCKED_PAINTING_PROFILE = {
+    "max_num_view": 6,
+    "resolution": 512,
+}
 
 
 class Hunyuan3DV21ImageToMeshAdapterCommon(ImageToMeshModel):
@@ -254,8 +270,8 @@ class Hunyuan3DV21ImageToMeshAdapterCommon(ImageToMeshModel):
                         raise
 
                 logger.info("Setting up paint pipeline...")
-                max_num_view = 6
-                resolution = 512
+                max_num_view = _LOCKED_PAINTING_PROFILE["max_num_view"]
+                resolution = _LOCKED_PAINTING_PROFILE["resolution"]
                 conf = Hunyuan3DPaintConfig(max_num_view, resolution)
 
                 conf.multiview_cfg_path = str(
@@ -412,6 +428,7 @@ class Hunyuan3DV21ImageToRawMeshAdapter(Hunyuan3DV21ImageToMeshAdapterCommon):
         """
         Process image-to-raw-mesh generation using Hunyuan3D 2.1.
         """
+        inputs = {**inputs, **_LOCKED_INFERENCE_PROFILE}
         try:
             # Validate inputs
             if "image_path" not in inputs:
@@ -444,15 +461,15 @@ class Hunyuan3DV21ImageToRawMeshAdapter(Hunyuan3DV21ImageToMeshAdapterCommon):
 
             # Shape generation only
             logger.info("Generating 3D shape...")
-            octree_res = 512
+            octree_res = int(inputs["octree_resolution"])
             num_steps = inputs.get("num_inference_steps", 100)
             if num_steps is None:
-                num_steps = 100
+                num_steps = _LOCKED_INFERENCE_PROFILE["num_inference_steps"]
             else:
                 num_steps = int(num_steps)
             guidance_scale = inputs.get("guidance_scale", 5.0)
             if guidance_scale is None:
-                guidance_scale = 5.0
+                guidance_scale = _LOCKED_INFERENCE_PROFILE["guidance_scale"]
             else:
                 guidance_scale = float(guidance_scale)
             seed = int(inputs.get("seed", 1234))
@@ -514,9 +531,9 @@ class Hunyuan3DV21ImageToRawMeshAdapter(Hunyuan3DV21ImageToMeshAdapterCommon):
         """
         return {
             "parameters": {
-                "octree_resolution": {"type": "integer", "default": 512, "minimum": 64, "maximum": 512, "readOnly": True, "required": False},
-                "num_inference_steps": {"type": "integer", "description": "Experimental max-detail profile; upstream UI ceiling is 100 steps. Ask before changing the locked setting.", "default": 100, "minimum": 1, "maximum": 100, "required": False},
-                "guidance_scale": {"type": "number", "default": 5.0, "minimum": 1.0, "maximum": 20.0, "required": False},
+                "octree_resolution": {"type": "integer", "default": _LOCKED_INFERENCE_PROFILE["octree_resolution"], "minimum": 64, "maximum": 512, "readOnly": True, "required": False},
+                "num_inference_steps": {"type": "integer", "description": "Adapter-locked inference step count.", "default": _LOCKED_INFERENCE_PROFILE["num_inference_steps"], "minimum": 1, "maximum": 100, "readOnly": True, "required": False},
+                "guidance_scale": {"type": "number", "default": _LOCKED_INFERENCE_PROFILE["guidance_scale"], "minimum": 1.0, "maximum": 20.0, "readOnly": True, "required": False},
                 "seed": {"type": "integer", "default": 1234, "minimum": 0, "required": False},
             }
         }
@@ -543,6 +560,11 @@ class Hunyuan3DV21ImageToTexturedMeshAdapter(Hunyuan3DV21ImageToMeshAdapterCommo
         """
         Process image-to-textured-mesh generation using Hunyuan3D 2.1.
         """
+        inputs = {
+            **inputs,
+            **_LOCKED_INFERENCE_PROFILE,
+            **_LOCKED_PAINTING_PROFILE,
+        }
         try:
             if self.bg_remover is None:
                 raise ValueError("Background remover is not loaded")
@@ -561,8 +583,8 @@ class Hunyuan3DV21ImageToTexturedMeshAdapter(Hunyuan3DV21ImageToMeshAdapterCommo
 
             # Extract parameters
             output_format = inputs.get("output_format", "glb")
-            max_num_view = inputs.get("max_num_view", 6)
-            resolution = inputs.get("resolution", 512)
+            max_num_view = inputs["max_num_view"]
+            resolution = inputs["resolution"]
 
             if output_format not in self.supported_output_formats:
                 raise ValueError(f"Unsupported output format: {output_format}")
@@ -586,12 +608,12 @@ class Hunyuan3DV21ImageToTexturedMeshAdapter(Hunyuan3DV21ImageToMeshAdapterCommo
             logger.info("Generating 3D shape...")
             num_steps = inputs.get("num_inference_steps", 100)
             if num_steps is None:
-                num_steps = 100
+                num_steps = _LOCKED_INFERENCE_PROFILE["num_inference_steps"]
             else:
                 num_steps = int(num_steps)
             guidance_scale = inputs.get("guidance_scale", 5.0)
             if guidance_scale is None:
-                guidance_scale = 5.0
+                guidance_scale = _LOCKED_INFERENCE_PROFILE["guidance_scale"]
             else:
                 guidance_scale = float(guidance_scale)
             seed = int(inputs.get("seed", 1234))
@@ -601,7 +623,7 @@ class Hunyuan3DV21ImageToTexturedMeshAdapter(Hunyuan3DV21ImageToMeshAdapterCommo
             generator = torch.Generator(device=device).manual_seed(seed)
             mesh_result = self.pipeline_shapegen(
                 image=image,
-                octree_resolution=512,
+                octree_resolution=inputs["octree_resolution"],
                 num_inference_steps=num_steps,
                 guidance_scale=guidance_scale,
                 generator=generator,
@@ -684,23 +706,25 @@ class Hunyuan3DV21ImageToTexturedMeshAdapter(Hunyuan3DV21ImageToMeshAdapterCommo
         """
         return {
             "parameters": {
-                "octree_resolution": {"type": "integer", "default": 512, "minimum": 64, "maximum": 512, "readOnly": True, "required": False},
-                "num_inference_steps": {"type": "integer", "description": "Experimental max-detail profile; upstream UI ceiling is 100 steps. Ask before changing the locked setting.", "default": 100, "minimum": 1, "maximum": 100, "required": False},
-                "guidance_scale": {"type": "number", "default": 5.0, "minimum": 1.0, "maximum": 20.0, "required": False},
+                "octree_resolution": {"type": "integer", "default": _LOCKED_INFERENCE_PROFILE["octree_resolution"], "minimum": 64, "maximum": 512, "readOnly": True, "required": False},
+                "num_inference_steps": {"type": "integer", "description": "Adapter-locked inference step count.", "default": _LOCKED_INFERENCE_PROFILE["num_inference_steps"], "minimum": 1, "maximum": 100, "readOnly": True, "required": False},
+                "guidance_scale": {"type": "number", "default": _LOCKED_INFERENCE_PROFILE["guidance_scale"], "minimum": 1.0, "maximum": 20.0, "readOnly": True, "required": False},
                 "seed": {"type": "integer", "default": 1234, "minimum": 0, "required": False},
                 "max_num_view": {
                     "type": "integer",
                     "description": "Maximum number of views for texture generation",
-                    "default": 6,
+                    "default": _LOCKED_PAINTING_PROFILE["max_num_view"],
                     "minimum": 1,
                     "maximum": 12,
+                    "readOnly": True,
                     "required": False
                 },
                 "resolution": {
                     "type": "integer",
                     "description": "Texture generation resolution per view",
-                    "default": 512,
+                    "default": _LOCKED_PAINTING_PROFILE["resolution"],
                     "enum": [256, 512, 1024],
+                    "readOnly": True,
                     "required": False
                 }
             }
@@ -740,6 +764,7 @@ class Hunyuan3DV21ImageMeshPaintingAdapter(Hunyuan3DV21ImageToMeshAdapterCommon)
         Returns:
             Dictionary with painting results
         """
+        inputs = {**inputs, **_LOCKED_PAINTING_PROFILE}
         try:
             if self.bg_remover is None:
                 raise ValueError("Background remover is not loaded")
@@ -762,8 +787,8 @@ class Hunyuan3DV21ImageMeshPaintingAdapter(Hunyuan3DV21ImageToMeshAdapterCommon)
 
             # Extract parameters
             output_format = inputs.get("output_format", "glb")
-            max_num_view = inputs.get("max_num_view", 6)
-            resolution = inputs.get("resolution", 512)
+            max_num_view = inputs["max_num_view"]
+            resolution = inputs["resolution"]
 
             if output_format not in self.supported_output_formats:
                 raise ValueError(f"Unsupported output format: {output_format}")
@@ -839,16 +864,18 @@ class Hunyuan3DV21ImageMeshPaintingAdapter(Hunyuan3DV21ImageToMeshAdapterCommon)
                 "max_num_view": {
                     "type": "integer",
                     "description": "Maximum number of views for texture generation",
-                    "default": 6,
+                    "default": _LOCKED_PAINTING_PROFILE["max_num_view"],
                     "minimum": 1,
                     "maximum": 12,
+                    "readOnly": True,
                     "required": False
                 },
                 "resolution": {
                     "type": "integer",
                     "description": "Texture generation resolution per view",
-                    "default": 512,
+                    "default": _LOCKED_PAINTING_PROFILE["resolution"],
                     "enum": [256, 512, 1024],
+                    "readOnly": True,
                     "required": False
                 }
             }

@@ -22,6 +22,16 @@ from core.utils.mesh_utils import MeshProcessor
 
 logger = logging.getLogger(__name__)
 
+# LOCKED / ACTIVE: values used by inference.
+# BASELINE: previous effective runtime values (max_num_view=9, resolution=768)
+# EXPERIMENTAL: selected experimental values, snapshot (2026-10-20) for stress-test; use only for benchmarking.
+# SUPPORTED BY: Hunyuan3D-Paint-v2-1 adapter, EXPERIMENTAL-MODEL-SETTINGS.md section "Hunyuan3D-Paint-v2.1".
+# ROLLBACK: previous effective values; scheduler strips frontend overrides before adapter applies lock.
+_LOCKED_INFERENCE_PROFILE = {
+    "max_num_view": 9,
+    "resolution": 768,
+}
+
 
 def _format_background_remover_import_error(error: BaseException) -> ImportError:
     """Build an actionable diagnostic for BackgroundRemover import-time failures."""
@@ -208,8 +218,8 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
 
             # EXPERIMENTAL_MAX_DETAIL: upstream Hunyuan3D-Paint demo supports up to 9 views and 768 per-view resolution.
             # Ask the user once and require explicit confirmation before future changes to these locked defaults.
-            max_num_view = 9
-            resolution = 768
+            max_num_view = _LOCKED_INFERENCE_PROFILE["max_num_view"]
+            resolution = _LOCKED_INFERENCE_PROFILE["resolution"]
             conf = Hunyuan3DPaintConfig(max_num_view, resolution)
             planned_gpus = [
                 int(gpu) for gpu in (getattr(self, "resource_plan", None) or {}).get("gpu_ids", [])
@@ -424,6 +434,7 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
 
     def _process_request(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """Process mesh painting using Hunyuan3D-Paint-v2-1."""
+        inputs = {**inputs, **_LOCKED_INFERENCE_PROFILE}
         cancel_checker = inputs.get("cancel_checker")
         temp_mesh_dir = None
         try:
@@ -443,8 +454,8 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
             if output_format not in self.supported_output_formats:
                 raise ValueError(f"Unsupported output format: {output_format}")
 
-            max_num_view = inputs.get("max_num_view", 12)
-            resolution = int(inputs.get("resolution", 768))
+            max_num_view = inputs["max_num_view"]
+            resolution = int(inputs["resolution"])
 
             # Strictly enforce 4K (4096) and 8K (8192) resolution routing for Hunyuan3D-Paint-v2-1
             raw_tex_res = inputs.get("texture_resolution", 4096)
@@ -621,16 +632,18 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
                 "max_num_view": {
                     "type": "integer",
                     "description": "Experimental max-detail default follows the upstream demo's supported 6-9 view range; ask before changing the locked profile.",
-                    "default": 9,
+                    "default": _LOCKED_INFERENCE_PROFILE["max_num_view"],
                     "minimum": 6,
                     "maximum": 12,
+                    "readOnly": True,
                     "required": False,
                 },
                 "resolution": {
                     "type": "integer",
                     "description": "Per-view inference resolution; experimental max-detail default is the upstream demo ceiling of 768.",
-                    "default": 1024,
+                    "default": _LOCKED_INFERENCE_PROFILE["resolution"],
                     "enum": [512, 768, 1024, 1536],
+                    "readOnly": True,
                     "required": False,
                 },
             },
@@ -644,4 +657,3 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
 
 # Alias for backward-compatibility and clean imports
 Hunyuan3DPaintV21Adapter = Hunyuan3DPaintV21ImageMeshPaintingAdapter
-

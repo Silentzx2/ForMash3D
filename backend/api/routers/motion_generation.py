@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
-from api.dependencies import get_current_user_or_none, get_scheduler
+from api.dependencies import get_scheduler
 from core.scheduler.job_queue import JobRequest
 from core.scheduler.multiprocess_scheduler import MultiprocessModelScheduler
 
@@ -62,12 +62,11 @@ class MotionGenerationResponse(BaseModel):
 async def generate_motion(
     request: MotionGenerationRequest,
     scheduler: MultiprocessModelScheduler = Depends(get_scheduler),
-    current_user=Depends(get_current_user_or_none),
 ):
     """
     Generate character animation / motion from a text prompt using ARDY.
     """
-    user_id = current_user.user_id if current_user else None
+    user_id = None
 
     # Old clients used skeleton labels as model IDs; ARDY variants are checkpoints
     # of one registered model, not separately registered scheduler models.

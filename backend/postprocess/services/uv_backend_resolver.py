@@ -63,6 +63,15 @@ def resolve_uv_backend(
             )
         return "partuv", f"partuv explicitly requested with sufficient CUDA VRAM ({free_vram_gb:.1f}GB >= {vram_req:.1f}GB)"
 
+    if requested in ("ministudio", "autouv"):
+        return "ministudio", f"{requested} explicitly requested"
+
+    if requested in ("blender_smart", "blender"):
+        return "blender_smart", f"{requested} explicitly requested"
+
+    if requested == "xatlas":
+        return "xatlas", "xatlas explicitly requested"
+
     if requested == "auto":
         if triangle_count >= threshold and has_cuda and free_vram_gb >= vram_req:
             return (
@@ -77,11 +86,144 @@ def resolve_uv_backend(
             reason = f"auto selected {fallback}: triangle count ({triangle_count}) >= {threshold} but insufficient VRAM ({free_vram_gb:.1f}GB < {vram_req:.1f}GB)"
         return fallback, reason
 
-    if requested == "xatlas":
-        return "xatlas", "xatlas explicitly requested"
-
     logger.warning("Unknown UV backend '%s' requested; falling back to %s.", requested_backend, fallback)
     return fallback, f"unknown backend '{requested_backend}'; falling back to {fallback}"
+
+
+def _unwrap_massive_mesh_safe(
+    mesh: trimesh.Trimesh,
+    runtime: Optional[Dict[str, Any]] = None,
+    max_safe_faces: int = 50000,
+    max_chart_size: int = 4096,
+) -> trimesh.Trimesh:
+    """Safely unwrap a massive mesh by unwrapping a simplified proxy and transferring UVs via cKDTree.
+
+    Prevents C++ SIGSEGV in xatlas while preserving the native dense mesh geometry,
+    vertex count, normals, and vertex colors.
+    """
+    from scipy.spatial import cKDTree
+
+    V = np.asarray(mesh.vertices, dtype=np.float64)
+    F = np.asarray(mesh.faces, dtype=np.int64)
+
+    if len(V) == 0 or len(F) == 0:
+        return mesh.copy()
+
+    # Fast voxel grid clustering proxy in pure numpy
+    bbox_extent = V.max(axis=0) - V.min(axis=0)
+    vol = float(np.prod(np.maximum(bbox_extent, 1e-6)))
+    target_proxy_faces = min(max_safe_faces // 2, 25000)
+    n_target_verts = max(100, target_proxy_faces // 2)
+    cell_size = (vol / n_target_verts) ** (1.0 / 3.0)
+
+    grid_coords = np.floor((V - V.min(axis=0)) / max(cell_size, 1e-6)).astype(np.int64)
+    _, unique_indices, inverse = np.unique(grid_coords, axis=0, return_index=True, return_inverse=True)
+
+    proxy_V = V[unique_indices]
+    proxy_F = inverse[F]
+
+    # Filter degenerate triangles
+    valid_faces = (proxy_F[:, 0] != proxy_F[:, 1]) & (proxy_F[:, 1] != proxy_F[:, 2]) & (proxy_F[:, 2] != proxy_F[:, 0])
+    proxy_F = proxy_F[valid_faces]
+
+    if len(proxy_F) == 0 or len(proxy_V) < 4:
+        # Fallback to simple strided face sampling
+        stride = max(1, len(F) // target_proxy_faces)
+        sampled_F = F[::stride]
+        unique_v, inv_v = np.unique(sampled_F, return_inverse=True)
+        proxy_V = V[unique_v]
+        proxy_F = inv_v.reshape(-1, 3)
+
+    proxy_mesh = trimesh.Trimesh(vertices=proxy_V, faces=proxy_F, process=False)
+    unwrapped_proxy = _unwrap_xatlas(proxy_mesh, runtime=runtime, max_chart_size=max_chart_size)
+
+    proxy_unwrapped_verts = np.asarray(unwrapped_proxy.vertices, dtype=np.float64)
+    proxy_uvs = np.asarray(unwrapped_proxy.visual.uv, dtype=np.float32)
+
+    # Transfer UVs to original vertices via cKDTree
+    tree = cKDTree(proxy_unwrapped_verts)
+    _, nearest = tree.query(V)
+    dense_uvs = proxy_uvs[nearest]
+
+    out_mesh = mesh.copy()
+    source_visual = getattr(mesh, "visual", None)
+    source_material = getattr(source_visual, "material", None)
+    source_image = getattr(source_visual, "image", None)
+
+    out_mesh.visual = trimesh.visual.TextureVisuals(
+        uv=dense_uvs,
+        material=source_material if source_material is not None else trimesh.visual.material.PBRMaterial(name="xatlas_safe"),
+        image=source_image if source_image is not None else None,
+    )
+    if hasattr(source_visual, "vertex_colors") and source_visual.vertex_colors is not None:
+        out_mesh.visual.vertex_colors = source_visual.vertex_colors
+
+    return out_mesh
+
+
+def _unwrap_ministudio(
+    mesh: trimesh.Trimesh,
+    runtime: Optional[Dict[str, Any]] = None,
+) -> trimesh.Trimesh:
+    """Unwrap mesh using ministudio/autouv package."""
+    from postprocess.services.auto_uv import run_auto_uv
+    from postprocess.schemas import AutoUvOptions
+
+    runtime_dict = runtime or {}
+    opts = AutoUvOptions(
+        resolution=int(runtime_dict.get("resolution", 2048)),
+        padding_texels=int(runtime_dict.get("padding", runtime_dict.get("padding_texels", 4))),
+    )
+    unwrapped, _, _ = run_auto_uv(mesh, opts)
+    return unwrapped
+
+
+def _unwrap_blender_smart(
+    mesh: trimesh.Trimesh,
+    runtime: Optional[Dict[str, Any]] = None,
+) -> trimesh.Trimesh:
+    """Unwrap mesh using Blender Smart UV Project."""
+    import shutil
+    import subprocess
+    from uuid import uuid4
+    from postprocess.config import WORK_DIR, blender_runtime_available, blender_worker_argv
+
+    if not blender_runtime_available():
+        raise RuntimeError("Blender runtime not available for blender_smart UV unwrap.")
+
+    job_dir = WORK_DIR / f"blender_uv-{uuid4().hex}"
+    job_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        in_glb = job_dir / "input.glb"
+        out_glb = job_dir / "output.glb"
+        in_glb.write_bytes(mesh.export(file_type="glb"))
+        angle_limit = float((runtime or {}).get("angle_limit", 66.0))
+        island_margin = float((runtime or {}).get("island_margin", 0.01))
+
+        script = job_dir / "smart_uv.py"
+        script.write_text(
+            f'import bpy\n'
+            f'bpy.ops.wm.read_factory_settings(use_empty=True)\n'
+            f'bpy.ops.import_scene.gltf(filepath=r"{in_glb}")\n'
+            f'for obj in bpy.context.scene.objects:\n'
+            f'    if obj.type == "MESH":\n'
+            f'        bpy.context.view_layer.objects.active = obj\n'
+            f'        bpy.ops.object.mode_set(mode="EDIT")\n'
+            f'        bpy.ops.mesh.select_all(action="SELECT")\n'
+            f'        bpy.ops.uv.smart_project(angle_limit={angle_limit}, island_margin={island_margin})\n'
+            f'        bpy.ops.object.mode_set(mode="OBJECT")\n'
+            f'bpy.ops.export_scene.gltf(filepath=r"{out_glb}", export_format="GLB")\n',
+            encoding="utf-8",
+        )
+        cmd = blender_worker_argv(script, [])
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+        if proc.returncode != 0 or not out_glb.exists():
+            raise RuntimeError(f"Blender smart UV unwrap failed: {proc.stderr or proc.stdout}")
+
+        from postprocess.meshio import load_mesh
+        return load_mesh(out_glb.read_bytes(), "output.glb")
+    finally:
+        shutil.rmtree(job_dir, ignore_errors=True)
 
 
 def _unwrap_xatlas(
@@ -89,7 +231,7 @@ def _unwrap_xatlas(
     runtime: Optional[Dict[str, Any]] = None,
     max_chart_size: int = 4096,
 ) -> trimesh.Trimesh:
-    """Unwrap mesh using xatlas numpy vertex/face API."""
+    """Unwrap mesh using xatlas numpy vertex/face API with massive mesh protection."""
     import xatlas
 
     v = np.asarray(mesh.vertices, dtype=np.float64)
@@ -97,6 +239,16 @@ def _unwrap_xatlas(
 
     if len(v) == 0 or len(f) == 0:
         return mesh.copy()
+
+    runtime_dict = runtime or {}
+    max_safe_faces = int(runtime_dict.get("xatlas_max_safe_triangles", 50000))
+    if len(f) > max_safe_faces:
+        logger.info(
+            "Mesh has %d triangles (> %d); using memory-safe proxy UV unwrapping to prevent segfaults.",
+            len(f),
+            max_safe_faces,
+        )
+        return _unwrap_massive_mesh_safe(mesh, runtime=runtime_dict, max_safe_faces=max_safe_faces, max_chart_size=max_chart_size)
 
     atlas = xatlas.Atlas()
     pack_opts = xatlas.PackOptions()
@@ -261,6 +413,38 @@ def execute_uv_unwrap(
             success = True
         except Exception as exc:
             logger.warning("PartUV unwrap failed (%s); gracefully falling back to xatlas", exc)
+            try:
+                unwrapped_mesh = _unwrap_xatlas(mesh_copy, runtime_dict, max_chart_size=max_chart_size)
+                backend_used = "xatlas"
+                success = True
+            except Exception as inner_exc:
+                logger.error("Fallback xatlas unwrap also failed: %s", inner_exc)
+                unwrapped_mesh = mesh_copy
+                backend_used = "xatlas"
+                success = False
+    elif resolved_backend == "ministudio":
+        try:
+            unwrapped_mesh = _unwrap_ministudio(mesh_copy, runtime_dict)
+            backend_used = "ministudio"
+            success = True
+        except Exception as exc:
+            logger.warning("ministudio unwrap failed (%s); gracefully falling back to xatlas", exc)
+            try:
+                unwrapped_mesh = _unwrap_xatlas(mesh_copy, runtime_dict, max_chart_size=max_chart_size)
+                backend_used = "xatlas"
+                success = True
+            except Exception as inner_exc:
+                logger.error("Fallback xatlas unwrap also failed: %s", inner_exc)
+                unwrapped_mesh = mesh_copy
+                backend_used = "xatlas"
+                success = False
+    elif resolved_backend == "blender_smart":
+        try:
+            unwrapped_mesh = _unwrap_blender_smart(mesh_copy, runtime_dict)
+            backend_used = "blender_smart"
+            success = True
+        except Exception as exc:
+            logger.warning("blender_smart unwrap failed (%s); gracefully falling back to xatlas", exc)
             try:
                 unwrapped_mesh = _unwrap_xatlas(mesh_copy, runtime_dict, max_chart_size=max_chart_size)
                 backend_used = "xatlas"

@@ -17,6 +17,7 @@ try:
 except ImportError:
     cv2 = None
 import torch
+import numpy as np
 try:
     import trimesh
 except ImportError:

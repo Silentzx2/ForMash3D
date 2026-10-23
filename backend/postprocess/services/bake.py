@@ -81,15 +81,20 @@ def bake_high_to_low_pure_python(
     _progress = progress or (lambda *_: None)
     _progress("load", 0.05, "Loading low and high meshes…")
 
+    try:
+        from postprocess.meshio import scene_to_mesh
+    except ImportError:
+        from backend.postprocess.meshio import scene_to_mesh
+
     low_loaded = trimesh.load(io.BytesIO(low_glb), file_type="glb", process=False)
     if isinstance(low_loaded, trimesh.Scene):
-        low_mesh = trimesh.util.concatenate(tuple(low_loaded.geometry.values()))
+        low_mesh = scene_to_mesh(low_loaded)
     else:
         low_mesh = low_loaded
 
     high_loaded = trimesh.load(io.BytesIO(high_glb), file_type="glb", process=False)
     if isinstance(high_loaded, trimesh.Scene):
-        high_mesh = trimesh.util.concatenate(tuple(high_loaded.geometry.values()))
+        high_mesh = scene_to_mesh(high_loaded)
     else:
         high_mesh = high_loaded
 
@@ -291,20 +296,8 @@ def bake_high_to_low_pure_python(
         images["ao"] = _save_png(ao_arr, "L")
         maps_info["ao"] = "ao.png"
 
-    if "roughness" in requested_maps:
-        rough_arr = np.full((res, res), 128, dtype=np.uint8)
-        images["roughness"] = _save_png(rough_arr, "L")
-        maps_info["roughness"] = "roughness.png"
-
-    if "metallic" in requested_maps:
-        metal_arr = np.full((res, res), 0, dtype=np.uint8)
-        images["metallic"] = _save_png(metal_arr, "L")
-        maps_info["metallic"] = "metallic.png"
-
-    if "base_color" in requested_maps:
-        color_arr = np.full((res, res, 3), 255, dtype=np.uint8)
-        images["base_color"] = _save_png(color_arr, "RGB")
-        maps_info["base_color"] = "base_color.png"
+    # This fallback computes normals/AO only. Do not synthesize flat albedo, roughness,
+    # or metallic maps: they are not baked from the source and would destroy native PBR.
 
     if getattr(opts, "pack_orm", True):
         orm_present = [name for name in ("ao", "roughness", "metallic") if name in images]
@@ -322,6 +315,7 @@ def bake_high_to_low_pure_python(
         "engine": "pure_python_mikktspace",
         "resolution": res,
         "maps": maps_info,
+        "unsupported_maps": sorted(set(requested_maps) - set(images)),
         "covered_texels": int(np.sum(hit_mask)),
         "total_texels": res * res,
     }

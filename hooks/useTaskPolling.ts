@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef } from 'react';
+import { useEffect, useCallback, useRef, useState } from 'react';
 import { getApiClient, normalizeBackendAssetUrl } from '@/services/apiClient';
 import { useAppStore } from '@/stores/useAppStore';
 import type { JobStatus, JobInfo } from '@/types/api';
@@ -25,6 +25,7 @@ export const useTaskPolling = (options: UseTaskPollingOptions = {}) => {
   const tasks = useAppStore((state) => state.tasks);
   const setTask = useAppStore((state) => state.setTask);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [isPolling, setIsPolling] = useState(false);
   const isPollingRef = useRef(false);
 
   const pollTaskStatus = useCallback(async (task: (typeof tasks)[string]) => {
@@ -119,6 +120,7 @@ export const useTaskPolling = (options: UseTaskPollingOptions = {}) => {
     }
 
     isPollingRef.current = true;
+    setIsPolling(true);
 
     try {
       const activeTasks = Object.values(tasks).filter(
@@ -134,6 +136,7 @@ export const useTaskPolling = (options: UseTaskPollingOptions = {}) => {
       console.error('[TaskPolling] Error during polling cycle:', error);
     } finally {
       isPollingRef.current = false;
+      setIsPolling(false);
     }
   }, [tasks, pollTaskStatus]);
 
@@ -158,7 +161,7 @@ export const useTaskPolling = (options: UseTaskPollingOptions = {}) => {
   }, [enabled, pollingInterval, pollAllActiveTasks]);
 
   return {
-    isPolling: isPollingRef.current,
+    isPolling,
     pollTask: pollTaskStatus,
     pollAllTasks: pollAllActiveTasks,
   };

@@ -75,6 +75,7 @@ export const ModelComparisonViewer: React.FC<ModelComparisonViewerProps> = ({
   const [scenes, setScenes] = useState<THREE.Scene[]>([]);
   const [containerRefs, setContainerRefs] = useState<(HTMLDivElement | null)[]>([]);
   const [animationFrame, setAnimationFrame] = useState<number>(0);
+  const animationFrameRef = useRef<number | null>(null);
 
   // Initialize scenes, cameras, controls, and renderers for each model
   useEffect(() => {
@@ -290,26 +291,29 @@ export const ModelComparisonViewer: React.FC<ModelComparisonViewerProps> = ({
   }, [controls, cameras]);
 
   // Animation loop
-  useEffect(() => {
-    const animate = () => {
-      setAnimationFrame(prev => prev + 1);
-      
-      // Render all scenes
-      renderers.forEach((renderer, index) => {
-        if (renderer && scenes[index] && cameras[index]) {
-          renderer.render(scenes[index], cameras[index]);
-        }
-      });
-      
-      requestAnimationFrame(animate);
-    };
+    useEffect(() => {
+      const animate = () => {
+        setAnimationFrame(prev => prev + 1);
 
-    animate();
-    
-    return () => {
-      // Cleanup handled by React 18 automatic cleanup
-    };
-  }, [renderers, scenes, cameras]);
+        // Render all scenes
+        renderers.forEach((renderer, index) => {
+          if (renderer && scenes[index] && cameras[index]) {
+            renderer.render(scenes[index], cameras[index]);
+          }
+        });
+
+        animationFrameRef.current = requestAnimationFrame(animate);
+      };
+
+      animate();
+
+      return () => {
+        if (animationFrameRef.current) {
+          cancelAnimationFrame(animationFrameRef.current);
+          animationFrameRef.current = null;
+        }
+      };
+    }, [renderers, scenes, cameras]);
 
   // Initialize renderers, scenes, and controls when refs are set
   useEffect(() => {

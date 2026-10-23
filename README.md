@@ -5,7 +5,7 @@
 </p>
 
 <h1 align="center">
-    ForMash3D
+    ForMash3D — Open-Source Self-Hosted Image-to-3D AI Generator
 </h1>
 
 <p align="center">
@@ -24,12 +24,46 @@
 </p>
 
 <p align="center">
-  <strong>⚡ Quick Start:</strong> <code>git clone https://github.com/Silentzx2/ForMash3D.git</code> → <code>bun install</code> → <code>bash scripts/start.sh</code> → Open <a href="http://localhost:3000">http://localhost:3000</a>
+  <strong>⚡ Quick Start:</strong> <code>git clone https://github.com/Silentzx2/ForMash3D.git</code> → <code>bash scripts/setup.sh</code> → <code>bash scripts/start.sh</code> → Open <a href="http://localhost:3000">http://localhost:3000</a>
 </p>
+
+<p align="center">
+  <a href="https://github.com/Silentzx2/ForMash3D/releases"><img src="https://img.shields.io/badge/Phase-BETA-ffb703?style=for-the-badge" alt="BETA phase"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/Silentzx2/ForMash3D/stargazers"><img src="https://img.shields.io/github/stars/Silentzx2/ForMash3D?style=for-the-badge" alt="GitHub stars"></a>
+  <a href="https://github.com/Silentzx2/ForMash3D/commits/main"><img src="https://img.shields.io/github/last-commit/Silentzx2/ForMash3D?style=for-the-badge" alt="Last commit"></a>
+  <a href="https://github.com/Silentzx2/ForMash3D/issues"><img src="https://img.shields.io/github/issues/Silentzx2/ForMash3D?style=for-the-badge" alt="Issues"></a>
+  <a href="docs/GITHUB_SETUP.md"><img src="https://img.shields.io/badge/CPU%20mode-supported-5319e7?style=for-the-badge" alt="CPU mode supported"></a>
+</p>
+
+## Table of Contents
+
+- [Overview & Product Vision](#-overview--product-vision)
+- [Core Capability Map](#-core-capability-map)
+- [End-to-End Asset Generation Pipeline](#-end-to-end-asset-generation-pipeline)
+- [System Architecture](#-system-architecture)
+- [Quick Start](#-quick-start)
+- [Contributing](#-contributing)
+- [License](#-license)
+
+## Choose Your Contributor Path
+
+| No GPU (CPU only) | GPU (CUDA 12.4) |
+|---|---|
+| UI/UX, docs, tests, API, post-process | Model adapters (TRELLIS, Hunyuan3D, TripoSG, Unique3D) |
+| CPU-only setup mode | Quality pipeline & generation quality gates |
+| [Good First Issues](docs/GOOD_FIRST_ISSUES.md) | [Backend Runtime Contract CI](.github/workflows/backend-runtime-ci.yml) |
+
+[View all good first issues →](docs/GOOD_FIRST_ISSUES.md)
 
 ---
 
 ## 🌟 Overview & Product Vision
+
+> [!NOTE]
+> **Phase: BETA** — ForMash3D has graduated from early development. Core studio, API gateway, and post-processing pipeline are stabilizing; breaking changes may still land before 1.0.
 
 **ForMash3D** is an open-source, self-hosted generative 3D asset creation and mesh-finishing platform. It bridges modern state-of-the-art open research models into a single, cohesive studio running entirely on your local workstation or private GPU cluster.
 
@@ -208,22 +242,31 @@ The model registry is dynamically configured via `backend/config/models.yaml` an
 
 | Model Architecture | Registered Model ID | Category / Task | VRAM Budget | Key Technical Capabilities |
 |---|---|---|:---:|---|
-| **Hunyuan3D-Shape-v2.1** | `hunyuan3d_shape_v21_image_to_raw_mesh` | Raw Mesh | ~10 GB | 3.3B shape model, official 2.1 pipeline, octree resolution up to 512 |
-| **Hunyuan3D-Paint-v2.1** | `hunyuan3d_paint_v21_image_mesh_painting` | PBR Texture | ~21 GB declared requirement (not GPU-validated here) | 2B PBR texture checkpoint, internal RealESRGAN, exported 4K/8K atlas validation |
+| **Hunyuan3D-Shape-v2.1** | `hunyuan3d_shape_v21_image_to_raw_mesh` | Raw Mesh | ~10 GB | 3.3B shape model, official 2.1 pipeline, adapter-owned octree resolution 1300 |
+| **Hunyuan3D-Paint-v2.1** | `hunyuan3d_paint_v21_image_mesh_painting` | PBR Texture | ~12 GB configured scheduler reservation (not a measured peak-memory guarantee) | 2B PBR texture checkpoint, internal RealESRGAN, exported 4K/8K atlas validation |
 | **Hunyuan3D-DiT-v2-mini-Turbo** | `hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh` | Raw Mesh | ~6 GB | 0.6B low-VRAM step-distilled shape model with Turbo path |
 | **TRELLIS** | `trellis_image_to_3d` / `trellis_image_to_raw_mesh` | Raw Mesh | 11.5 GB | Raw FlexiCubes geometry; optional texture generation is a separate stage |
 | **TRELLIS.2** | `trellis2_image_to_3d` / `trellis2_image_to_raw_mesh` | Raw Mesh | 23.5 GB | High-fidelity FlexiCubes geometry; legacy textured IDs resolve to raw geometry |
 | **TripoSG** | `triposg_image_to_raw_mesh` | Image/Scribble to 3D | 8 GB | High-fidelity image and scribble guided 3D geometry |
+| **Pixal3D** | `pixal3d_image_to_raw_mesh` / `pixal3d_image_to_3d` | Raw Mesh | ~18 GB (~10-12 GB in low-VRAM mode) | Pixel-aligned O-Voxel projection, native PBR, 1536 cascade |
+| **TaoFlowForge** | `taoflowforge_image_to_raw_mesh` | Raw Mesh | 20 GB (registered but **disabled**) | Progressive native-mesh generation, direct connectivity |
+| **Paint3D** | `paint3d` | PBR Texture | ~12 GB | Centralized texturing stage for 1K/2K atlas targets |
 | **FastMesh (1K & 4K)** | `fastmesh_v1k_retopology`<br>`fastmesh_v4k_retopology` | Mesh Retopology | 16–24.5 GB | Fixed-budget neural quad retopology producing clean animation loops |
 | **UniRig** | `unirig_auto_rig` | Auto-Rigging | 9 GB | Automated bipedal skeletal armature generation |
 | **ARDY** | `ardy_motion_generation` | Motion AI | CPU-only; no GPU VRAM reservation | Interactive autoregressive text-to-motion generation; CPU/RAM-bound |
 | **PartUV** | `partuv_uv_unwrapping` | UV Unwrapping | 7 GB | Automated seam placement and UV chart packing |
-|| **Unique3D** | `unique3d_image_to_raw_mesh` | Raw Mesh | ~10 GB | High-fidelity single-image to 3D with multi-view diffusion and textured reconstruction |
+| **Unique3D** | `unique3d_image_to_raw_mesh` | Raw Mesh | ~10 GB | High-fidelity single-image to 3D with multi-view diffusion and textured reconstruction |
 
-> **FastMesh resource admission:** The 16 GB (V1K) / 24.5 GB (V4K) figures are conservative scheduler reservations, not upstream-published minimum VRAM. The current adapter is single-GPU-only; 2×T4 aggregate memory is not treated as one device's memory. Full variant-matched checkpoint files (about 4.38 GB / 4.39 GB on disk) are required, and checkpoint size must not be confused with inference VRAM.
+> **Registry source of truth:** the catalog above mirrors `backend/config/models.yaml`. Only entries with `enabled: true` are exposed by `GET /api/v1/system/models`; `taoflowforge_image_to_raw_mesh` is registered but disabled. `backend/config/smart_presets.yaml` holds the intent presets (`mobile`, `game_ready`, `cinematic`, `animation`, `3d_print`; `native` is a backend-only sentinel).
+
+> **FastMesh resource admission:** The 16 GB (V1K) / 24.5 GB (V4K) figures are conservative scheduler reservations, not upstream-published minimum VRAM. Both variants declare the `accelerate_auto_device_map` multi-GPU strategy, so layers can be sharded across selected GPUs, but a single device still has to satisfy the admission budget on its own. Full variant-matched checkpoint files (about 4.38 GB / 4.39 GB on disk) are required, and checkpoint size must not be confused with inference VRAM.
 
 ### 📐 Single Source of Truth & Generation Planning
-- **Single Source of Truth (`backend/config/quality.yaml`)**: Every tunable threshold, limit, tier, and budget is canonically declared in `quality.yaml` (pipeline tunables) and `models.yaml` (model facts and VRAM reservations). Code reads from these single sources and never defines in-code fallback numeric dicts.
+- **Single Source of Truth (`backend/config/quality.yaml`)**: Every tunable threshold, limit, tier, and budget is canonically declared in `quality.yaml` (pipeline tunables) and `models.yaml` (model facts and VRAM reservations). Intent presets live in `backend/config/smart_presets.yaml` and planner routing rules in `backend/config/planner_rules.yaml`. Code reads from these single sources and never defines in-code fallback numeric dicts.
+- **Model-Native Source Fidelity & Adapter-Owned Profiles**: Fixed model-specific inference schedules, step counts, guidance scales, octree resolutions, samplers, and decoders are locked directly inside model adapters (`_LOCKED_INFERENCE_PROFILE`). The UI does not expose unbacked or fake inference quality sliders. The multiprocess scheduler enforces source fidelity and strips any legacy inference overrides before dispatching to adapters, while caller-controlled seed and image identity are preserved.
+- **Source vs. Production Mesh Distinction**:
+  - `master/source.glb` is the immutable raw generative mesh captured at full model-native fidelity and verified with SHA-256 immutability.
+  - Production meshes (`game_ready/`, `lods/`, `collision/`) are downstream derived artifacts produced by the post-processing recipe selected by the request intent (`mobile`, `game_ready`, `cinematic`, `animation`, `3d_print`; `native` is a backend-only sentinel).
 - **Rule-Based Generation Planning (`backend/config/planner_rules.yaml`)**: Deterministically routes requests by `object_type` (`mechanical`, `organic`, `character`, `general`) and `requested_quality` (`fast`, `balanced`, `high`). Execution behavior is governed by explicit config switches under `apply`:
   - `apply.model_choice`: When `false` (default), preserves legacy smart-preset selection while logging `would_have_chosen`. When `true`, adopts planner model routing.
   - `apply.auto_seeds`: When `false` (default), runs single candidate unless requested by user. When `true`, automatically runs multi-seed candidate scoring.
@@ -248,9 +291,9 @@ backend/storage/models/meshes/<asset_name>_<job_id>/
 │   └── <asset_name>_<job_id>.glb # Production engine-ready model
 ├── lods/
 │   ├── lod0.glb                # LOD0 (100% detail)
-│   ├── lod1.glb                # LOD1 (50% reduction)
-│   ├── lod2.glb                # LOD2 (25% reduction)
-│   └── lod3.glb                # LOD3 (12.5% reduction)
+│   ├── lod1.glb                # LOD1
+│   ├── lod2.glb                # LOD2
+│   └── lod3.glb                # LOD3 (at most 4 levels; ratios follow the selected LOD preset)
 ├── collision/
 │   └── collision.glb           # Watertight CoACD convex hull
 ├── textures/                   # PBR texture maps (Albedo, Normal, Roughness, Metallic, AO)
@@ -296,7 +339,7 @@ backend/storage/models/meshes/<asset_name>_<job_id>/
 - **Python**: Python 3.10 via Conda (`conda create -n 3daigc-api python=3.10`).
 
 
-The shared Python runtime is version-pinned for supported model adapters: Transformers 4.48.3 (required by Hunyuan3D Mini Turbo and PEFT), Diffusers 0.30.3, and PyTorch 2.6.0 with CUDA 12.4. Use `bash scripts/setup.sh` rather than installing model dependencies individually.
+The shared Python runtime is version-pinned for supported model adapters: Transformers 4.44.2, Diffusers 0.30.3, and PyTorch 2.6.0 with CUDA 12.4 (see `backend/requirements.txt`). Use `bash scripts/setup.sh` rather than installing model dependencies individually.
 
 ### 1. Clone & Frontend Setup
 
@@ -338,19 +381,19 @@ Services:
 - Frontend Studio: `http://localhost:3000`
 - Backend API: `http://localhost:7842`
 - Interactive Swagger Docs: `http://localhost:7842/docs`
-- Health Endpoint: `http://localhost:7842/health`
+- Health Endpoint: `http://localhost:7842/api/v1/system/health`
 
 ### Docker Compose (NVIDIA GPU)
 
 From the repository root, build and start the backend stack with:
 
 ```bash
-docker compose -f backend/docker-compose.yml up --build -d
+docker compose -f docker-compose.yml up --build -d
 ```
 
 Compose builds from the repository root. The image keeps backend code under `/app/backend`, adds it to `PYTHONPATH`, and launches the scheduler from that path. Put model weights in `backend/pretrained/`; generated assets are persisted in `backend/storage/`, shared by the API and scheduler.
 
-The single-container RunPod image uses the same repository-root build context: `docker build -f backend/Dockerfile.runpod -t formash3d-runpod .`. Its supervisor runs the API and scheduler from `/app/backend` and keeps Redis on localhost port 6380.
+The single-container RunPod image uses the same repository-root build context: `docker build -f Dockerfile.runpod -t formash3d-runpod .`. Its supervisor runs the API and scheduler from `/app/backend` and keeps Redis on localhost port 6380.
 
 ---
 
@@ -358,7 +401,7 @@ The single-container RunPod image uses the same repository-root build context: `
 
 The ForMash3D workspace provides a comprehensive suite of creative 3D tools:
 
-- **Generate Studio (`/workspace`)**: Image-to-3D generation with model selector, VRAM estimator, and step configuration.
+- **Generate Studio (`/workspace`)**: Image-to-3D generation with reference image intake, model selector with real-time VRAM estimator & hardware readiness, unified Target Polycount & Output Presets (`mobile`, `game_ready`, `cinematic`, `animation`, `3d_print`, `native`), and genuine production post-processing options (candidates 1–4, quad/tri topology, UV unwrapping, normal baking, LODs, repair, physics colliders). Model inference schedules are locked inside model adapters to guarantee maximum source fidelity without fake UI sliders.
 - **Texture Studio (`/workspace/texture`)**: Multi-view PBR texture painting and PBR map inspection/export (Albedo, Normal, Roughness, Metallic, AO). Paint3D handles 1K/2K, while Hunyuan3D-Paint runs its internal RealESRGAN enhancement for 4K/8K; this is automatic, not a separate UI setting.
 - **Retopology & Remesh (`/workspace/remesh`)**: FastMesh quad-dominant retopology with V1K and V4K target presets.
 - **UV Unwrapping (`/workspace/uv`)**: Automated conformal seam placement and atlas chart packing.
@@ -378,16 +421,19 @@ The FastAPI backend exposes comprehensive REST and SSE streaming endpoints:
 | Endpoint | Method | Description |
 |---|:---:|---|
 | `/api/v1/system/info` | `GET` | System health, GPU specs, VRAM utilization, active worker mode |
+| `/api/v1/system/health` | `GET` | Lightweight liveness check |
 | `/api/v1/system/models` | `GET` | List registered models, readiness, capabilities, and VRAM requirements |
 | `/api/v1/mesh-generation/image-to-raw-mesh` | `POST` | Generate high-fidelity raw geometry from single reference image |
 | `/api/v1/mesh-generation/image-to-textured-mesh` | `POST` | Backward-compatible endpoint; ordinary generation is raw-first with optional centralized texturing |
 | `/api/v1/mesh-generation/image-mesh-painting` | `POST` | Paint PBR textures onto existing 3D geometry |
-| `/api/v1/mesh-retopology/retopology` | `POST` | Run FastMesh V1K/V4K quad retopology on mesh |
-| `/api/v1/mesh-uv-unwrapping/uv-unwrap` | `POST` | Generate conformal UV atlas charts |
-| `/api/v1/mesh-segmentation/segment` | `POST` | Segment mesh into semantic parts |
-| `/api/v1/mesh-editing/edit` | `POST` | Edit existing mesh using localized prompt deformation |
-| `/api/v1/auto-rigging/rig` | `POST` | Generate bipedal skeleton armature |
-| `/api/v1/motion-generation/generate` | `POST` | Synthesize motion sequence into playable JSON |
+| `/api/v1/mesh-generation/text-mesh-painting` | `POST` | Paint PBR textures onto existing 3D geometry from a text prompt |
+| `/api/v1/smart-generation/generation` | `POST` | Intent-driven generation with deterministic model selection |
+| `/api/v1/mesh-retopology/retopologize-mesh` | `POST` | Run FastMesh V1K/V4K quad retopology on mesh |
+| `/api/v1/mesh-uv-unwrapping/unwrap-mesh` | `POST` | Generate conformal UV atlas charts |
+| `/api/v1/mesh-segmentation/segment-mesh` | `POST` | Segment mesh into semantic parts |
+| `/api/v1/mesh-editing/text-mesh-editing` | `POST` | Edit existing mesh using localized prompt deformation |
+| `/api/v1/auto-rigging/generate-rig` | `POST` | Generate bipedal skeleton armature |
+| `/api/v1/motion-generation/generate-motion` | `POST` | Synthesize motion sequence into playable JSON |
 | `/api/v1/system/jobs/{job_id}` | `GET` | Durable job status and production progress polling |
 | `/api/v1/system/jobs/{job_id}/postprocess/retry` | `POST` | Retry production processing from immutable master |
 | `/api/v1/mesh-tools/*` | `POST` | In-process Auto UV, Retopo, Repair, Optimize, LOD, Collision, Bake, Convert and Segment tools |
@@ -399,13 +445,18 @@ The FastAPI backend exposes comprehensive REST and SSE streaming endpoints:
 ForMash3D maintains rigorous unit, integration, and regression test suites:
 
 ```bash
-# Run all backend unit & regression tests
-FORMASH_POSTPROCESS_E2E=1 PYTHONPATH=backend pytest backend/tests/ -v
+# Backend CPU contract tests (includes the geometry dependencies used by the pipeline).
+# This is exactly what the Backend Runtime Contract CI workflow runs.
+PYTHONPATH=backend python -m pytest -q backend/tests \
+  backend/thirdparty/tests/test_runtime_path_utils.py
 
 # Verify clean compilation across all Python modules
 python3 -m compileall -q backend/
 
-# Run frontend type and lint checks
+# Frontend unit tests (node:test files)
+bun test
+
+# Frontend type and lint checks
 npx tsc --noEmit
 bun run lint
 
@@ -413,7 +464,7 @@ bun run lint
 bash -n manager.sh backend/scripts/*.sh scripts/*.sh
 ```
 
-**Verification status**: Runtime verification must be run on the supported Python 3.10/GPU environment; this checkout's static audit does not claim a live test result.
+**Verification status**: The backend CPU contract suite, `python3 -m compileall -q backend/`, `bun test` and `npx tsc --noEmit` all pass without model weights or a GPU (verified green on `dev` at 2026-10-23: 40 passed / 6 skipped backend, 54 passed / 0 failed Bun, zero TS errors). GPU/model inference and Blender-dependent validation still require the supported runtime environment.
 
 ---
 
@@ -454,10 +505,10 @@ Yes. Once your model checkpoints are downloaded via `bash backend/scripts/downlo
 <details>
 <summary><strong>What GPU hardware is required to run ForMash3D?</strong></summary>
 
-ForMash3D runs on modern NVIDIA GPUs supporting CUDA 12.4+:
-- **Lightweight Models (6GB–10GB VRAM)**: TripoSG, Hunyuan3D-DiT-v2-mini-Turbo (runs comfortably on RTX 3060, 4060, RTX 2080).
-- **Standard Models (12GB–16GB VRAM)**: TRELLIS on supported GPUs. FastMesh uses separate V1K/V4K single-GPU reservations; 2×T4 aggregate VRAM is not combined by the current adapter.
-- **Heavy & High-Poly Models (24GB+ VRAM)**: TRELLIS.2, Hunyuan3D-Paint 2B (runs on RTX 3090, 4090, A10, A100).
+ForMash3D runs on modern NVIDIA GPUs supporting CUDA 12.4+. VRAM figures are the scheduler reservations declared in `backend/config/models.yaml`:
+- **Lightweight Models (6 GB–10 GB VRAM)**: TripoSG (~8 GB), Hunyuan3D-DiT-v2-mini-Turbo (~6 GB), Unique3D (~10 GB), UniRig (~9 GB), PartUV (~7 GB).
+- **Standard Models (11.5 GB–12 GB VRAM)**: TRELLIS (~11.5 GB), Hunyuan3D-Paint v2.1 (~12 GB configured reservation), Paint3D (~12 GB).
+- **Heavy & High-Poly Models (16 GB–24 GB+ VRAM)**: FastMesh V1K (~16 GB) and V4K (~24.5 GB) reserve conservatively per GPU and declare the `accelerate_auto_device_map` multi-GPU strategy, so the planner can consider aggregate VRAM when the adapter supports it; Pixal3D (~18 GB), TRELLIS.2 (~23.5 GB, runs on RTX 3090, 4090, A10, A100).
 </details>
 
 <details>
@@ -493,7 +544,7 @@ Live streaming emits both newline- and carriage-return-delimited output (includi
 | 📋 **[Product Requirements (PRD)](Docs/PRD.md)** | Core features, target users, and product roadmaps |
 | 🎨 **[Design System](Docs/DESIGN.md)** | Studio Gold color tokens, UI component specifications, and layouts |
 | 🛡️ **[Agent & Engineering Rules](RULES.md)** | Authoritative coding standards, minimalist practices, and change policies |
-| 📝 **[Project Decisions (ADRs)](Docs/DECISIONS.md)** | Architecture Decision Records (latest ADR-084) |
+| 📝 **[Project Decisions (ADRs)](Docs/DECISIONS.md)** | Architecture Decision Records (up to ADR-087) |
 | 🧪 **[Experimental Model Settings](Docs/EXPERIMENTAL-MODEL-SETTINGS.md)** | Dated upstream/community evidence, active max-detail profiles, compatibility limits and user-confirmation policy |
 | 🧠 **[Project Memory & Status](Docs/MEMORY.md)** | Active state, hardware prerequisites, and verified milestones |
 | 📜 **[Change Log](Docs/CHANGELOG.md)** | Chronological history of releases, fixes, and optimizations |
@@ -535,7 +586,7 @@ These capabilities reuse the existing scheduler, image editor, post-processing, 
 
 ## Generation Experiments & Reusable Presets
 
-Workspace Settings → AI Inference includes a Generation Experiment Lab for editing the active model's schema parameters, seed, guidance, inference steps where supported, and advanced nested JSON overrides. Save/reload local presets, track a revision label, queue current settings, and import/export preset JSON files. Presets exclude images and preprocessing artifacts so reloading a profile does not replace the current input image.
+Inference schedules are adapter-owned and are not editable from the Generate UI. Production choices such as output intent, topology, repair, baking and LODs are separate from model inference. See [Docs/EXPERIMENTAL-MODEL-SETTINGS.md](Docs/EXPERIMENTAL-MODEL-SETTINGS.md) for the profile change-control policy and [Docs/GENERATION-UI-CONTRACT.md](Docs/GENERATION-UI-CONTRACT.md) for the current request boundary. The active UI contract is also summarized in [Docs/GENERATION-CONTROL-AUDIT.md](Docs/GENERATION-CONTROL-AUDIT.md).
 
 ## High-Fidelity Generation Architecture
 

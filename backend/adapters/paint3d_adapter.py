@@ -28,6 +28,14 @@ from core.utils.mesh_utils import MeshProcessor
 
 logger = logging.getLogger(__name__)
 
+_LOCKED_INFERENCE_PROFILE = {
+    "stage1_txt2img": {"guidance_scale": 7.0, "num_inference_steps": 40},
+    "stage1_inpaint": {"guidance_scale": 3.0, "num_inference_steps": 40, "denoising_strength": 1.0},
+    "stage2_inpaint": {"guidance_scale": 3.0, "num_inference_steps": 40, "denoising_strength": 1.0},
+    "stage2_img2img": {"guidance_scale": 7.0, "num_inference_steps": 40, "denoising_strength": 0.75},
+}
+_DEFAULT_SEED = 42
+
 # Standard compatibility aliases
 MeshToMeshModel = ImageToMeshModel
 ModelAdapter = ImageToMeshModel
@@ -298,6 +306,14 @@ class Paint3DAdapter(ImageToMeshModel):
                     "enum": [1024, 2048],
                     "required": False,
                 },
+                "seed": {
+                    "type": "integer",
+                    "description": "Random seed for texture generation",
+                    "default": _DEFAULT_SEED,
+                    "minimum": 0,
+                    "maximum": 2147483647,
+                    "required": False,
+                },
                 "prompt": {
                     "type": "string",
                     "description": "Optional conditioning text prompt",
@@ -400,6 +416,7 @@ class Paint3DAdapter(ImageToMeshModel):
         resolution: int,
         prompt: str,
         ckpts: Dict[str, str],
+        seed: int,
         mask_path: Optional[Path] = None,
     ) -> Tuple[Path, Path, Path]:
         """Generate render_config.py and stage1/2 yaml configs in job-scoped dir."""
@@ -447,7 +464,7 @@ class GuideConfig:
 
 @dataclass
 class OptimConfig:
-    seed: int = 42
+    seed: int = {seed}
     lr: float = 1e-2
     train_step: int = 100
 
@@ -469,21 +486,18 @@ class TrainConfig:
         clean_prompt = prompt or "high quality, clean lighting-less albedo texture, detailed"
         neg_prompt = "strong light, bright light, intense illumination, shade, darkness, silhouette, shadow"
 
-        # EXPERIMENTAL_MAX_DETAIL (2026-10-20): retain Paint3D's implemented two-stage recipe:
-        # stage-1 text/depth generation 40 steps / CFG 7.0; first inpaint 40 / CFG 3.0;
-        # atlas refinement 20 / CFG 3.0 and UV img2img 20 / CFG 7.0. Adapter supports 1K/2K only.
-        # No independently validated community override was found. Ask the user once before changing this profile.
+        # Child-model inference settings come from the adapter-owned profile; preserve them unless approved.
         stage1_content = f'''txt2img:
   sd_model_key: "{ckpts['sd15']}"
   ip_adapter_image_path: ""
   prompt: "{clean_prompt}"
   negative_prompt: "{neg_prompt}"
-  seed: 42
+  seed: {seed}
   width: {min(resolution, 1024)}
   height: 512
   num_images_per_prompt: 1
-  guidance_scale: 7.0
-  num_inference_steps: 40
+  guidance_scale: {_LOCKED_INFERENCE_PROFILE["stage1_txt2img"]["guidance_scale"]}
+  num_inference_steps: {_LOCKED_INFERENCE_PROFILE["stage1_txt2img"]["num_inference_steps"]}
   controlnet_units:
     - preprocessor: "none"
       controlnet_key: "{ckpts['depth']}"
@@ -497,13 +511,13 @@ inpaint:
   ip_adapter_image_path: ""
   prompt: "{clean_prompt}"
   negative_prompt: "{neg_prompt}"
-  seed: 42
+  seed: {seed}
   width: {min(resolution, 1024)}
   height: 512
   num_images_per_prompt: 1
-  guidance_scale: 3.0
-  num_inference_steps: 40
-  denoising_strength: 1.0
+  guidance_scale: {_LOCKED_INFERENCE_PROFILE["stage1_inpaint"]["guidance_scale"]}
+  num_inference_steps: {_LOCKED_INFERENCE_PROFILE["stage1_inpaint"]["num_inference_steps"]}
+  denoising_strength: {_LOCKED_INFERENCE_PROFILE["stage1_inpaint"]["denoising_strength"]}
   controlnet_units:
     - preprocessor: "none"
       controlnet_key: "{ckpts['depth']}"
@@ -524,13 +538,13 @@ inpaint:
   ip_adapter_image_path: ""
   prompt: "UV map, {clean_prompt}"
   negative_prompt: "{neg_prompt}"
-  seed: 42
+  seed: {seed}
   width: {resolution}
   height: {resolution}
   num_images_per_prompt: 1
-  guidance_scale: 3.0
-  num_inference_steps: 40
-  denoising_strength: 1.0
+  guidance_scale: {_LOCKED_INFERENCE_PROFILE["stage2_inpaint"]["guidance_scale"]}
+  num_inference_steps: {_LOCKED_INFERENCE_PROFILE["stage2_inpaint"]["num_inference_steps"]}
+  denoising_strength: {_LOCKED_INFERENCE_PROFILE["stage2_inpaint"]["denoising_strength"]}
   controlnet_units:
     - preprocessor: "none"
       controlnet_key: "{ckpts['uv_pos']}"
@@ -547,13 +561,13 @@ img2img:
   ip_adapter_image_path: ""
   prompt: "UV map, {clean_prompt}"
   negative_prompt: "blur, low quality, noisy, over-exposed, shadow"
-  seed: 42
+  seed: {seed}
   width: {resolution}
   height: {resolution}
   num_images_per_prompt: 1
-  guidance_scale: 7.0
-  num_inference_steps: 40
-  denoising_strength: 0.75
+  guidance_scale: {_LOCKED_INFERENCE_PROFILE["stage2_img2img"]["guidance_scale"]}
+  num_inference_steps: {_LOCKED_INFERENCE_PROFILE["stage2_img2img"]["num_inference_steps"]}
+  denoising_strength: {_LOCKED_INFERENCE_PROFILE["stage2_img2img"]["denoising_strength"]}
   controlnet_units:
     - preprocessor: "none"
       controlnet_key: "{ckpts['uv_pos']}"
@@ -804,6 +818,7 @@ img2img:
             raise ValueError(f"Unsupported output format: {output_format}")
 
         prompt = inputs.get("prompt", "")
+        seed = int(inputs.get("seed", _DEFAULT_SEED))
         job_id = inputs.get("job_id") or uuid.uuid4().hex[:12]
         # Get progress callback from inputs (passed by pipeline)
         progress_callback = inputs.get("progress_callback")
@@ -852,6 +867,7 @@ img2img:
                 resolution=texture_resolution,
                 prompt=prompt,
                 ckpts=ckpts,
+                seed=seed,
                 mask_path=job_mask,
             )
 

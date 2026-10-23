@@ -88,13 +88,26 @@ def retry_transient_errors_enabled() -> bool:
     return parse_bool_env("RETRY_TRANSIENT_ERRORS", False)
 
 
+def _may_fallback_after_model_load_failure(
+    model_preference: Optional[str], metadata: Dict[str, Any]
+) -> bool:
+    selection = metadata.get("model_selection")
+    if selection == "explicit":
+        return False
+    if selection == "automatic":
+        return True
+    return not model_preference
+
+
 def auto_unload_after_job_enabled() -> bool:
     """Read the VRAM unload switch at decision time."""
     return parse_bool_env("AUTO_UNLOAD_AFTER_JOB", False)
 
 # Production budgets belong to post-processing. Never let them reach model inference.
 _POSTPROCESS_ONLY_INPUTS = frozenset({
+    "candidate_count", "enable_postprocess", "plan", "fallback_chain",
     "target_polycount", "auto_optimize", "generateLOD", "lodPreset", "lodCount",
+    "quality", "meshQuality", "mesh_quality", "topology_mode", "quad_topology", "auto_uv",
     "physics_enabled", "physics_config", "auto_paint", "paint_model_preference", "paint_resolution",
     "texture_enabled", "generate_texture", "generateTexture", "texture_resolution",
     "texture_resolution_preset", "production_texture_resolution",
@@ -103,6 +116,7 @@ _POSTPROCESS_ONLY_INPUTS = frozenset({
     "bake_normal_maps", "bake_high_to_low", "bake_textures",
     "intent", "preprocessing_artifact_id", "enhancement_enabled", "preprocessing_metadata",
     "enable_printability_check", "enable_auto_repair", "enable_auto_rig", "auto_rig_mode",
+    "mesh_style", "requested_quality", "object_type", "symmetry",
 })
 
 # Adapter-owned numerical profiles live in adapter code; these sets hold only IDs and key names.
@@ -110,37 +124,46 @@ _ADAPTER_OWNED_INFERENCE_PROFILE_MODEL_IDS = frozenset({
     "hunyuan3d_shape_v21_image_to_raw_mesh",
     "hunyuan3d_shape_v21_image_to_3d",
     "hunyuan3d_shape_v21_image_to_textured_mesh",
+    "hunyuan3dv21_image_to_raw_mesh",
+    "hunyuan3dv21_image_to_3d",
+    "hunyuan3dv21_image_to_textured_mesh",
+    "hunyuan3dv21_image_mesh_painting",
+    "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh",
+    "hunyuan3d_dit_v2_mini_turbo_image_to_3d",
     "triposg_image_to_raw_mesh",
+    "trellis_image_to_raw_mesh",
+    "trellis_image_to_3d",
+    "trellis_image_to_textured_mesh",
+    "trellis_image_mesh_painting",
+    "trellis_text_mesh_painting",
+    "trellis2_image_to_raw_mesh",
+    "trellis2_image_to_3d",
+    "trellis2_image_to_textured_mesh",
+    "trellis2_image_mesh_painting",
+    "pixal3d_image_to_raw_mesh",
+    "pixal3d_image_to_3d",
+    "unique3d_image_to_raw_mesh",
+    "taoflowforge_image_to_raw_mesh",
+    "hunyuan3d_paint_v21_image_mesh_painting",
 })
 _ADAPTER_OWNED_INFERENCE_INPUTS = frozenset({
     "source_quality", "requested_quality", "quality", "meshQuality", "mesh_quality",
-    "num_inference_steps", "num_steps", "guidance_scale",
+    "num_inference_steps", "num_steps", "steps", "guidance_scale",
     "octree_resolution", "octree_res", "grid_resolution", "num_chunks", "mc_algo",
     "flash_octree_depth", "octree_depth", "dense_octree_depth",
     "hierarchical_octree_depth", "use_flash_decoder", "low_vram", "low_vram_mode",
+    "pipeline_type", "max_num_tokens", "sparse_structure_sampler_params",
+    "shape_slat_sampler_params", "tex_slat_sampler_params", "sampler_overrides",
+    "resolution", "texture_size", "max_num_view", "ss_sampling_steps", "slat_sampling_steps",
+    "input_processing", "do_refine", "expansion_weight", "init_type",
+    "fill_holes", "offload", "enable_flashvdm",
 })
 
 # EXPERIMENTAL_MAX_DETAIL snapshot (2026-10-20). Ask the user once and get explicit confirmation
 # before changing any locked profile in a later task. Sources/limits: Docs/EXPERIMENTAL-MODEL-SETTINGS.md.
-# High-fidelity source mesh profiles. Production budgets remain in request_inputs and
-# are applied only to downstream copies by post-processing.
-_RAW_MESH_MAX_QUALITY_PARAMETERS: Dict[str, Dict[str, Any]] = {
-    "hunyuan3dv21_image_to_raw_mesh": {"source_quality": "max", "octree_resolution": 1300, "num_inference_steps": 150, "guidance_scale": 5.0, "num_chunks": 80000},
-    "hunyuan3dv21_image_to_3d": {"source_quality": "max", "octree_resolution": 1300, "num_inference_steps": 150, "guidance_scale": 5.0, "num_chunks": 80000},
-    "hunyuan3dv21_image_to_textured_mesh": {"source_quality": "max", "octree_resolution": 1300, "num_inference_steps": 150, "guidance_scale": 5.0, "num_chunks": 80000},
-    "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh": {"source_quality": "max", "octree_resolution": 768, "num_inference_steps": 20, "guidance_scale": 7.5, "num_chunks": 80000, "low_vram_mode": False, "low_vram": False, "enable_flashvdm": False, "mc_algo": "mc"},
-    "hunyuan3d_dit_v2_mini_turbo_image_to_3d": {"source_quality": "max", "octree_resolution": 768, "num_inference_steps": 20, "guidance_scale": 7.5, "num_chunks": 80000, "low_vram_mode": False, "low_vram": False, "enable_flashvdm": False, "mc_algo": "mc"},
-    "pixal3d_image_to_raw_mesh": {"source_quality": "max", "resolution": 2048, "pipeline_type": "1536_cascade", "sampler_overrides": {"sparse_structure": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.9, "rescale_t": 8.0}, "shape": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.8, "rescale_t": 8.0}, "texture": {"steps": 100, "guidance_strength": 3.5, "guidance_rescale": 0.5, "rescale_t": 8.0}}, "low_vram": False},
-    "unique3d_image_to_raw_mesh": {"input_processing": True, "do_refine": True, "expansion_weight": 0.1, "init_type": "std", "low_vram": False},
-    "trellis_image_to_raw_mesh": {"num_inference_steps": 100, "ss_sampling_steps": 100, "slat_sampling_steps": 100, "guidance_scale": 7.5, "simplify": 0.0, "low_vram": False},
-    "trellis_image_to_3d": {"num_inference_steps": 100, "ss_sampling_steps": 100, "slat_sampling_steps": 100, "guidance_scale": 7.5, "simplify": 0.0, "low_vram": False},
-    "trellis_image_to_textured_mesh": {"num_inference_steps": 100, "ss_sampling_steps": 100, "slat_sampling_steps": 100, "guidance_scale": 7.5, "simplify": 0.0, "low_vram": False},
-    "trellis2_image_to_raw_mesh": {"pipeline_type": "1536_cascade", "max_num_tokens": 524288, "sparse_structure_sampler_params": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.9, "rescale_t": 8.0}, "shape_slat_sampler_params": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.8, "rescale_t": 8.0}, "tex_slat_sampler_params": {"steps": 100, "guidance_strength": 3.5, "guidance_rescale": 0.5, "rescale_t": 8.0}, "decimation_target": -1, "remesh": False, "low_vram": False},
-    "trellis2_image_mesh_painting": {"tex_slat_sampler_params": {"steps": 100, "guidance_strength": 3.5, "guidance_rescale": 0.5, "rescale_t": 8.0}, "texture_size": 4096},
-    "trellis2_image_to_3d": {"pipeline_type": "1536_cascade", "max_num_tokens": 524288, "sparse_structure_sampler_params": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.9, "rescale_t": 8.0}, "shape_slat_sampler_params": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.8, "rescale_t": 8.0}, "tex_slat_sampler_params": {"steps": 100, "guidance_strength": 3.5, "guidance_rescale": 0.5, "rescale_t": 8.0}, "decimation_target": -1, "remesh": False, "low_vram": False},
-    "trellis2_image_to_textured_mesh": {"pipeline_type": "1536_cascade", "max_num_tokens": 524288, "sparse_structure_sampler_params": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.9, "rescale_t": 8.0}, "shape_slat_sampler_params": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.8, "rescale_t": 8.0}, "tex_slat_sampler_params": {"steps": 100, "guidance_strength": 3.5, "guidance_rescale": 0.5, "rescale_t": 8.0}, "decimation_target": -1, "remesh": False, "low_vram": False},
-    "taoflowforge_image_to_raw_mesh": {"source_quality": "max", "fill_holes": True, "offload": "auto", "low_vram": False},
-}
+# High-fidelity source mesh profiles have all been migrated into adapter-owned _LOCKED_INFERENCE_PROFILE.
+# Production budgets remain in request_inputs and are applied only to downstream copies by post-processing.
+_RAW_MESH_MAX_QUALITY_PARAMETERS: Dict[str, Dict[str, Any]] = {}
 
 
 def _build_model_inference_inputs(
@@ -835,11 +858,29 @@ def _process_job_in_worker(
         # Section 26: Exact runtime parameter logging
         request_inputs = job_request.inputs or {}
         model_inputs = _build_model_inference_inputs(request_inputs, model_id=model_id)
+
+        # Effective seed plan. The planner's num_seeds is a plan value, so the
+        # runtime log reports the candidates and the exact seeds that run.
+        from core.config import get_quality_config
+        from core.planner import get_planner_apply_config, resolve_seed_plan
+        seeds_cfg = get_quality_config()["seeds"]
+        seed_plan = resolve_seed_plan(
+            request_inputs,
+            model_inputs,
+            seeds_cfg=seeds_cfg,
+            apply_cfg=get_planner_apply_config(),
+        )
+        total_seeds_to_run = int(seed_plan["candidate_count"])
+        base_seed = int(seed_plan["base_seed"])
+        seed_step = int(seed_plan["seed_step"])
+        early_stop_score = float(seeds_cfg["early_stop_score"])
+        seed_schedule = list(seed_plan["seed_schedule"])
+
         runtime_log = {
             "model": model_id,
             "model_version": getattr(loaded_model, "version", "1.0"),
             "checkpoint": getattr(loaded_model, "model_path", model_config.get("model_path", "unknown")),
-            "requested_quality": model_inputs.get("quality", model_inputs.get("meshQuality", "not_specified")),
+            "requested_quality": request_inputs.get("quality", request_inputs.get("meshQuality", "not_specified")),
             "source_quality_contract": model_inputs.get("source_quality", "max"),
             "postprocess_target_polycount": request_inputs.get("target_polycount", "native"),
             "actual_inference_steps": model_inputs.get("num_inference_steps", model_inputs.get("num_steps",
@@ -852,7 +893,11 @@ def _process_job_in_worker(
                     "grid_resolution", "adapter_owned" if str(model_id).lower() in _ADAPTER_OWNED_INFERENCE_PROFILE_MODEL_IDS else "not_supported"))),
             ),
             "effective_geometry_resolution": "reported_after_decode_if_supported",
-            "actual_seed": model_inputs.get("seed", "not_supported"),
+            "actual_seed": seed_schedule[0] if seed_schedule else "not_supported",
+            "candidate_count": total_seeds_to_run,
+            "planned_candidate_count": int(seed_plan["planned_candidate_count"]),
+            "auto_seeds_enabled": bool(seed_plan["auto_seeds_enabled"]),
+            "seed_schedule": seed_schedule,
             "actual_dtype": str(getattr(loaded_model, "dtype", None) or model_inputs.get("dtype") or "adapter_default"),
             "actual_device": (
                 "cpu" if cpu_only else str(
@@ -868,6 +913,14 @@ def _process_job_in_worker(
             "actual_decimation_target": model_inputs.get("decimation_target", "not_supported"),
         }
         logger.info(f"[RUNTIME PARAMETERS] job_id={job_id} params={json.dumps(runtime_log, default=str)}")
+        logger.info(
+            "[SEED PLAN] job_id=%s candidates=%s planned=%s auto_seeds=%s seeds=%s",
+            job_id,
+            total_seeds_to_run,
+            seed_plan["planned_candidate_count"],
+            seed_plan["auto_seeds_enabled"],
+            seed_schedule,
+        )
 
         # Format a clean, human-readable start box with REAL runtime values
         input_desc = "None"
@@ -889,10 +942,15 @@ def _process_job_in_worker(
                     ("Feature Type", job_request.feature),
                     ("Device", "CPU-only (GPU intentionally unused)" if cpu_only else f"{runtime_log['actual_device']} ({get_gpu_memory_summary(gpu_id)})"),
                     ("Input Source", input_desc),
-                    ("Steps / Guidance", f"Steps={runtime_log['actual_inference_steps']} | CFG={runtime_log['actual_guidance']}"),
+                    ("Steps / Guidance", (
+                        f"Steps={runtime_log['actual_inference_steps']} | CFG={runtime_log['actual_guidance']}"
+                        if runtime_log["actual_inference_steps"] != "adapter_owned"
+                        else "adapter-owned (effective values reported after inference)"
+                    )),
                     ("Requested Resolution / Grid", f"{runtime_log['requested_resolution_parameter']} / {runtime_log['requested_extraction_resolution']}"),
                     ("Effective Geometry Resolution", runtime_log["effective_geometry_resolution"]),
-                    ("Seed", runtime_log["actual_seed"]),
+                    ("Candidates", str(total_seeds_to_run)),
+                    ("Seed" if len(seed_schedule) <= 1 else "Seeds", ", ".join(str(seed) for seed in seed_schedule)),
                     ("Quality Contract", runtime_log["source_quality_contract"]),
                     ("Downstream Budget", runtime_log["postprocess_target_polycount"]),
                 ],
@@ -902,25 +960,6 @@ def _process_job_in_worker(
         # Reset after model load so these peaks cover this inference call, not model initialization.
         _reset_cuda_peak_memory_stats(resource_plan, gpu_id)
         inference_start_time = time.time()
-
-        from core.config import get_quality_config
-        from core.planner import get_planner_apply_config
-        seeds_cfg = get_quality_config()["seeds"]
-        apply_cfg = get_planner_apply_config()
-
-        user_candidate_count = int(request_inputs.get("candidate_count") or 1)
-        plan_dict = request_inputs.get("plan") or {}
-        plan_num_seeds = int(plan_dict.get("num_seeds") or 1)
-
-        mode_a = user_candidate_count > 1
-        mode_b = (user_candidate_count == 1) and bool(apply_cfg.get("auto_seeds", False)) and (plan_num_seeds > 1)
-
-        total_seeds_to_run = user_candidate_count if mode_a else (plan_num_seeds if mode_b else 1)
-        max_cands = int(seeds_cfg["max_candidates"])
-        total_seeds_to_run = min(max(total_seeds_to_run, 1), max_cands)
-        base_seed = int(model_inputs.get("seed") or seeds_cfg["base_seed"])
-        seed_step = int(seeds_cfg["seed_step"])
-        early_stop_score = float(seeds_cfg["early_stop_score"])
 
         if total_seeds_to_run > 1:
             candidates_list = []
@@ -983,7 +1022,7 @@ def _process_job_in_worker(
                 result["candidates"] = candidates_list
                 result["seed_scores"] = [c.get("score", 0.0) for c in candidates_list]
                 result["selected_candidate_id"] = best_idx
-                if mode_b:
+                if seed_plan["auto_candidates"]:
                     for i, c in enumerate(candidates_list):
                         if i != best_idx and c.get("mesh_path") and os.path.isfile(c["mesh_path"]):
                             try:
@@ -993,6 +1032,24 @@ def _process_job_in_worker(
         else:
             with torch.no_grad():
                 result = loaded_model.process(model_inputs)
+
+        effective_info = result.get("generation_info") if isinstance(result, dict) else None
+        if isinstance(effective_info, dict):
+            logger.info(
+                "[EFFECTIVE PARAMETERS] job_id=%s model=%s params=%s",
+                job_id,
+                model_id,
+                json.dumps(
+                    {
+                        key: effective_info.get(key)
+                        for key in (
+                            "num_inference_steps", "ss_sampling_steps", "slat_sampling_steps",
+                            "guidance_scale", "slat_cfg_strength", "seed", "texture_resolution",
+                        )
+                    },
+                    default=str,
+                ),
+            )
 
         inference_seconds = time.time() - inference_start_time
         if isinstance(result, dict) and result.get("success", True):
@@ -1720,7 +1777,9 @@ class MultiprocessModelScheduler:
                 )
                 # Explicit model selections are hard requirements. Automatic routes may
                 # fall back to the next compatible retained model instead of failing the job.
-                if not job_request.model_preference:
+                if _may_fallback_after_model_load_failure(
+                    job_request.model_preference, job_request.metadata
+                ):
                     feature_models = self.model_features.get(job_request.feature, [])
                     routing_inputs = dict(job_request.inputs or {})
                     routing_inputs["available_gpu_count"] = len(self.gpu_monitor.get_gpu_status())

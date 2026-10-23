@@ -2,7 +2,7 @@
 
 Thank you for contributing to ForMash3D.
 
-ForMash3D is an active pre-alpha project combining a Next.js 16 frontend, FastAPI backend, GPU model adapters, and production-oriented 3D post-processing. Contributions should preserve the existing architecture and keep changes focused.
+ForMash3D is an active beta phase project combining a Next.js 16 frontend, FastAPI backend, GPU model adapters, and production-oriented 3D post-processing. Contributions should preserve the existing architecture and keep changes focused.
 
 ## Before changing code
 
@@ -30,6 +30,18 @@ git clone https://github.com/Silentzx2/ForMash3D.git
 cd ForMash3D
 bash scripts/setup.sh
 ```
+
+### CPU-only setup (no NVIDIA GPU)
+
+If you do not have an NVIDIA GPU, run setup in CPU mode. Model/CUDA dependencies are skipped; the studio, API, and post-processing tools remain available.
+
+```bash
+git clone https://github.com/Silentzx2/ForMash3D.git
+cd ForMash3D
+bash scripts/setup.sh --cpu
+```
+
+Use `--cpu` to force CPU mode even if a GPU is present, or `--gpu` to force CUDA mode. Use `--with-thirdparty` to initialize third-party model sources.
 
 Third-party model integrations are maintained under `backend/thirdparty/` in this repository. A normal checkout does not require a separate third-party repository.
 
@@ -61,15 +73,38 @@ The maintained Wheels release is used for compatible prebuilt Python wheels; the
 Run checks relevant to your change:
 
 ```bash
-bun run test
+# Frontend type-check (same command as `bun run test` and the Frontend CI job)
+npx tsc --noEmit
+
+# Frontend unit tests (node:test files under features/workspace/lib/*.test.mjs
+# and app/api/v1/[...path]/route.test.mjs)
+bun test
+
+# Frontend lint and production build
 bun run lint
 bun run build
+
+# Backend CPU contracts. This is exactly what the Backend Runtime Contract CI workflow runs.
+PYTHONPATH=backend python -m pytest -q backend/tests \
+  backend/thirdparty/tests/test_runtime_path_utils.py
+
+# Verify clean compilation across all Python modules
 python3 -m compileall -q backend/
-python3 scripts/verify_contracts.py
-bash -n backend/scripts/*.sh scripts/*.sh
+
+# Verify shell script syntax
+bash -n manager.sh backend/scripts/*.sh scripts/*.sh
 ```
 
-GPU/model inference and full production post-processing require an appropriate NVIDIA environment. Static checks do not replace GPU validation. The repository currently has no GitHub Actions workflow under `.github/workflows/`, so local verification is the authoritative pre-push check.
+The backend CPU contract suite uses the geometry libraries listed in `.github/workflows/backend-runtime-ci.yml`; it does not load model weights or run inference. `python3 scripts/verify_contracts.py`, Blender-stage validation and GPU/model inference require the full `3daigc-api` environment on an appropriate host. Static checks do not replace those runtime checks.
+
+### Continuous integration
+
+Two GitHub Actions workflows live under `.github/workflows/`:
+
+- **Backend Runtime Contract CI** (`.github/workflows/backend-runtime-ci.yml`): compiles the backend sources, checks `backend/scripts/download_models.sh` shell syntax, and runs `backend/tests/` plus the third-party runtime-path contract on Python 3.10.
+- **Frontend CI** (`.github/workflows/frontend-ci.yml`): installs dependencies with Bun, runs the TypeScript type-check (`bun run test`), all Bun contract tests (`bun test`), and the production build (`bun run build`).
+
+The backend workflow runs on pushes and pull requests targeting `main` and `dev`; the frontend workflow runs on pushes to `dev` and on pull requests targeting `dev` or `main`. Local verification should mirror the CI commands before opening a pull request.
 
 ## Pull requests
 
@@ -86,7 +121,7 @@ Never commit credentials, model checkpoints, private URLs, or generated secrets.
 
 ## Security
 
-Do not disclose security vulnerabilities in public issues. Follow [Docs/SECURITY.md](Docs/SECURITY.md).
+Do not disclose security vulnerabilities in public issues. Follow [Docs/SECURITY.md](SECURITY.md).
 
 ## Documentation
 

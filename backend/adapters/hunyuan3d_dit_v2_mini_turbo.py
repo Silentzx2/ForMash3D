@@ -23,6 +23,23 @@ from core.utils.mesh_utils import MeshProcessor
 
 logger = logging.getLogger(__name__)
 
+# LOCKED / ACTIVE: values used by inference.
+# BASELINE: previous effective runtime values (source_quality="max", octree_resolution=768, num_inference_steps=20, guidance_scale=7.5, num_chunks=80000, low_vram_mode=false, low_vram=false, enable_flashvdm=false, mc_algo="mc")
+# EXPERIMENTAL: selected experimental values, snapshot (2026-10-20) for stress-test; use only for benchmarking.
+# SUPPORTED BY: Hunyuan3D-DiT-v2-mini-Turbo adapter, EXPERIMENTAL-MODEL-SETTINGS.md section "Hunyuan3D-DiT-v2-Mini-Turbo".
+# ROLLBACK: previous effective values; scheduler strips frontend overrides before adapter applies lock.
+_LOCKED_INFERENCE_PROFILE = {
+    "source_quality": "max",
+    "octree_resolution": 768,
+    "num_inference_steps": 20,
+    "guidance_scale": 7.5,
+    "num_chunks": 80000,
+    "low_vram_mode": False,
+    "low_vram": False,
+    "enable_flashvdm": False,
+    "mc_algo": "mc",
+}
+
 
 class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
     """
@@ -267,6 +284,7 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
 
     def _process_request(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """Process image-to-raw-mesh generation using Hunyuan3D-DiT-v2-mini-Turbo."""
+        inputs = {**inputs, **_LOCKED_INFERENCE_PROFILE}
         try:
             if not torch.cuda.is_available():
                 raise RuntimeError("Hunyuan3D-DiT-v2-mini-Turbo requires CUDA; CPU inference is not supported.")
@@ -308,33 +326,33 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
             octree_res = inputs.get("octree_resolution")
             if octree_res is None:
                 # EXPERIMENTAL: intentionally exceed trained 380; artifacts/OOM possible.
-                octree_res = 768
+                octree_res = _LOCKED_INFERENCE_PROFILE["octree_resolution"]
             else:
                 octree_res = int(octree_res)
                 if octree_res > 380:
                     logger.warning("EXPERIMENTAL: passing Mini Turbo resolution %s above trained 380; artifacts/OOM possible.", octree_res)
 
-            num_chunks = inputs.get("num_chunks", 80000)
+            num_chunks = inputs.get("num_chunks", _LOCKED_INFERENCE_PROFILE["num_chunks"])
             if num_chunks is None:
-                num_chunks = 80000
+                num_chunks = _LOCKED_INFERENCE_PROFILE["num_chunks"]
             else:
                 num_chunks = int(num_chunks)
 
-            num_steps = inputs.get("num_inference_steps", 20)
+            num_steps = inputs.get("num_inference_steps", _LOCKED_INFERENCE_PROFILE["num_inference_steps"])
             if num_steps is None:
-                num_steps = 20
+                num_steps = _LOCKED_INFERENCE_PROFILE["num_inference_steps"]
             else:
                 num_steps = int(num_steps)
 
-            guidance_scale = inputs.get("guidance_scale", 7.5)
+            guidance_scale = inputs.get("guidance_scale", _LOCKED_INFERENCE_PROFILE["guidance_scale"])
             if guidance_scale is None:
-                guidance_scale = 7.5
+                guidance_scale = _LOCKED_INFERENCE_PROFILE["guidance_scale"]
             else:
                 guidance_scale = float(guidance_scale)
 
-            low_vram_mode = bool(inputs.get("low_vram_mode", False))
-            enable_flashvdm = False
-            if inputs.get("enable_flashvdm"):
+            low_vram_mode = bool(inputs["low_vram_mode"])
+            enable_flashvdm = bool(inputs["enable_flashvdm"])
+            if enable_flashvdm:
                 logger.warning("Ignoring enable_flashvdm=True: the raw-source fidelity profile uses the native dense decoder.")
             seed = int(inputs.get("seed", 42))
             generator = torch.Generator(device=self.device).manual_seed(seed)
@@ -346,7 +364,7 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
                 num_inference_steps=num_steps,
                 guidance_scale=guidance_scale,
                 num_chunks=num_chunks,
-                mc_algo="mc",
+                mc_algo=inputs["mc_algo"],
                 generator=generator,
             )[0]
 
@@ -416,36 +434,41 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
             "parameters": {
                 "octree_resolution": {
                     "type": "integer",
-                    "description": "Experimental max-detail resolution is capped at the checkpoint-trained 380; Turbo stays on its distilled 5-step schedule. Ask before changing the locked setting.",
-                    "default": 768,
+                    "description": "Adapter-locked geometry extraction resolution.",
+                    "default": _LOCKED_INFERENCE_PROFILE["octree_resolution"],
                     "minimum": 64,
                     "maximum": 1024,
+                    "readOnly": True,
                     "required": False,
                 },
                 "num_chunks": {
                     "type": "integer",
                     "description": "Chunk size for point evaluation during marching cubes",
-                    "default": 20000,
+                    "default": _LOCKED_INFERENCE_PROFILE["num_chunks"],
+                    "readOnly": True,
                     "required": False,
                 },
                 "num_inference_steps": {
                     "type": "integer",
-                    "description": "Number of inference steps; Tencent's Turbo preset uses 5.",
-                    "default": 20,
+                    "description": "Adapter-locked inference step count.",
+                    "default": _LOCKED_INFERENCE_PROFILE["num_inference_steps"],
                     "minimum": 1,
                     "maximum": 100,
+                    "readOnly": True,
                     "required": False,
                 },
                 "guidance_scale": {
                     "type": "number",
-                    "description": "Guidance scale for generation",
-                    "default": 7.5,
+                    "description": "Adapter-locked guidance scale.",
+                    "default": _LOCKED_INFERENCE_PROFILE["guidance_scale"],
+                    "readOnly": True,
                     "required": False,
                 },
                 "low_vram_mode": {
                     "type": "boolean",
-                    "description": "Enable low-VRAM mode for reduced memory usage",
-                    "default": False,
+                    "description": "Adapter-locked low-VRAM mode.",
+                    "default": _LOCKED_INFERENCE_PROFILE["low_vram_mode"],
+                    "readOnly": True,
                     "required": False,
                 },
                 "seed": {

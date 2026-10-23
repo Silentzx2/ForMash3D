@@ -26,6 +26,16 @@ from core.utils.mesh_utils import MeshProcessor
 
 logger = logging.getLogger(__name__)
 
+# LOCKED / ACTIVE: values used by inference.
+# BASELINE: previous effective runtime values (fill_holes=true, offload="auto")
+# EXPERIMENTAL: selected experimental values, snapshot (2026-10-20) for stress-test; use only for benchmarking.
+# SUPPORTED BY: TaoFlowForge adapter, EXPERIMENTAL-MODEL-SETTINGS.md section "UniRig".
+# ROLLBACK: previous effective values; scheduler strips frontend overrides before adapter applies lock.
+_LOCKED_INFERENCE_PROFILE = {
+    "fill_holes": True,
+    "offload": "auto",
+}
+
 
 class TaoFlowForgeImageToRawMeshAdapter(ImageToMeshModel):
     """
@@ -118,8 +128,8 @@ class TaoFlowForgeImageToRawMeshAdapter(ImageToMeshModel):
             )
         )
 
-        self.offload = offload
-        self.fill_holes = fill_holes
+        self.offload = _LOCKED_INFERENCE_PROFILE["offload"]
+        self.fill_holes = _LOCKED_INFERENCE_PROFILE["fill_holes"]
         self.pipeline = None
         self.mesh_processor = MeshProcessor()
         self.path_generator = OutputPathGenerator(base_output_dir="outputs")
@@ -243,6 +253,7 @@ class TaoFlowForgeImageToRawMeshAdapter(ImageToMeshModel):
             - fill_holes: Optional bool (default: self.fill_holes)
             - show_progress: Optional bool (default: False)
         """
+        inputs = {**inputs, **_LOCKED_INFERENCE_PROFILE}
         try:
             self.status = ModelStatus.PROCESSING
 
@@ -369,14 +380,16 @@ class TaoFlowForgeImageToRawMeshAdapter(ImageToMeshModel):
                 "fill_holes": {
                     "type": "boolean",
                     "description": "Apply postprocessing mesh repair and hole filling",
-                    "default": True,
+                    "default": _LOCKED_INFERENCE_PROFILE["fill_holes"],
+                    "readOnly": True,
                     "required": False,
                 },
                 "offload": {
                     "type": "string",
                     "description": "Memory offloading mode across pipeline stages ('auto', 'on', 'off')",
-                    "default": "auto",
+                    "default": _LOCKED_INFERENCE_PROFILE["offload"],
                     "enum": ["auto", "on", "off"],
+                    "readOnly": True,
                     "required": False,
                 },
                 "output_format": {

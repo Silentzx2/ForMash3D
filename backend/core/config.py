@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import logging.config
 import functools
 from pathlib import Path
@@ -97,6 +98,8 @@ class SecurityConfig(BaseSettings):
     rate_limit_per_minute: int = 60
     cors_origins: List[str] = ["*"]
     api_key_required: bool = False
+    # Optional privileged server credential; injected from P3D_API_KEY at runtime.
+    api_key: Optional[str] = Field(default=None, repr=False, exclude=True)
 
 
 class ModelConfig(BaseSettings):
@@ -364,6 +367,11 @@ def get_settings() -> Settings:
 
         settings = load_config_from_file(str(system_config))
 
+        # Static API credentials come only from the runtime environment, never YAML.
+        configured_api_key = os.getenv("P3D_API_KEY")
+        if configured_api_key:
+            settings.security.api_key = configured_api_key
+
         # If user authorization is turned on, force API key
         if settings.user_auth_enabled:
             settings.security.api_key_required = True
@@ -388,8 +396,71 @@ _QUALITY_REQUIRED_KEYS = (
     "shared.feature_edge_angle_deg",
     "holes.max_hole_vertices", "holes.max_hole_perimeter",
     "gate.strict", "gate.max_non_manifold_edges", "gate.max_non_manifold_vertices",
+    "gate.max_native_mesh_normalized_drift",
     "gate.max_holes", "gate.max_floater_ratio", "gate.max_degenerate_faces",
     "gate.min_aspect_ratio_p1", "gate.min_aspect_ratio_p5",
+    "surface_comparison.sample_count",
+    "surface_comparison.fscore_diagonal_fraction",
+    "surface_comparison.minimum_fscore_threshold",
+    "surface_comparison.local_density_neighbor_count",
+    "physics.defaults.body_type",
+    "physics.defaults.mass_mode",
+    "physics.defaults.mass_kg",
+    "physics.defaults.density_mode",
+    "physics.defaults.density_kg_m3",
+    "physics.defaults.friction",
+    "physics.defaults.restitution",
+    "physics.defaults.linear_damping",
+    "physics.defaults.angular_damping",
+    "physics.defaults.gravity_enabled",
+    "physics.defaults.fallback_volume_m3",
+    "physics.thresholds.minimum_valid_volume_m3",
+    "physics.limits.mass_kg.min",
+    "physics.limits.mass_kg.max",
+    "physics.limits.density_kg_m3.min",
+    "physics.limits.density_kg_m3.max",
+    "physics.limits.friction.min",
+    "physics.limits.friction.max",
+    "physics.limits.restitution.min",
+    "physics.limits.restitution.max",
+    "physics.limits.linear_damping.min",
+    "physics.limits.linear_damping.max",
+    "physics.limits.angular_damping.min",
+    "physics.limits.angular_damping.max",
+    "physics.default_collision_quality",
+    "physics.collision_quality_profiles.fast.method",
+    "physics.collision_quality_profiles.fast.max_hulls",
+    "physics.collision_quality_profiles.fast.threshold",
+    "physics.collision_quality_profiles.fast.input_faces",
+    "physics.collision_quality_profiles.fast.max_hull_vertices",
+    "physics.collision_quality_profiles.fast.resolution",
+    "physics.collision_quality_profiles.fast.mcts_nodes",
+    "physics.collision_quality_profiles.fast.mcts_iterations",
+    "physics.collision_quality_profiles.fast.mcts_max_depth",
+    "physics.collision_quality_profiles.fast.preprocess_resolution",
+    "physics.collision_quality_profiles.fast.seed",
+    "physics.collision_quality_profiles.balanced.method",
+    "physics.collision_quality_profiles.balanced.max_hulls",
+    "physics.collision_quality_profiles.balanced.threshold",
+    "physics.collision_quality_profiles.balanced.input_faces",
+    "physics.collision_quality_profiles.balanced.max_hull_vertices",
+    "physics.collision_quality_profiles.balanced.resolution",
+    "physics.collision_quality_profiles.balanced.mcts_nodes",
+    "physics.collision_quality_profiles.balanced.mcts_iterations",
+    "physics.collision_quality_profiles.balanced.mcts_max_depth",
+    "physics.collision_quality_profiles.balanced.preprocess_resolution",
+    "physics.collision_quality_profiles.balanced.seed",
+    "physics.collision_quality_profiles.precise.method",
+    "physics.collision_quality_profiles.precise.max_hulls",
+    "physics.collision_quality_profiles.precise.threshold",
+    "physics.collision_quality_profiles.precise.input_faces",
+    "physics.collision_quality_profiles.precise.max_hull_vertices",
+    "physics.collision_quality_profiles.precise.resolution",
+    "physics.collision_quality_profiles.precise.mcts_nodes",
+    "physics.collision_quality_profiles.precise.mcts_iterations",
+    "physics.collision_quality_profiles.precise.mcts_max_depth",
+    "physics.collision_quality_profiles.precise.preprocess_resolution",
+    "physics.collision_quality_profiles.precise.seed",
     "decimation.memory_safe_threshold_triangles", "decimation.max_deviation_deg",
     "decimation.max_ram_fraction",
     "uv.partuv_triangle_threshold", "uv.partuv_vram_requirement_gb",

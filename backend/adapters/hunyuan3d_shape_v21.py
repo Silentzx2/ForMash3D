@@ -24,7 +24,11 @@ from core.utils.mesh_utils import MeshProcessor
 
 logger = logging.getLogger(__name__)
 
-# Same effective values as dev scheduler; numerical settings are locked here.
+# LOCKED / ACTIVE: values used by inference.
+# BASELINE: previous effective runtime values (source_quality="max", octree_resolution=1300, num_inference_steps=150, guidance_scale=5.0, num_chunks=80000, mc_algo="mc")
+# EXPERIMENTAL: selected experimental values, snapshot (2026-10-20) for stress-test; use only for benchmarking.
+# SUPPORTED BY: Hunyuan3D-Shape-v2-1 adapter, EXPERIMENTAL-MODEL-SETTINGS.md section "Hunyuan3D-Shape-v2.1".
+# ROLLBACK: previous effective values; scheduler strips frontend overrides before adapter applies lock.
 _LOCKED_INFERENCE_PROFILE = {
     "source_quality": "max", "octree_resolution": 1300,
     "num_inference_steps": 150, "guidance_scale": 5.0,
@@ -332,9 +336,9 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
             else:
                 octree_res = int(octree_res)
 
-            num_chunks = inputs.get("num_chunks", 20000)
+            num_chunks = inputs.get("num_chunks", _LOCKED_INFERENCE_PROFILE["num_chunks"])
             if num_chunks is None:
-                num_chunks = 20000
+                num_chunks = _LOCKED_INFERENCE_PROFILE["num_chunks"]
             else:
                 num_chunks = int(num_chunks)
 
@@ -494,4 +498,3 @@ class Hunyuan3DShapeV21ImageToTexturedMeshAdapter(Hunyuan3DShapeV21ImageToRawMes
 
 # Backward-compatible alias for raw geometry generation
 Hunyuan3DShapeV21ImageToMeshAdapter = Hunyuan3DShapeV21ImageToRawMeshAdapter
-

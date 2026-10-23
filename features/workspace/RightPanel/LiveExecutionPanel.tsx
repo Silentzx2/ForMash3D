@@ -22,7 +22,6 @@ export const LiveExecutionPanel: React.FC = () => {
     cancelExecution,
     systemStats,
     generationSettings,
-    setGenerationSettings,
     generate3DModel,
     setActiveTool,
     currentAsset,
@@ -540,20 +539,6 @@ export const LiveExecutionPanel: React.FC = () => {
 
             {/* Hardware-specific Actionable Fix */}
             <div className="pt-1 flex flex-col gap-1.5">
-              {!generationSettings.lowVram && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setGenerationSettings(prev => ({ ...prev, lowVram: true }));
-                    void generate3DModel();
-                  }}
-                  className="w-full py-1.5 px-2 rounded-lg bg-primary text-black font-bold text-[10px] hover:bg-[hsl(var(--primary)/0.9)] transition-colors flex items-center justify-center gap-1 cursor-pointer"
-                >
-                  <HugeiconsIcon icon={RotateCcwIcon} size={16} className="w-3 h-3" />
-                  <span>Enable Low VRAM Mode (&lt;8GB) &amp; Retry</span>
-                </button>
-              )}
-
               <button
                 type="button"
                 onClick={() => void generate3DModel()}

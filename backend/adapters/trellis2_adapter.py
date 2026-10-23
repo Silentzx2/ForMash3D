@@ -8,6 +8,7 @@ This adapter integrates TRELLIS.2 into our mesh generation framework.
 import logging
 import os
 import uuid
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -20,6 +21,54 @@ from core.utils.thumbnail_utils import generate_mesh_thumbnail
 from core.utils.mesh_utils import MeshProcessor
 
 logger = logging.getLogger(__name__)
+
+# LOCKED / ACTIVE: values used by inference.
+# BASELINE: previous effective runtime values (source_quality="max", pipeline_type="1536_cascade", max_num_tokens=524288, sampler params: sparse/100/10.0/0.9/8.0, shape/100/10.0/0.8/8.0, texture/100/3.5/0.5/8.0, decimation_target=-1, remesh=false, low_vram=false)
+# EXPERIMENTAL: selected experimental values, snapshot (2026-10-20) for stress-test; use only for benchmarking.
+# SUPPORTED BY: TRELLIS.2 adapter, EXPERIMENTAL-MODEL-SETTINGS.md section "TRELLIS.2 (raw/image geometry aliases)".
+# ROLLBACK: previous effective values; scheduler strips frontend overrides before adapter applies lock.
+_LOCKED_INFERENCE_PROFILE = {
+    "source_quality": "max",
+    "pipeline_type": "1536_cascade",
+    "max_num_tokens": 524288,
+    "texture_size": 4096,
+    "sparse_structure_sampler_params": {
+        "steps": 100,
+        "guidance_strength": 10.0,
+        "guidance_rescale": 0.9,
+        "rescale_t": 8.0,
+    },
+    "shape_slat_sampler_params": {
+        "steps": 100,
+        "guidance_strength": 10.0,
+        "guidance_rescale": 0.8,
+        "rescale_t": 8.0,
+    },
+    "tex_slat_sampler_params": {
+        "steps": 100,
+        "guidance_strength": 3.5,
+        "guidance_rescale": 0.5,
+        "rescale_t": 8.0,
+    },
+    "decimation_target": -1,
+    "remesh": False,
+    "low_vram": False,
+}
+
+# LOCKED / ACTIVE: values used by inference (painting path only).
+# BASELINE: previous effective runtime values (tex_slat_sampler_params: steps=100, guidance_strength=3.5, guidance_rescale=0.5, rescale_t=8.0, texture_size=4096)
+# EXPERIMENTAL: selected experimental values, snapshot (2026-10-20) for stress-test; use only for benchmarking.
+# SUPPORTED BY: TRELLIS.2 painting adapter, EXPERIMENTAL-MODEL-SETTINGS.md section "TRELLIS.2 (raw/image geometry aliases)".
+# ROLLBACK: previous effective values; scheduler strips frontend overrides before adapter applies lock.
+_LOCKED_PAINTING_INFERENCE_PROFILE = {
+    "tex_slat_sampler_params": {
+        "steps": 100,
+        "guidance_strength": 3.5,
+        "guidance_rescale": 0.5,
+        "rescale_t": 8.0,
+    },
+    "texture_size": 4096,
+}
 
 
 class Trellis2ImageToRawMeshAdapter(ImageToMeshModel):
@@ -161,6 +210,7 @@ class Trellis2ImageToRawMeshAdapter(ImageToMeshModel):
         Returns:
             Dictionary with generated mesh information
         """
+        inputs = {**inputs, **deepcopy(_LOCKED_INFERENCE_PROFILE)}
         try:
             if not torch.cuda.is_available():
                 raise RuntimeError("TRELLIS.2 requires CUDA; CPU inference is not supported.")
@@ -207,7 +257,7 @@ class Trellis2ImageToRawMeshAdapter(ImageToMeshModel):
             
             logger.info(
                 "Generating high-fidelity untextured TRELLIS.2 mesh (pipeline=%s, max_num_tokens=%s, steps=%s)",
-                pipeline_type, max_num_tokens, default_sampler_params.get("steps", 50),
+                pipeline_type, max_num_tokens, sparse_structure_sampler_params.get("steps", 100),
             )
             
             # Generate untextured raw 3D mesh
@@ -335,14 +385,16 @@ class Trellis2ImageToRawMeshAdapter(ImageToMeshModel):
                     "description": "TRELLIS.2 source geometry resolution path; max-fidelity uses the 1536 cascade.",
                     "default": "1536_cascade",
                     "enum": ["512", "1024", "1024_cascade", "1536_cascade"],
+                    "readOnly": True,
                     "required": False
                 },
                 "max_num_tokens": {
                     "type": "integer",
                     "description": "Max cascade token budget; a higher budget prevents silent resolution reduction.",
-                    "default": 524288,
+                    "default": _LOCKED_INFERENCE_PROFILE["max_num_tokens"],
                     "minimum": 49152,
                     "maximum": 1048576,
+                    "readOnly": True,
                     "required": False
                 },
                 "decimation_target": {
@@ -351,19 +403,22 @@ class Trellis2ImageToRawMeshAdapter(ImageToMeshModel):
                     "default": -1,
                     "minimum": -1,
                     "maximum": 10000000,
+                    "readOnly": True,
                     "required": False
                 },
                 "texture_size": {
                     "type": "integer",
-                    "description": "Output texture resolution (width and height)",
-                    "default": 8192,
+                    "description": "Locked model-side texture size; production atlas resolution is configured separately.",
+                    "default": _LOCKED_INFERENCE_PROFILE["texture_size"],
                     "enum": [1024, 2048, 4096, 8192, 16384],
+                    "readOnly": True,
                     "required": False
                 },
                 "remesh": {
                     "type": "boolean",
                     "description": "Whether to remesh the output mesh",
                     "default": False,
+                    "readOnly": True,
                     "required": False
                 },
                 "remesh_band": {
@@ -517,6 +572,7 @@ class Trellis2ImageMeshPaintingAdapter(ImageToMeshModel):
         Returns:
             Dictionary with textured mesh information
         """
+        inputs = {**inputs, **deepcopy(_LOCKED_PAINTING_INFERENCE_PROFILE)}
         try:
             if self.runner is None:
                 raise ValueError("TRELLIS.2 texturing model is not loaded")
@@ -636,4 +692,3 @@ class Trellis2ImageMeshPaintingAdapter(ImageToMeshModel):
 # Aliases
 TRELLIS2ImageToTexturedMeshAdapter = Trellis2ImageToTexturedMeshAdapter
 TRELLIS2ImageMeshPaintingAdapter = Trellis2ImageMeshPaintingAdapter
-

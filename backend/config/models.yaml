@@ -65,8 +65,9 @@ image_to_raw_mesh:
     enabled: true
     max_workers: 1
 
-  # EXPERIMENTAL_MAX_DETAIL: preserve distilled 5-step schedule, guidance=5.0, and trained octree=380; do not raise the octree to 512.
-  # This is a checkpoint compatibility boundary, not a low-VRAM quality downgrade. Ask before later changes.
+  # Active adapter lock (not the upstream-trained recipe): octree_resolution=768, 20 steps, CFG=7.5.
+  # This deliberately exceeds the documented distilled 5-step / octree=380 recipe and may OOM or produce artifacts.
+  # This entry describes the active stress-test profile; preserve its numerical values unless the owner approves a change.
   hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh:
     model_name: "Hunyuan3D Mini Turbo — Image to Raw Mesh"
     upstream_repository: "https://github.com/Tencent-Hunyuan/Hunyuan3D-2"
@@ -98,8 +99,9 @@ image_to_raw_mesh:
     enabled: true
     max_workers: 1
 
-  # EXPERIMENTAL_MAX_DETAIL: steps=50 and guidance=7.0 follow upstream defaults; dense depth=9 / hierarchical depth=10 are the repo's high-detail target.
-  # Existing VRAM gate may report an effective depth below the request; no higher community optimum is verified. Ask before changes.
+  # Active adapter lock: 100 steps, CFG=9.0, flash depth=10, dense depth=10, hierarchical depth=11.
+  # The VRAM gate may lower the effective hierarchical depth; this is not the upstream default and has not been A/B benchmarked.
+  # Preserve the locked profile and distinguish requested depth from runtime-effective depth in telemetry.
   triposg_image_to_raw_mesh:
     model_name: "TripoSG — Image to Raw Mesh"
     upstream_repository: "https://github.com/VAST-AI-Research/TripoSG"
@@ -542,8 +544,9 @@ image_mesh_painting:
     enabled: true
     max_workers: 1
 
-  # EXPERIMENTAL_MAX_DETAIL: keep the adapter's supported two-stage recipe (20 steps; guidance 7.0 then 3.0) and supported 1K/2K output textures.
-  # No better community-tested override was verified; do not invent one. Ask before changing this profile.
+  # Active Paint3D generated-config recipe: stage-1 txt2img 40/CFG 7.0, stage-1 inpaint 40/CFG 3.0,
+  # stage-2 UV inpaint 40/CFG 3.0, and stage-2 UV img2img 40/CFG 7.0; supported atlas sizes are 1K/2K.
+  # These values describe actual per-job YAML fields, not a single two-stage step count. Do not change without owner approval.
   paint3d:
     model_name: "Paint3D"
     upstream_repository: null

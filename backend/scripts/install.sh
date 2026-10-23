@@ -18,12 +18,34 @@ fi
 # Parse command line flags
 AUTO_MODE=0
 ENV_MANAGER="${FORMASH3D_ENV_MANAGER:-${AI_STUDIO_ENV_MANAGER:-conda}}"
+FORCE_CPU=0
+FORCE_CUDA=0
+WITH_THIRDPARTY=0
+CPU_EXTRAS=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --auto|-auto|-y|--yes|--non-interactive)
       AUTO_MODE=1
       export NONINTERACTIVE=1
+      shift
+      ;;
+    --cpu)
+      FORCE_CPU=1
+      export FORMASH3D_COMPUTE=cpu
+      shift
+      ;;
+    --gpu)
+      FORCE_CUDA=1
+      export FORMASH3D_COMPUTE=cuda
+      shift
+      ;;
+    --cpu-extras)
+      CPU_EXTRAS=1
+      shift
+      ;;
+    --with-thirdparty)
+      WITH_THIRDPARTY=1
       shift
       ;;
     --conda)
@@ -51,6 +73,12 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+# ── Compute mode resolver ──────────────────────────────────────────────────
+# shellcheck source=/dev/null
+source "$PROJECT_ROOT/scripts/lib/compute_mode.sh"
+COMPUTE_MODE=$(resolve_compute_mode) || exit $?
+echo "[INFO] Compute mode: ${COMPUTE_MODE}"
 
 # Test whether a wheel file exists and is a valid non-corrupted zip/wheel
 _wheel_is_valid() {
@@ -327,9 +355,12 @@ else
     echo "[WARN] Build toolchain install had warnings; continuing..."
 fi
 
-echo "[INFO] Installing PyTorch with CUDA 12.4 support..."
-## install pytorch for specific cuda versions
-$UV_PIP install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu124
+echo "[INFO] Installing PyTorch..."
+if [[ "${COMPUTE_MODE:-}" == "cpu" ]]; then
+  $UV_PIP install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cpu
+else
+  $UV_PIP install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu124
+fi
 if [ $? -eq 0 ]; then
     echo "[SUCCESS] PyTorch installation completed"
 else
@@ -337,17 +368,20 @@ else
     exit 1
 fi
 
+
 # Disable build isolation ─────────────────────────────────────────────────
 # flash-attn, nvdiffrec_render, nvdiffrast and friends import torch in their
 # setup.py/pyproject at *metadata* time. Under build isolation pip spins up a
 # clean env with NO torch, so "Getting requirements to build wheel" dies with
 # "No available output" and the whole install aborts. Reusing the active env
 # (where torch 2.6.0 + cu124 is already installed) makes those builds work.
+echo "[INFO] Build isolation: disabled (PIP_NO_BUILD_ISOLATION=1)"
 export PIP_NO_BUILD_ISOLATION=1
 export UV_NO_BUILD_ISOLATION=1
-echo "[INFO] Build isolation: disabled (PIP_NO_BUILD_ISOLATION=1)"
 
-ensure_release_wheels
+if [[ "${COMPUTE_MODE:-}" == "cuda" ]]; then
+  ensure_release_wheels
+fi
 
 echo ""
 echo "========================================"
@@ -355,8 +389,13 @@ echo "Installing Project Requirements"
 echo "========================================"
 ensure_blender
 
-echo "[INFO] Installing backend/requirements.txt..."
-$UV_PIP install --find-links="$WHEEL_DIR" -r "$PROJECT_ROOT/backend/requirements.txt" --index-strategy unsafe-best-match
+if [[ "${COMPUTE_MODE:-}" == "cpu" ]]; then
+  echo "[INFO] Installing backend/requirements-core.txt (CPU mode, no cu124 index)..."
+  $UV_PIP install -r "$PROJECT_ROOT/backend/requirements-core.txt"
+else
+  echo "[INFO] Installing backend/requirements.txt..."
+  $UV_PIP install --find-links="$WHEEL_DIR" -r "$PROJECT_ROOT/backend/requirements.txt" --index-strategy unsafe-best-match
+fi
 if [ $? -eq 0 ]; then
     echo "[SUCCESS] backend/requirements.txt installed"
 else
@@ -368,6 +407,7 @@ echo ""
 echo "========================================"
 echo "Installing TRELLIS Dependencies"
 echo "========================================"
+if [[ "${COMPUTE_MODE:-}" == "cuda" ]]; then
 ### we startup with the environment of trellis ###
 echo "[INFO] Changing directory to thirdparty/TRELLIS..."
 cd "$THIRDPARTY_DIR/TRELLIS.2"
@@ -825,6 +865,23 @@ echo ""
 echo "========================================"
 echo "Installing System Runtime Libraries"
 echo "========================================"
+else
+  # CPU mode: optionally install ARDY only with --cpu-extras (needs --with-thirdparty)
+  if [[ "${CPU_EXTRAS:-0}" == "1" && "${WITH_THIRDPARTY:-0}" == "1" ]]; then
+    echo "[INFO] CPU extras enabled: installing ARDY..."
+    if [ -d "$PROJECT_ROOT/backend/thirdparty/ardy" ]; then
+      echo "[INFO] Installing ardy requirements..."
+      if ! $UV_PIP install --find-links="$WHEEL_DIR" -r "$PROJECT_ROOT/backend/thirdparty/ardy/requirements.txt"; then
+        echo "[ERROR] Failed to install ardy requirements."
+        exit 1
+      fi
+    else
+      echo "[WARN] ARDY thirdparty directory not found, skipping CPU extras."
+    fi
+  elif [[ "${CPU_EXTRAS:-0}" == "1" ]]; then
+    echo "[WARN] --cpu-extras requires --with-thirdparty; skipping ARDY install."
+  fi
+fi
 
 if command -v apt-get >/dev/null 2>&1 || command -v apt >/dev/null 2>&1; then
     APT_BIN="$(command -v apt-get 2>/dev/null || command -v apt 2>/dev/null)"

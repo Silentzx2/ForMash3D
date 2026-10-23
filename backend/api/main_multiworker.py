@@ -48,7 +48,6 @@ from .routers import (
     mesh_uv_unwrapping,
     motion_generation,
     system,
-    users,
 )
 
 logger = logging.getLogger(__name__)
@@ -65,7 +64,6 @@ class PollingEndpointFilter(logging.Filter):
 
 # Global variables for shared resources
 redis_job_queue = None
-auth_service = None
 file_store = None
 
 
@@ -94,7 +92,7 @@ def configure_security(app: FastAPI, settings):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager"""
-    global redis_job_queue, auth_service, file_store
+    global redis_job_queue, file_store
 
     # Startup
     logger.info("Starting 3D Generative Models Backend (Multi-Worker Mode)...")
@@ -142,42 +140,12 @@ async def lifespan(app: FastAPI):
         app.state.file_store = file_store
         logger.info("✓ File store initialized")
 
-        # Initialize authentication service (conditionally based on settings)
-        if settings.user_auth_enabled:
-            from redis.asyncio import Redis
-            from core.auth import AuthService, UserStorage
-            
-            logger.info("Initializing authentication service...")
-            redis_client = Redis.from_url(
-                redis_url,
-                decode_responses=True,
-                max_connections=20,
-            )
-            await redis_client.ping()
-            user_storage = UserStorage(redis_client, key_prefix="3daigc")
-            auth_service = AuthService(user_storage)
-            
-            # Store auth service in app state for dependency injection
-            app.state.auth_service = auth_service
-            
-            logger.info("✓ Authentication service initialized")
-        else:
-            app.state.auth_service = None
-            logger.info("⚠ User authentication is DISABLED - running in simple mode")
-
         logger.info("=" * 60)
         logger.info("✓ FastAPI worker startup completed successfully")
         logger.info("=" * 60)
         logger.info("This worker submits jobs to Redis queue")
         logger.info("Scheduler service processes jobs independently")
         logger.info(f"Debug mode: {'ENABLED' if settings.debug else 'DISABLED'}")
-        if settings.user_auth_enabled:
-            logger.info("User authentication: ENABLED (Redis-based)")
-            logger.info("  - Users can only see their own jobs")
-            logger.info("  - Admins can see all jobs")
-        else:
-            logger.info("User authentication: DISABLED (Simple mode)")
-            logger.info("  - All clients can see all jobs")
         logger.info("=" * 60)
 
         yield
@@ -206,14 +174,6 @@ async def lifespan(app: FastAPI):
                 logger.warning(f"Error disconnecting file store: {e}")
             finally:
                 file_store = None
-        
-        if auth_service and hasattr(auth_service, 'storage') and hasattr(auth_service.storage, 'redis') and auth_service.storage.redis:
-            try:
-                await auth_service.storage.redis.aclose()
-            except Exception as e:
-                logger.warning(f"Error disconnecting auth service Redis: {e}")
-            finally:
-                auth_service.storage.redis = None
 
         logger.info("Application shutdown completed")
 
@@ -240,6 +200,12 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 async def add_process_time_header(request: Request, call_next):
     """Add processing time header to responses"""
     start_time = time.time()
+    if request.url.path.startswith("/api/"):
+        from api.dependencies import apply_rate_limit
+        limited_response = await apply_rate_limit(request, get_settings())
+        if limited_response is not None:
+            limited_response.headers["X-Process-Time"] = str(time.time() - start_time)
+            return limited_response
     response = await call_next(request)
     process_time = time.time() - start_time
     response.headers["X-Process-Time"] = str(process_time)
@@ -341,8 +307,6 @@ async def internal_error_handler(request: Request, exc: Exception):
 # Include routers
 app.include_router(system.router, prefix="/api/v1/system", tags=["System"])
 app.include_router(database.router, prefix="/api/v1/system/database", tags=["Database"])
-
-app.include_router(users.router, prefix="/api/v1/users", tags=["Users"])
 
 app.include_router(file_upload.router, prefix="/api/v1", tags=["File Upload"])
 

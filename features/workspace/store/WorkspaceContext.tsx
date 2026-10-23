@@ -26,7 +26,12 @@ import { prefetchGLB } from '../lib/glbCache';
 import { shadingModeToPreset, presetToShadingMode } from '@/lib/storeAdapter';
 import { diagnoseJobError } from '@/lib/jobDiagnostics';
 import { useRouter, usePathname } from 'next/navigation';
-import { buildGenerationParameters } from '../utils/buildGenerationParameters';
+import {
+  buildGenerationParameters,
+  resolveGenerationModelCapabilities,
+  resolveGenerationModelChoice,
+} from '../utils/buildGenerationParameters';
+import { DEFAULT_PHYSICS_SETTINGS } from '../utils/physicsSettings';
 import { taskPersistence } from '@/services/taskPersistence';
 
 interface ComparisonGroup {
@@ -126,7 +131,6 @@ interface WorkspaceContextType {
   runUVUnwrapGeneration: (customSettings?: { distortionThreshold?: number; packMethod?: string; outputFormat?: string; saveIndividualParts?: boolean; modelParameters?: Record<string, any> }) => Promise<void>;
   runSegmentation: (customSettings?: { numParts?: number; method?: string; hierarchical?: boolean; outputFormat?: string; modelParameters?: Record<string, any>; modelPreference?: string } | number) => Promise<void>;
   runMeshEditing: (customSettings?: { sourcePrompt?: string; targetPrompt?: string; resolution?: number; bbox?: any; outputFormat?: string; mode?: 'text' | 'image'; targetImageFileId?: string; targetImageBase64?: string; strength?: number }) => Promise<void>;
-  queueWorkflow: (workflow: Record<string, unknown>, type: ActiveTask['type'], title: string) => Promise<void>;
   processBatchQueue: () => Promise<void>;
   cancelBatchProcessing: () => Promise<void>;
   retryFailedBatchItems: () => Promise<void>;
@@ -141,14 +145,14 @@ interface WorkspaceContextType {
 const WorkspaceContext = createContext<WorkspaceContextType | undefined>(undefined);
 
 const TOOL_TO_ROUTE: Record<ToolType, string> = {
+  tools: '/workspace/tools',
   model: '/workspace/generate',
   remesh: '/workspace/remesh',
   texture: '/workspace/texture',
   uv: '/workspace/uv',
   segment: '/workspace/segment',
   edit: '/workspace/edit',
-  upscale: '/workspace/upscale',
-  pbr: '/workspace/pbr',
+  pbr: '/workspace/tools',
   environment: '/workspace/generate',
   animation: '/workspace/animation',
   rigging: '/workspace/rigging',
@@ -548,24 +552,12 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const [generationSettings, setGenerationSettings] = useState<GenerationSettings>({
       mode: 'image-to-3d',
       image: null,
-      aiModel: '', meshQuality: 'high', textureQuality: 'high',
-      quality: 'balanced',
-      meshStyle: 'auto',
-      objectType: 'general',
-      symmetry: 'none',
-      quadTopology: false, topologyMode: 'triangle', seed: 42891, guidanceScale: 7.5, removeBackground: false,
-      lowVram: false,
-      vramMode: 'auto',
+      aiModel: '',
+      textureQuality: 'high',
+      quadTopology: false, topologyMode: 'triangle', seed: 42891, removeBackground: false,
       autoOptimizeSettings: { targetPolycount: 0 },
-      sharpFeaturePreservation: true,
-      angleCreaseThreshold: 45,
       highResolutionNormalBaking: true,
-      textureFidelityPreset: 'high',
       generateTexture: true,
-      enableFlashVDM: false,
-      lowVramMode: 'auto',
-      maxNumView: 9,
-      resolution: 1024,
       generateCollision: true,
       generateLOD: false,
       lodPreset: "high",
@@ -581,20 +573,12 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       enableAutoRig: false,
       autoRigMode: 'full',
       enablePostprocess: true,
-      physics: {
-        bodyType: 'auto',
-        massMode: 'auto',
-        massKg: 1,
-        densityMode: 'auto',
-        densityKgM3: 500,
-        friction: 0.5,
-        restitution: 0.1,
-        linearDamping: 0.05,
-        angularDamping: 0.05,
-        gravityEnabled: true,
-        collisionQuality: 'balanced',
-        deformation: 'off',
-      },
+      candidateCount: 1,
+      partCountRange: '1',
+      rigType: 'none',
+      exportFormats: ['glb'],
+      slicerHandoff: false,
+      physics: { ...DEFAULT_PHYSICS_SETTINGS },
     });
  
    const [comparisonGroupId, setComparisonGroupId] = useState<string | null>(null);
@@ -612,6 +596,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     maps: { albedo: true, normal: true, roughness: true, metallic: true, ao: true, height: false },
     maxNumView: 9,
     generatePBR: true,
+    quadCompatibleUv: false,
   });
 
   const [sculptSettings, setSculptSettings] = useState<SculptSettings>({
@@ -652,7 +637,6 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   });
 
    const [modelDetails, setModelDetails] = useState<Record<string, any>>({});
-   const [modelParameterDefaults, setModelParameterDefaults] = useState<Record<string, Record<string, any>>>({});
 
   useEffect(() => {
     getApiClient().getAvailableModels().then(data => {
@@ -663,30 +647,6 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       console.warn('Failed to load model details:', err);
     });
   }, []);
-
-  // Fetch parameter defaults for the currently selected model (LOW-001)
-  useEffect(() => {
-    const modelId = generationSettings.aiModel;
-    if (!modelId) return;
-    if (modelParameterDefaults[modelId]) return; // already cached
-
-    let cancelled = false;
-    getApiClient().getModelParameters(modelId).then(data => {
-      if (cancelled) return;
-      const schema = data.schema?.parameters || {};
-      const defaults = Object.fromEntries(
-        Object.entries(schema).map(([name, parameter]) => [name, parameter.default])
-      );
-      setModelParameterDefaults(prev => ({
-        ...prev,
-        [modelId]: defaults,
-      }));
-    }).catch(err => {
-      console.warn(`Failed to load model parameters for ${modelId}:`, err);
-    });
-
-    return () => { cancelled = true; };
-  }, [generationSettings.aiModel, modelParameterDefaults]);
 
   const currentAsset = useMemo(
     () => selectedAssetId ? (assets.find(a => a.id === selectedAssetId) ?? null) : null,
@@ -701,16 +661,6 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     activeToolRef.current = activeTool;
     systemStatsStatusRef.current = systemStats.status;
   }, [selectedAssetId, currentAsset, mainNav, activeTool, systemStats.status]);
-
-  useEffect(() => {
-    try {
-      const savedLowVram = localStorage.getItem('lowVramMode');
-      if (savedLowVram !== null) {
-        const isLow = JSON.parse(savedLowVram);
-        setGenerationSettings(prev => ({ ...prev, lowVram: isLow }));
-      }
-    } catch { /* ignore */ }
-  }, []);
 
   // Hydrate job from URL /workspace/[tool]/[job_id] if present so failed or running status is never lost
   useEffect(() => {
@@ -1540,27 +1490,21 @@ function dataURLtoFile(dataURL: string, filename: string): File {
             effective.intent,
             effective.aiModel || undefined,
           );
-          resolvedModelId = resolved.model_id;
-          finalSettings = {
-            ...finalSettings,
-            aiModel: resolvedModelId,
-          };
+          resolvedModelId = resolveGenerationModelChoice(effective.aiModel, resolved.model_id);
+          if (!effective.aiModel) {
+            finalSettings = {
+              ...finalSettings,
+              aiModel: resolvedModelId,
+            };
+          }
         } catch {
           // fallback
         }
       }
 
       const selectedCapabilities = modelDetails[resolvedModelId]?.capabilities || {};
-      const isRawModel = selectedCapabilities.raw_mesh === true || resolvedModelId.endsWith('_image_to_raw_mesh');
-      const { endpoint, body } = buildGenerationParameters(
-        finalSettings,
-        {
-          raw_mesh: isRawModel,
-          paint_autochain: selectedCapabilities.paint_autochain === true,
-          supports_texture: selectedCapabilities.texture_generation ?? !isRawModel,
-        },
-        modelParameterDefaults[resolvedModelId] || {},
-      );
+      const modelCapabilities = resolveGenerationModelCapabilities(resolvedModelId, selectedCapabilities);
+      const { endpoint, body } = buildGenerationParameters(finalSettings, modelCapabilities);
 
       const res = await fetch(endpoint, {
         method: 'POST',
@@ -1605,7 +1549,6 @@ function dataURLtoFile(dataURL: string, filename: string): File {
   }, [
     generationSettings,
     modelDetails,
-    modelParameterDefaults,
     bindBackendJob,
     parseApiError,
     parseApiData,
@@ -1732,29 +1675,30 @@ function dataURLtoFile(dataURL: string, filename: string): File {
       let effectiveSettings = generationSettings;
       let effectiveModelId = modelId;
       if (generationSettings.intent) {
-        const resolved = await getApiClient().resolveSmartIntent(
-          generationSettings.intent,
-          generationSettings.aiModel || undefined,
-        );
-        effectiveModelId = resolved.model_id;
-        effectiveSettings = {
-          ...generationSettings,
-          aiModel: effectiveModelId,
-        };
+        // The intent resolve is advisory: the backend re-resolves the intent and
+        // owns model readiness and resource admission, so a resolve failure must
+        // not block generation. Keep the user's explicit model in that case.
+        try {
+          const resolved = await getApiClient().resolveSmartIntent(
+            generationSettings.intent,
+            generationSettings.aiModel || undefined,
+          );
+          effectiveModelId = resolveGenerationModelChoice(modelId, resolved.model_id);
+          if (!modelId) {
+            effectiveSettings = {
+              ...generationSettings,
+              aiModel: effectiveModelId,
+            };
+          }
+        } catch (intentError) {
+          console.warn('Failed to resolve smart intent, using the selected model directly:', intentError);
+        }
       }
 
       // Route from the selected model's declared capabilities instead of forcing raw-mesh output.
       const selectedCapabilities = modelDetails[effectiveModelId]?.capabilities || {};
-      const isRawModel = selectedCapabilities.raw_mesh === true || effectiveModelId.endsWith('_image_to_raw_mesh');
-      const { endpoint, body } = buildGenerationParameters(
-        effectiveSettings,
-        {
-          raw_mesh: isRawModel,
-          paint_autochain: selectedCapabilities.paint_autochain === true,
-          supports_texture: selectedCapabilities.texture_generation ?? !isRawModel,
-        },
-        modelParameterDefaults[effectiveModelId] || {},
-      );
+      const modelCapabilities = resolveGenerationModelCapabilities(effectiveModelId, selectedCapabilities);
+      const { endpoint, body } = buildGenerationParameters(effectiveSettings, modelCapabilities);
 
       const res = await fetch(endpoint, {
         method: 'POST',
@@ -1881,6 +1825,9 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
       const body: Record<string, unknown> = {
         texture_resolution: numericResolution,
         texture_resolution_preset: resolution,
+        ...(textureSettings.quadCompatibleUv
+          ? { topology_mode: 'quad', quad_topology: true }
+          : {}),
         output_format: 'glb',
         model_preference: modelPreference,
         enable_postprocess: false,
@@ -2110,19 +2057,6 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
     }
   }, [currentAsset, startTask]);
 
-   const queueWorkflow = useCallback(async (workflow: Record<string, unknown>, type: ActiveTask['type'], title: string) => {
-     startTask(type, title);
-     try {
-       // ponytail: the current 3DAIGC-API backend does not expose a generic
-       // workflow queue endpoint. Surface the limitation honestly instead of
-       // silently falling back to the obsolete /api/v1/generation route.
-       throw new Error('Workflow queueing is not supported by the current backend. Use the dedicated generation endpoints instead.');
-     } catch (e) {
-       setExecutionStep(e instanceof Error ? e.message : 'Workflow failed');
-       setActiveTask(prev => prev ? { ...prev, status: 'failed', currentStep: 'Submission failed' } : null);
-     }
-   }, [startTask]);
-
    // Batch processing function
     const processBatchQueue = useCallback(async () => {
       const appStore = useAppStore.getState();
@@ -2154,55 +2088,45 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
          // Create a temporary GenerationSettings object from the batch item
          const batchTexQuality = batchItem.textureQuality as string | undefined;
          const batchTexRes: '1K' | '2K' | '4K' | '8K' =
-           (batchItem as any).texture_resolution ??
+           batchItem.texture_resolution ??
+           batchItem.textureResolution ??
            (batchTexQuality === '8k' ? '8K' : batchTexQuality === 'ultra' ? '4K' : batchTexQuality === 'high' ? '2K' : '1K');
          const batchSettings: GenerationSettings = {
            mode: 'image-to-3d',
            image: null, // We'll use imageFileId instead
            imageFileId: batchItem.imageFileId,
            aiModel: batchItem.aiModel,
-           meshQuality: batchItem.meshQuality ?? 'high',
            textureQuality: (batchItem.textureQuality as any) ?? 'high',
            texture_resolution: batchTexRes,
            textureResolution: batchTexRes,
            quadTopology: batchItem.quadTopology ?? false,
            topologyMode: batchItem.topologyMode ?? 'triangle',
-           seed: batchItem.seed ?? 42891,
-           guidanceScale: batchItem.guidanceScale ?? 7.5,
-           removeBackground: batchItem.removeBackground ?? true,
-           lowVram: batchItem.lowVram ?? false,
-           vramMode: batchItem.vramMode ?? 'auto',
-           autoOptimizeSettings: batchItem.autoOptimizeSettings ?? { targetPolycount: 0 },
-           generateTexture: batchItem.generateTexture ?? true,
-           enableFlashVDM: batchItem.enableFlashVDM ?? false,
-           lowVramMode: batchItem.lowVramMode ?? 'auto',
-           maxNumView: batchItem.maxNumView ?? 9,
-           resolution: batchItem.resolution ?? 1024,
-           generateCollision: batchItem.generateCollision ?? true,
-           intent: batchItem.intent,
-           preprocessingArtifactId: batchItem.preprocessingArtifactId,
-           preprocessingPreviewUrl: null,
-           preprocessingMetadata: batchItem.preprocessingMetadata,
-           enhancementEnabled: false,
-           enablePrintabilityCheck: false,
-           enableAutoRepair: false,
-           enableAutoRig: false,
-           autoRigMode: 'full',
-           enablePostprocess: batchItem.enablePostprocess ?? true,
-           physics: {
-             bodyType: 'auto',
-             massMode: 'auto',
-             massKg: 1,
-             densityMode: 'auto',
-             densityKgM3: 500,
-             friction: 0.5,
-             restitution: 0.1,
-             linearDamping: 0.05,
-             angularDamping: 0.05,
-             gravityEnabled: true,
-             collisionQuality: 'balanced',
-             deformation: 'off',
-           },
+            seed: batchItem.seed ?? 42891,
+            removeBackground: batchItem.removeBackground ?? true,
+            autoOptimizeSettings: batchItem.autoOptimizeSettings ?? { targetPolycount: 0 },
+            generateTexture: batchItem.generateTexture ?? true,
+            highResolutionNormalBaking: batchItem.highResolutionNormalBaking ?? true,
+            generateLOD: batchItem.generateLOD ?? false,
+            lodPreset: batchItem.lodPreset ?? 'high',
+            lodCount: batchItem.lodCount ?? 4,
+            candidateCount: batchItem.candidateCount ?? 1,
+            partCountRange: batchItem.partCountRange ?? '1',
+            rigType: batchItem.rigType ?? 'none',
+            exportFormats: batchItem.exportFormats ?? ['glb'],
+            slicerHandoff: batchItem.slicerHandoff ?? false,
+            generateCollision: batchItem.generateCollision ?? true,
+            intent: batchItem.intent,
+            preprocessingArtifactId: batchItem.preprocessingArtifactId,
+            preprocessingReviewOverride: batchItem.preprocessingReviewOverride ?? false,
+            preprocessingPreviewUrl: null,
+            preprocessingMetadata: batchItem.preprocessingMetadata,
+            enhancementEnabled: batchItem.enhancementEnabled ?? false,
+            enablePrintabilityCheck: batchItem.enablePrintabilityCheck ?? false,
+            enableAutoRepair: batchItem.enableAutoRepair ?? false,
+            enableAutoRig: batchItem.enableAutoRig ?? false,
+            autoRigMode: batchItem.autoRigMode ?? 'full',
+            enablePostprocess: batchItem.enablePostprocess ?? true,
+            physics: batchItem.physics ?? { ...DEFAULT_PHYSICS_SETTINGS },
          };
 
           // Create a local task for tracking
@@ -2220,35 +2144,28 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
          let effectiveSettings = batchSettings;
          if (batchSettings.intent) {
            try {
-             const resolved = await getApiClient().resolveSmartIntent(
-               batchSettings.intent,
-               batchSettings.aiModel || undefined,
-             );
-             effectiveSettings = {
-               ...batchSettings,
-               aiModel: resolved.model_id,
-             };
+              const resolved = await getApiClient().resolveSmartIntent(
+                batchSettings.intent,
+                batchSettings.aiModel || undefined,
+              );
+              const effectiveModelId = resolveGenerationModelChoice(batchSettings.aiModel, resolved.model_id);
+              if (!batchSettings.aiModel) {
+                effectiveSettings = {
+                  ...batchSettings,
+                  aiModel: effectiveModelId,
+                };
+              }
            } catch (intentError) {
              console.warn('Failed to resolve smart intent, using model directly:', intentError);
              // Continue with original settings
            }
          }
 
-         // Build generation parameters using the existing function
-         const modelCapabilities = {
-           raw_mesh: false, // Default, would need to be looked up from model details
-           paint_autochain: false,
-           supports_texture: true
-         };
-         
-         // In a real implementation, we would look up the actual model capabilities from modelDetails
-         // For now, we'll use defaults and let buildGenerationParameters handle routing
-         
-         const { endpoint, body } = buildGenerationParameters(
-           effectiveSettings,
-           modelCapabilities,
-           modelParameterDefaults[effectiveSettings.aiModel || ''] || {}
-         );
+          // Batch and single submissions use the same manifest-declared model capabilities.
+          const effectiveModelId = effectiveSettings.aiModel || '';
+          const selectedCapabilities = modelDetails[effectiveModelId]?.capabilities || {};
+          const modelCapabilities = resolveGenerationModelCapabilities(effectiveModelId, selectedCapabilities);
+          const { endpoint, body } = buildGenerationParameters(effectiveSettings, modelCapabilities);
 
          // Submit the job to the backend
          const res = await fetch(endpoint, {
@@ -2297,7 +2214,7 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
 
       // Show completion toast
       toast.success('Batch processing started', { description: `${queuedItems.length} items submitted for processing.` });
-    }, [modelDetails, modelParameterDefaults, startTask, bindBackendJob, getApiClient, parseApiError, parseApiData, buildGenerationParameters, toast]);
+    }, [modelDetails, startTask, bindBackendJob, getApiClient, parseApiError, parseApiData, buildGenerationParameters, toast]);
 
    // Cancel batch processing function
    const cancelBatchProcessing = useCallback(async () => {
@@ -2402,21 +2319,23 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
            startedAt: undefined,
            completedAt: undefined,
            // Clear stored generation settings so they get current values when re-queued
-           meshQuality: undefined,
            textureQuality: undefined,
            quadTopology: undefined,
            topologyMode: undefined,
            seed: undefined,
-           guidanceScale: undefined,
            removeBackground: undefined,
-           lowVram: undefined,
-           vramMode: undefined,
            autoOptimizeSettings: undefined,
            generateTexture: undefined,
-           enableFlashVDM: undefined,
-           lowVramMode: undefined,
-           maxNumView: undefined,
-           resolution: undefined,
+           texture_resolution: undefined,
+           textureResolution: undefined,
+           highResolutionNormalBaking: undefined,
+           generateLOD: undefined,
+           lodPreset: undefined,
+           lodCount: undefined,
+           candidateCount: undefined,
+           physics: undefined,
+           preprocessingReviewOverride: undefined,
+           enhancementEnabled: undefined,
            generateCollision: undefined,
            enablePrintabilityCheck: undefined,
            enableAutoRepair: undefined,
@@ -2581,7 +2500,6 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
       runRemeshGeneration, runTextureGeneration,
       runUVUnwrapGeneration, runSegmentation,
       runMeshEditing,
-      queueWorkflow,
       processBatchQueue,
       cancelBatchProcessing,
       retryFailedBatchItems,
@@ -2589,7 +2507,6 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
       runRemeshGeneration, runTextureGeneration,
       runUVUnwrapGeneration, runSegmentation,
       runMeshEditing,
-      queueWorkflow,
       processBatchQueue,
       cancelBatchProcessing,
       retryFailedBatchItems]);

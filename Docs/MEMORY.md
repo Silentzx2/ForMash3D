@@ -1,3 +1,184 @@
+## 2026-10-23 — Production Readiness + Beta Phase
+
+- Auth removed entirely from backend + frontend (personal/self-hosted use, no paid SaaS)
+  - Deleted `get_auth_service`, `get_current_user`, `get_current_user_optional`, `require_admin`, `get_current_user_or_none` from `backend/api/dependencies.py`
+  - Removed auth checks from all routers: `system.py`, `mesh_generation.py`, `smart_generation.py`, `auto_rigging.py`, `motion_generation.py`, `mesh_retopology.py`, `mesh_uv_unwrapping.py`, `mesh_editing.py`, `mesh_segmentation.py`, `database.py`
+  - Deleted `backend/api/routers/users.py`
+  - Removed `auth_service` lifecycle from `backend/api/main_multiworker.py`
+  - Removed auth header forwarding from frontend API proxy (`app/api/v1/[...path]/route.ts`)
+  - Deleted `services/authPersistence.ts`
+- Feature improvements (Tripo/Meshy/Hyper3D parity — no segment/mesh-edit):
+  - `backend/config/smart_presets.yaml` — `slicer_handoff` added to all 8 intents
+  - `backend/core/smart_presets.py` — `slicer_handoff: False` default
+  - `backend/api/routers/mesh_generation.py` — `slicer_handoff`, `part_count_range`, `rig_type`, `export_formats` request fields wired to job inputs/metadata
+  - `frontend` — quad topology toggle, multi-variant selector (1-4), part segmentation presets (3-6/6-15/15+), rig type selector, export format selector in GeneratePanel
+  - `frontend` — quad-compatible smart UV toggle in TexturePanel
+- Task A — CPU-only auto mode (implemented, not pushed):
+  - `scripts/lib/compute_mode.sh` — shared resolver (auto|cpu|cuda)
+  - `scripts/setup.sh` — `--cpu`/`--gpu`/`--with-thirdparty`/`--update-thirdparty` flags, skips CUDA steps in CPU mode, `err()` defined, summary shows mode+skipped
+  - `scripts/start.sh` — CPU mode exports `CUDA_VISIBLE_DEVICES=""` and `FORMASH3D_COMPUTE=cpu`
+  - `manager.sh` — `setup` passes through flags
+  - `backend/scripts/install.sh` — CPU torch wheels, `ensure_release_wheels` cuda-only, model stacks in `install_model_stacks()`, ARDY optional with `--cpu-extras`
+  - `backend/requirements-core.txt` + `backend/requirements-models.txt` + `backend/requirements.txt` split
+  - `scripts/tests/script_test.sh` — resolver + static grep tests
+  - `.github/workflows/backend-runtime-ci.yml` — resolver test job
+- Task B — SEO/contributor growth (implemented, not pushed):
+  - README keyword H1, badges, TOC, contributor path, beta banner
+  - CONTRIBUTING.md CPU setup section
+  - CODE_OF_CONDUCT.md, SECURITY.md (root), PR template, labels.yml, config.yml
+  - docs/GOOD_FIRST_ISSUES.md (15 drafts), ARCHITECTURE_FOR_CONTRIBUTORS.md, GITHUB_SETUP.md, OUTREACH.md
+- Tests: `bun test` 54/54 pass, `pytest backend/tests/` 40 passed/6 skipped, `npx tsc --noEmit` zero errors
+- Git: dev branch pushed to origin/dev (not upstream)
+- Project marked BETA phase (README has Phase: BETA banner)
+- Zero `pre-alpha`/`prealpha` references remain in any `.md` file
+
+## 2026-10-22 — Parallel Audit Repair Execution
+
+- The user authorized implementation across all batches in parallel. This task-specific authorization supersedes the older one-batch pause, but does not authorize speculative inference-profile retuning or overwriting collaborator changes.
+- Sample SVG inputs now rasterize to PNG and use the standard upload path. Generation request contracts preserve an explicit seed of zero, honor explicit model choice, and keep production settings separate from adapter-owned inference.
+- Auto-Repair OFF preserves geometry; final topology and master-drift gate failures or missing required comparisons affect production status. Safe hole repair is bounded/configured, collision artifacts remain isolated, and fallback/error details are retained.
+- Artifact hashing uses the canonical helper. Quality thresholds remain configured in `backend/config/quality.yaml`.
+- The audit follow-up fixed automatic-vs-explicit model fallback and feature compatibility for planner-selected models. Physics defaults, bounds, comparison sampling, and collision quality profiles are configured in `backend/config/quality.yaml`; the UI uses a minimal defaults/bounds mirror enforced by `backend/tests/test_config_ssot.py`.
+- The full Python 3.10 backend suite passed 50 tests before the final config-mirror test was added. Both config SSOT tests pass in the current Python 3.14 environment; the full backend suite was not rerun there because the required Python 3.10 test dependencies are not currently installed.
+- Frontend validation: 52 Bun tests passed, TypeScript passed, production build passed, and targeted ESLint on changed files reported 0 errors and 58 warnings. Browser interaction, GPU/model inference, deployed API smoke tests, Blender bake/retopology, and UniRig execution are NOT RUN.
+- Commit `ce51e212` is on local `dev`. `git push origin dev` failed with `fatal: unable to get password from user`; `gh auth status` confirms no GitHub login; SSH retry failed with `Permission denied (publickey)`. The remote branch is unchanged, so no PR was created.
+- TRELLIS's requested/effective step-count discrepancy remains unresolved pending measured comparison and explicit approval; do not change the active profile or call cap without that approval.
+
+## 2026-10-21 — Route / Page / Function Mount Fix Follow-up
+
+- Tool-context help buttons now have real Markdown backing files for all six active article IDs; frontend CI guards against missing or empty articles.
+- `/workspace/tools` is a real visible workspace panel for backend-backed inspect, optimize, Auto UV, auto-retopology, repair, collision, LOD 1, FBX conversion, albedo flattening and high-to-low texture bake operations.
+- `/workspace/pbr` aliases the functional Mesh Tools panel. The unsupported `/workspace/upscale` route and obsolete disabled secondary panel were removed.
+- Explicit migration backlog remains: legacy image-editor, board, graph and full wiki pages rely on missing React Router/project-provider integrations and are not reported as mounted.
+
+---
+
+## 2026-10-21 — Route / Page / Function Mount Fix Follow-up
+
+- Added `/workspace/tools` as a visible, allow-listed workspace panel and routed `/workspace/pbr` into that functional tool suite.
+- Connected inspect, optimize, auto-UV, auto-retopology, repair, collision, LOD 1, FBX conversion, albedo flattening and high-to-low texture-map baking to existing backend helpers. Output meshes/maps download as separate GLB/FBX/PNG files without overwriting source assets.
+- Removed the unavailable `/workspace/upscale` route, duplicate Segment/Remesh/Edit panel branches and the obsolete `SecondaryPanels` component.
+- Deleted the unused smart-generation client wrapper while preserving active smart preset and intent resolution calls.
+- Added regression coverage asserting that the unsupported upscale route is rejected and the Mesh Tools route remains available.
+- Explicit migration backlog remains: legacy image-editor, board, graph and wiki pages depend on missing legacy providers/React Router and are not treated as mounted Next.js routes.
+
+---
+
+## 2026-10-21 — Route / Page / Function Mount Fix Follow-up
+
+- Added a real `/workspace/tools` panel to the Next.js route allow-list, workspace navigation, route map and panel renderer.
+- Connected inspect, optimize, auto-UV, auto-retopology and topology-repair actions to the existing FastAPI mesh-tools API; transformed outputs download as separate GLBs and do not overwrite the input asset.
+- Removed unreachable duplicate Segment/Remesh/Edit UI branches from `SecondaryPanel` and deleted the unused smart-generation client wrapper.
+- Regression coverage now asserts that `/workspace/tools` is an allowed tool route.
+- Explicit migration backlog remains: legacy image-editor, board, graph and wiki pages depend on missing legacy providers/React Router and are not treated as mounted Next.js routes.
+
+---
+
+## 2026-10-21 — Route / Page / Function Mount Audit
+
+- **Inventory:** 9 Next.js page files, 3 Next route handlers, 14 FastAPI router modules and 113 decorator-defined API handlers found by static source inventory.
+- **Workspace route safety:** catch-all tool routes now use an explicit allow-list and return Next.js 404 for unknown or malformed paths; known tool/view aliases and job detail routes remain valid.
+- **Router parity:** single-worker FastAPI entrypoint now imports and mounts `users.router`, matching the production multi-worker entrypoint.
+- **Dead/unsupported client paths:** removed uncalled `ApiClient.partCompletion()` (no backend route exists) and its request type; removed the uncalled generic `queueWorkflow` stub that always threw.
+- **Audit report:** `Docs/ROUTE-MOUNT-AUDIT.md` lists page routes, API router coverage, unreferenced wrappers and verification limits.
+- **Verification boundary:** source contract tests and frontend CI are required; deployed HTTP smoke tests and GPU inference are not implied by source-level checks.
+
+---
+
+## 2026-10-21 — Batch 5/6: Advanced Production Control Audit
+
+- **Enum contract:** generation request construction now normalizes persisted topology, LOD preset and auto-rig values to supported options. Topology mode and the legacy quad boolean are emitted consistently.
+- **Backend validation:** raw and textured image-to-mesh request schemas validate topology, LOD preset and auto-rig mode instead of allowing unknown strings to silently drift into the pipeline.
+- **Control truthfulness:** added `Docs/GENERATION-CONTROL-AUDIT.md` with the request field and backend consumer for each advanced control, explicit runtime-dependency caveats, and the two known non-active paths (deformation/jiggle and the generic workflow queue stub).
+- **Verification limit:** GPU model inference, mesh-quality A/B, Blender bake/retopology and UniRig runtime execution were not run as part of this pass; final CI state is recorded after push.
+
+---
+
+## 2026-10-21 — Batch 3/4 Follow-up: Request Contract & Generate UI
+
+- **Request path consistency:** Direct, queued and batch generation use the same model-choice preference and manifest-capability helpers. Intent resolution can supply a model only for auto-model requests; it cannot silently change a manual model selection.
+- **Batch fidelity:** Enqueued items retain production atlas resolution, target budget, candidate count, LOD options, normal baking, QA/repair, rigging and physics choices. Generic guidance, Low-VRAM and model-resolution values are removed from generation-only state and are not built into model requests.
+- **Preset truthfulness:** A changed atlas size deactivates a conflicting intent. Re-enabling post-processing after Native/Raw restores the existing 50K output-budget default rather than leaving the panel in a contradictory state.
+- **Legacy recipes:** Old inference override keys are filtered on import/save; supported adapter input parameters remain limited to the seed in the request builder.
+- **Verification boundary:** GPU inference and mesh-quality benchmarking were not run as part of this batch.
+
+---
+
+## 2026-10-21 — Adapter-Owned Inference Lock: Alias Filtering and Request Isolation
+
+- **Adapter audit**: confirmed the active max-detail profiles stay in the model adapters; the numerical profiles were not retuned in this pass. TRELLIS.2's documented/runtime model-side texture default was 4096 while its schema advertised an editable 8192, which could diverge when schema values were serialized. The adapter now locks `texture_size=4096` and marks that model-side value read-only; production atlas resolution remains separate.
+- **Overwrite-path hardening**: the scheduler now strips the alternate top-level `steps` control and `texture_size` from adapter-owned model requests, alongside the existing step/guidance/resolution/sampler keys.
+- **Request isolation**: Pixal3D and TRELLIS.2 deep-copy nested profile dictionaries per request, preventing downstream in-place mutation from carrying into later jobs.
+- **Verification**: regression contracts were updated. GPU inference was not run in this editing pass; CI status must be checked after the push.
+
+---
+
+## 2026-10-21 — Headless Preview Render: Denoiser Fallback
+
+- **Root cause of the missing preview**: `backend/postprocess/tools/thumbnail_worker.py` renders the 512px preview in an isolated Blender subprocess and set `scene.cycles.use_denoising = True` unconditionally. The Blender build in this deployment (the `bpy` wheel) has no OpenImageDenoise, so Cycles aborted the whole render with "Error: Build without OpenImageDenoiser"; the postprocess stage logged "Preview generation skipped" and the job completed at 98% without `previews/thumbnail.png` and `previews/preview.jpg`.
+- **Fix**: the worker now inspects the Blender build options and the Cycles `denoiser` enum before rendering. When no denoiser exists it renders without denoising at a higher sample count (64 instead of 24), and if the render still fails with a denoiser error it retries once without denoising. No other stage used Cycles denoising, so the change is confined to the preview worker; a missing preview stays a warning and never fails the job.
+- **Verification**: `backend/tests/test_thumbnail_denoise_fallback.py` (5 tests) covers the build-flag path, the denoiser-enum fallback and the unknown-build case. The Blender render itself is **NOT RUN** in this environment (no `bpy`), so the preview must be confirmed on the deployment host.
+- **Collision stage reporting**: the stage-8 box printed "Convex Hulls: N/A" and "Collision Triangles: N/A" even though the collision proxy existed. `postprocess/services/collision.py` publishes the statistics as `method`/`parts`/`faces`/`vertices` (and `postprocess/physics.py` reads the same names), but the pipeline still used the stale `hull_count`/`total_triangles` keys, and its convex-hull fallback published the same stale names. The pipeline now uses the canonical keys and reports the real body mass from `physics.json` (`body.mass_kg`) instead of a "Center of Mass" value that the metadata never contained. Covered by `backend/tests/test_collision_stats_contract.py`.
+
+---
+
+## 2026-10-21 — Runtime Telemetry Truthfulness: Planned Seeds vs Executed Seeds
+
+- **Root cause of the confusing runtime parameters**: the planner's `num_seeds` is a plan value. The planner reason line printed it as "3 seeds" (the `high` tier in `backend/config/planner_rules.yaml`), but the scheduler only executes the planned count when `apply.auto_seeds` is enabled, and that switch is off. A request with one candidate therefore ran exactly one inference while the log announced three, and the start box reported only the base seed with no candidate count — which reads as the seed and the parameters changing mid-run, for every model adapter.
+- **Single seed policy**: `backend/core/planner.py::resolve_seed_plan` resolves the request, the plan and the configuration into the effective candidate count and the exact seed schedule. The user's `candidate_count` wins, `apply.auto_seeds` decides whether the planned count is executed, and `quality.yaml` `seeds.max_candidates` caps the result. The scheduler now uses it, and the candidate cleanup rule keys off `auto_candidates` instead of the removed `mode_b` flag.
+- **The log now states what runs**: `[RUNTIME PARAMETERS]` carries `candidate_count`, `planned_candidate_count`, `auto_seeds_enabled` and `seed_schedule`; a `[SEED PLAN]` line prints the decision; the start box shows the candidate count and the seed schedule. The planner reason line reads "3 planned seeds, 1 executed because auto_seeds is disabled".
+- **Adapter-owned values are reported after inference**: the start box names the source ("adapter-owned (effective values reported after inference)") and a new `[EFFECTIVE PARAMETERS]` line logs the steps, guidance, seed and texture resolution from the adapter's own `generation_info` (TRELLIS: 50/50 steps, sparse CFG 7.5, SLAT CFG 3.0, texture resolution 2048). No locked adapter profile was changed.
+- **Config cleanup**: `backend/config/planner_rules.yaml` declared `apply:` twice; the trailing duplicate was silently dropped by the YAML loader and is now removed with identical effective values.
+- **Verification**: `backend/tests/test_seed_plan_resolution.py` (7 tests) covers the seed policy matrix and runs in the Backend Runtime Contract CI job; the contract subset passes 69/69 and `python3 -m compileall -q backend` is clean. GPU inference remains **NOT RUN** in this environment (no `torch`/`trimesh`/`skimage`, no GPU).
+
+---
+
+## 2026-10-21 — Intent Resolution Fix: Repository-Root Model Paths and Advisory Resolve
+
+- **Root cause of the `HTTP 400` on `POST /api/v1/smart-generation/resolve`**: `core/smart_presets.py::_model_ready` resolved manifest model paths against `Path.cwd() / model_path`, `backend / model_path`, and `<repo-root> / model_path.replace("backend/", "")`. The API and scheduler processes do not run from the repository root (Docker supervisord uses `/app/backend`; `backend/scripts/run_server.sh` changes into `backend/`), so `backend/pretrained/TRELLIS` never resolved to the real directory and every model looked uninstalled. `resolve_intent` raised `ValueError` and the endpoint answered 400, aborting generation whenever an output preset was selected. The UI readiness badge stayed green because `api/routers/system.py` resolved the same path against the repository root correctly — two implementations of one lookup disagreed.
+- **Fix (ADR-094)**: one shared resolver, `core/utils/artifact_utils.py::resolve_manifest_path`, resolves a manifest path against the repository root (`<repo>/<path>`, `<repo>/backend/<path>`) and the CWD. `core/smart_presets.py::_model_ready` and `api/routers/system.py::_resolve_manifest_path` both use it, so readiness and model listing can no longer disagree. `core/utils/__init__.py` exposes its helpers lazily, so a light submodule import no longer requires the optional `aiofiles`/`Pillow` upload dependencies.
+- **Intent resolution is advisory**: the Generate action now logs a resolve failure and continues with the user's explicit model, exactly like the queue and batch paths. The backend re-resolves the intent, and the scheduler owns model readiness and resource admission (ADR-045, ADR-046). The endpoint still answers 400 with an actionable message for an unknown intent, an unregistered or incompatible model, missing weights, or an explicit model that does not fit the current free VRAM.
+- **Verification**: `backend/tests/test_manifest_path_resolution.py` (6 tests) covers the CWD-independent resolution, the shared-resolver wiring, and the readiness contract; the Backend Runtime Contract CI subset passes (62 tests, was 56). `python3 -m compileall -q backend` clean. `bun test` 41/41, `npx tsc --noEmit` 0 errors, `npx eslint` 0 errors / 165 warnings (unchanged). GPU inference and the heavy backend modules remain **NOT RUN** in this environment (no `torch`/`trimesh`/`skimage`, no GPU); the 53 import failures are unchanged.
+
+---
+
+## 2026-10-21 — Production Option Contract: LOD Wiring, Tri-State Precedence & Preset SSOT
+
+- **LOD controls are now wired end-to-end**: the Advanced drawer exposed an LOD toggle, ratio preset, and level count that the request builder never serialized, so the choice was discarded before reaching the pipeline. `generate_lod`, `lod_preset`, and `lod_count` are now first-class request fields consumed by the LOD stage (`job_inputs["generateLOD"] / "lodPreset" / "lodCount"`). The level count is limited to 2–4 levels because the pipeline builds at most LOD0–LOD3.
+- **Tri-state production options (ADR-093)**: `texture_resolution`, `enable_printability_check`, `enable_auto_repair`, `enable_auto_rig`, `physics_enabled`, `generate_lod`, `lod_preset`, and `lod_count` are `Optional[...] = None` on both generation request schemas. Resolution is explicit request value → intent preset (`backend/config/smart_presets.yaml`) → backend default, so an explicit `false` always wins and an omitted field still lets the preset supply its default.
+- **`target_polycount` keeps its numeric presence contract**: a value `> 0` or the `-1` native sentinel wins; `0` means "no explicit budget" and falls back to the intent preset. Native/Raw is expressed with `intent=native` or `enable_postprocess=false`.
+- **Legacy channel closed**: `model_parameters.generateLOD` / `lodPreset` / `lodCount` are popped and discarded, so they can neither leak into the job inputs nor override the preset. `model_parameters` now carries only `seed`.
+- **Preset SSOT**: the panel derives the chip summary and recipe values from the backend catalogue instead of a second hardcoded copy. The offline fallback moved to `constants/smartPresetFallback.json` and is guarded by `backend/tests/test_smart_preset_parity.py`. The mobile preset's atlas size was corrected from 512 (rejected by the API) to 1024.
+- **Dead control removed**: the Live execution panel's "Enable Low VRAM Mode (<8GB) & Retry" button could not change anything in the request, so it was deleted.
+- **Verification**: `bun test` 41/41 pass, `npx tsc --noEmit` clean, `npx eslint` clean on the changed files, `backend/tests/test_preset_alignment_and_persistence.py` 24/24 pass, `backend/tests/test_smart_preset_parity.py` passes, and the CI backend contract subset passes (56 tests). The heavy backend modules and GPU inference are **NOT RUN** in this environment (missing `torch`/`trimesh`/`skimage`, no GPU); the 53 import failures are identical before and after this change.
+- **Commit**: `537d8b49` + `47251a8a` pushed to `origin/dev` and `upstream/dev`. The first upstream push failed with `remote: Permission to Silentzx2/ForMash3D.git denied` because the sandbox codespace credential helper (`/.codespaces/bin/gitcredential_github.sh`) is not authorized for that repository; `git -c credential.helper= push` with an explicit credential succeeds. No token was written to the repository, the git config, or disk.
+
+---
+
+## 2026-10-21 — Generate Studio Refactor: Locked Adapter Profiles, UI Simplification & Pipeline Contract
+
+- **Adapter-Owned Inference Authority**: Model-specific inference schedules, step counts, guidance scales, octree resolutions, samplers, and decoders are locked directly into adapter implementations (`_LOCKED_INFERENCE_PROFILE`). The multiprocess scheduler filters incoming overrides (`_ADAPTER_OWNED_INFERENCE_INPUTS`, `_POSTPROCESS_ONLY_INPUTS`) and delivers clean inputs (`image_path`, `seed`, `source_quality="max"`).
+- **Simplified Generate Studio UI (`GeneratePanel.tsx`)**:
+  - Removed disconnected/fake inference sliders (Fast/Balanced/High quality selectors, step counts, guidance sliders, octree resolution inputs, Low VRAM switches).
+  - Single primary flow: Reference image intake, Model selection with authentic readiness/VRAM indicators, Textured generation toggle, and a single **Target Polycount / Output Preset** card.
+  - Eliminated duplicate polycount sliders and duplicate post-processing master switches. Exactly one master switch controls downstream postprocessing.
+  - Non-destructive preset selection: Clicking an output preset populates recommended defaults and **never** auto-submits.
+- **Clean Advanced Production Drawer**: Contains genuine production finishing controls only:
+  - Multi-seed Candidate generation (1 to 4 variations with deterministic seed stepping and composite scoring).
+  - Triangle vs quad-dominant retopology (AutoRetopo quad conversion).
+  - Automatic UV unwrapping (PartUV / xatlas) with no user-facing toggle.
+  - High-to-low normal map baking from immutable master mesh (`master/source.glb`).
+  - Hierarchical LOD generation (toggle, ratio preset, 2–4 levels).
+  - Production QA toggles: printability check, auto-repair, auto-rig with mode selector.
+  - Physics preparation with collision hull generation and material quick presets.
+- **Unified Production Presets as Output Recipes**:
+  - Six recipes defined by `backend/config/smart_presets.yaml`: `mobile` (20K, 1K), `game_ready` (50K, 1K, collision), `cinematic` (200K, 2K), `animation` (30K, 1K, auto-rig), `3d_print` (full resolution, printability + auto-repair), `native` (raw extraction, no post-processing).
+  - Post-processing pipeline consumes production recipe flags and preserves SHA-256 byte-level immutability of `master/source.glb`.
+- **Contract Specification**: Authored `Docs/GENERATION-UI-CONTRACT.md` establishing explicit data flow and invariants across UI $\to$ Request Builder $\to$ API $\to$ Scheduler $\to$ Adapter $\to$ Postprocess Pipeline.
+- **Decision Records**: Documented ADR-056 and ADR-057 in `Docs/DECISIONS.md`.
+
+---
+
 ## 2026-10-20 — Generate Refactor Batch 1: Adapter-Owned Inference Profiles
 
 - Moved the effective `dev` scheduler profile into `_LOCKED_INFERENCE_PROFILE` for Hunyuan3D-Shape-v2.1 and TripoSG without changing numerical values.
@@ -264,21 +445,13 @@
   - `validate_image_aspect_and_occupancy`: reports foreground occupancy ratio, aspect ratio, bbox occupancy, border contact flags (top, bottom, left, right), and border coverage.
 - Tests in `backend/tests/test_image_prep.py` (13/13 passing) verify input immutability, crop margins, centering, aspect preservation, upscaling, and occupancy calculations.
 
-## 2026-10-20 — Generation Experiment Presets
+## 2026-10-20 — Generation Experiment Presets (HISTORICAL; superseded)
 
-- Workspace Settings → AI Inference has a Generation Experiment Lab drawer using the existing model-parameter schema API, workspace settings, generation queue, and parameter builder.
-- Presets persist locally under ai3d:generation:presets:v1. Save/update/delete, load while preserving the current image, export one or all profiles as JSON, and import validated profiles are supported.
-- Controls include seed, guidance, schema-driven model parameters, inference steps where declared, advanced nested JSON overrides, Run Current Settings, and revision/experiment ID metadata. Revision is not sent to inference.
-- Explicit modelParameterOverrides merge after model-specific profiles so final body.model_parameters preserves experiment values. Schema caching now stores each field's default rather than the schema descriptor object.
-- Regression coverage verifies outgoing request overrides and rejects malformed/unsafe JSON. Browser interaction, frontend static checks, and GPU inference remain unverified until actually run.
+Earlier notes describing editable inference experiments and client-side model-parameter overrides are obsolete. The current contract keeps inference profiles adapter-owned and does not expose those overrides in the Generate UI. Refer to `Docs/GENERATION-UI-CONTRACT.md` and `Docs/EXPERIMENTAL-MODEL-SETTINGS.md`; historical values here are intentionally not repeated.
 
-## 2026-10-20 — Experimental Max-Detail Model Settings
+## 2026-10-20 — Experimental Max-Detail Model Settings (HISTORICAL SNAPSHOT)
 
-- The frontend requests Hunyuan Shape-v2.1 / legacy Hunyuan at octree 1300 and 150 steps, although adapter schemas retain 512-octree / 100-step declarations. These are deliberate stress-test requests, not upstream-supported guarantees; OOM risk and output quality remain unbenchmarked.
-- Mini Turbo requests octree 768 and 20 steps while its adapter schema documents 380 and 5. This is an intentional experiment-profile divergence with VRAM/checkpoint risk.
-- TRELLIS sparse/SLAT settings request 100 steps despite schema defaults of 50. TRELLIS.2 uses 100 steps per sampler stage, a 524288-token budget, and raw-master decimation target -1.
-- The EXPERIMENTAL_MAX_DETAIL profile is an unbenchmarked stress-test snapshot. Comments and schema declarations must not be confused with effective frontend request values; no GPU inference or output-quality A/B benchmark is claimed.
-- Change-control stays locked: ask once and obtain explicit user confirmation before changing profile values in a later task.
+This section previously duplicated numerical profiles and implied that requested settings were effective runtime settings. It is superseded by the adapter-owned profile policy and the configured/effective discrepancy note in `Docs/EXPERIMENTAL-MODEL-SETTINGS.md`. No GPU inference or output-quality A/B result is claimed.
 
 ## 2026-10-19 — Animation Export and Status Recovery
 

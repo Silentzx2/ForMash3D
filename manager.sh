@@ -310,7 +310,7 @@ cmd_models() {
 
 run_setup(){
   banner
-  bash "$PROJECT_ROOT/scripts/setup.sh"
+  bash "$PROJECT_ROOT/scripts/setup.sh" "$@"
   pause
 }
 
@@ -663,7 +663,7 @@ if [[ $# -gt 0 ]]; then
     status) show_status ;;
     logs) show_logs ;;
     models) cmd_models ;;
-    setup) run_setup ;;
+    setup) run_setup "${@:2}" ;;
     *) echo "Usage: $0 {start|stop|restart|status|logs|models|docker|docker-build|docker-run|docker-stop|docker-logs|docker-shell|docker-export}"; exit 1 ;;
   esac
   exit 0

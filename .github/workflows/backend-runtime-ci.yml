@@ -14,7 +14,7 @@ jobs:
   python-contracts:
     name: Python compile and runtime contracts
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,7 +28,7 @@ jobs:
           cache: pip
 
       - name: Install lightweight test dependencies
-        run: python -m pip install --upgrade pytest packaging
+        run: python -m pip install --upgrade pytest packaging pyyaml fastapi aiofiles sqlalchemy numpy scipy trimesh pillow psutil scikit-image matplotlib
 
       - name: Compile backend Python sources
         run: python -m compileall -q backend
@@ -39,4 +39,15 @@ jobs:
       - name: Run backend compatibility contracts
         env:
           PYTHONPATH: backend
-        run: python -m pytest -q backend/tests/test_generation_dependency_contract.py backend/tests/test_runtime_source_contracts.py backend/tests/test_resource_planner.py backend/thirdparty/tests/test_runtime_path_utils.py
+        run: python -m pytest -q backend/tests backend/thirdparty/tests/test_runtime_path_utils.py
+
+  resolver-tests:
+    name: Compute mode resolver tests (CPU-only host)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run shell script resolver tests
+        run: bash scripts/tests/compute_mode_test.sh

@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from api.dependencies import get_current_settings, get_current_user_or_none, get_file_store, get_scheduler
+from api.dependencies import get_current_settings, get_file_store, get_scheduler
 from api.routers.file_upload import resolve_file_id_async
 from api.utils.asset_name import resolve_asset_name
 from core.file_store import FileStore
@@ -24,7 +24,7 @@ from core.scheduler.job_queue import JobRequest
 from core.config import get_quality_config, validate_quality_tier
 from core.preprocess.image_enhancement import load_preprocessed_artifact, preprocess_image
 from core.scheduler.multiprocess_scheduler import MultiprocessModelScheduler
-from core.smart_presets import resolve_intent
+from core.smart_presets import CANONICAL_INTENTS, NATIVE_PRESET, resolve_intent
 from core.utils.file_utils import save_base64_file, save_upload_file
 
 logger = logging.getLogger(__name__)
@@ -71,12 +71,33 @@ def _resolve_target_polycount_precedence(
     nested_target: Optional[int],
     preset_target: Optional[int],
 ) -> Optional[int]:
-    """Resolve a generation budget without allowing a nested default to mask explicit API input."""
-    if top_level_target is not None:
-        return top_level_target if top_level_target > 0 else 0
-    if nested_target is not None and nested_target > 0:
+    """Resolve a generation budget without allowing a default 0 to mask explicit API or preset input.
+    Explicit positive values (> 0) or explicit native sentinel (-1) take highest precedence.
+    """
+    if top_level_target is not None and (top_level_target > 0 or top_level_target == -1):
+        return top_level_target
+    if nested_target is not None and (nested_target > 0 or nested_target == -1):
         return nested_target
     return preset_target
+
+
+def _resolve_preset_option(
+    explicit: Any,
+    preset: Dict[str, Any],
+    preset_key: str,
+    default: Any,
+) -> Any:
+    """Resolve one production option: explicit request value > intent preset > backend default.
+
+    `explicit` is None when the caller omitted the field. That tri-state contract is
+    what lets an intent preset supply its own default without an unset UI value
+    silently overriding it, while an explicit request value always wins.
+    """
+    if explicit is not None:
+        return explicit
+    if preset_key in preset:
+        return preset[preset_key]
+    return default
 
 
 def _clean_paint_parameters(parameters: Optional[dict]) -> Dict[str, Any]:
@@ -125,6 +146,13 @@ def validate_model_preference(
         )
 
 
+def _is_explicit_model_preference(model_preference: Optional[str]) -> bool:
+    return bool(
+        model_preference
+        and str(model_preference).strip().lower() not in {"auto", "default", "none"}
+    )
+
+
 # Enhanced Request models with file upload support
 class TextMeshPaintingRequest(BaseModel):
     """Request for text-based mesh painting"""
@@ -159,10 +187,10 @@ class TextMeshPaintingRequest(BaseModel):
     mask_file_id: Optional[str] = Field(None, description="File ID for spot retexture UV mask image")
     postprocess_mode: Optional[str] = Field("manual_mesh_tool", description="Postprocessing mode: 'manual_mesh_tool' bypasses raw decimation/remeshing pipeline")
     enable_postprocess: bool = Field(False, description="Run production postprocessing pipeline after mesh generation. If False, postprocessing is bypassed.")
-    mesh_style: str = Field("auto", description="Mesh style: 'clean', 'detailed', or 'auto'")
-    requested_quality: Optional[str] = Field(None, description="Requested quality tier: 'fast', 'balanced', or 'high'")
-    object_type: str = Field("general", description="Object type: 'mechanical', 'organic', 'character', or 'general'")
-    symmetry: str = Field("none", description="Symmetry: 'bilateral', 'radial', or 'none'")
+    mesh_style: str = Field("auto", deprecated=True, description="Deprecated mesh style hint. Does not override locked adapter inference profiles.")
+    requested_quality: Optional[str] = Field(None, deprecated=True, description="Deprecated requested quality tier. Does not override locked adapter inference profiles.")
+    object_type: str = Field("general", deprecated=True, description="Deprecated object type. Does not override locked adapter inference profiles.")
+    symmetry: str = Field("none", deprecated=True, description="Deprecated symmetry setting. Does not override locked adapter inference profiles.")
 
     @field_validator("mesh_style")
     @classmethod
@@ -243,8 +271,8 @@ class ImageToRawMeshRequest(BaseModel):
     image_file_id: Optional[str] = Field(
         None, description="File ID from upload endpoint"
     )
-    texture_resolution: int = Field(
-        2048, description="Optional texture-atlas preset or size"
+    texture_resolution: Optional[int] = Field(
+        None, description="Optional texture-atlas preset or size; omitted values fall back to the intent preset"
     )
     bake_normal_maps: bool = Field(True, description="Bake high-to-low detail maps when supported")
     texture_enabled: Optional[bool] = None
@@ -255,30 +283,110 @@ class ImageToRawMeshRequest(BaseModel):
     model_preference: Optional[str] = Field(
         None, description="Explicit model override; intent presets choose a model when omitted"
     )
-    intent: Optional[str] = Field(None, description="Deterministic smart-generation intent")
+    auto_mode: Optional[bool] = Field(
+        None,
+        description="Enable smart model selection when model_preference is omitted; an explicit model_preference always takes precedence.",
+    )
+    input_prep: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Optional input image preparation overrides (e.g. remove_background, tight_crop, margin, resize, upscale_small).",
+    )
+    intent: Optional[str] = Field(None, description="Deterministic smart-generation intent: 'mobile', 'game_ready', 'cinematic', 'animation', '3d_print', 'native', 'game_ready_quad', 'multi_variant'")
     preprocessing_artifact_id: Optional[str] = Field(None, description="Approved preprocessing artifact ID")
     preprocessing_review_override: bool = Field(False, description="Explicitly allow a flagged preprocessing preview after review")
     enhancement_enabled: bool = Field(False, description="Use the approved preprocessing artifact")
-    enable_printability_check: bool = Field(False, description="Run final printability QA")
-    enable_auto_repair: bool = Field(False, description="Allow the shared repair stage to mutate the mesh for printability")
-    enable_auto_rig: bool = Field(False, description="Run UniRig after production processing")
+    enable_printability_check: Optional[bool] = Field(None, description="Run final printability QA; omitted values fall back to the intent preset")
+    enable_auto_repair: Optional[bool] = Field(None, description="Allow the shared repair stage to mutate the mesh for printability; omitted values fall back to the intent preset")
+    enable_auto_rig: Optional[bool] = Field(None, description="Run UniRig after production processing; omitted values fall back to the intent preset")
     auto_rig_mode: str = Field("full", description="UniRig mode: full, skeleton, or skin")
+    generate_lod: Optional[bool] = Field(None, description="Build the LOD hierarchy; omitted values fall back to the intent preset")
+    lod_preset: Optional[str] = Field(None, description="LOD ratio preset: 'mobile', 'low', 'medium', 'high' or 'cinematic'")
+    lod_count: Optional[int] = Field(None, ge=0, le=4, description="Number of LOD levels to generate (0-4); 0 disables the LOD chain")
     model_parameters: Optional[dict] = Field(
         None,
         description="Model-specific parameters (query /system/models/{model_id}/parameters for schema)"
     )
-    physics_enabled: bool = Field(False, description="Request physics-ready post-processing for this generated asset")
+    physics_enabled: Optional[bool] = Field(None, description="Request physics-ready post-processing; omitted values fall back to the intent preset")
     physics_config: Optional[dict] = Field(None, description="Provider-neutral physics controller values")
     topology_mode: Optional[str] = Field("triangle", description="Topology mode: 'triangle' or 'quad'")
     quad_topology: bool = Field(False, description="Request quad-dominant topology")
     enable_postprocess: bool = Field(True, description="Run production postprocessing pipeline after mesh generation. If False, postprocessing is bypassed.")
     candidate_count: int = Field(1, ge=1, le=int(get_quality_config()["seeds"]["max_candidates"]), description="Candidate variations to generate (1-4, default 1)")
+    part_count_range: Optional[str] = Field(None, description="Target part count range for segmentation: '1', '3-6', '6-15', '15+'")
+    rig_type: Optional[str] = Field(None, description="Rig type: 'none', 'generic', 'humanoid', 'quadruped', 'bird', 'insect', 'custom'")
+    export_formats: Optional[List[str]] = Field(None, description="Export formats: 'glb', 'fbx', 'obj', 'stl', '3mf'")
+    slicer_handoff: Optional[bool] = Field(None, description="Hand the print-ready mesh to a slicer (STL/3MF handoff); omitted values fall back to the intent preset")
     asset_name: Optional[str] = Field(None, description="Asset base stem name")
     image_name: Optional[str] = Field(None, description="Original image filename")
-    mesh_style: str = Field("auto", description="Mesh style: 'clean', 'detailed', or 'auto'")
-    requested_quality: Optional[str] = Field(None, description="Requested quality tier: 'fast', 'balanced', or 'high'")
-    object_type: str = Field("general", description="Object type: 'mechanical', 'organic', 'character', or 'general'")
-    symmetry: str = Field("none", description="Symmetry: 'bilateral', 'radial', or 'none'")
+    mesh_style: str = Field("auto", deprecated=True, description="Deprecated mesh style hint. Does not override locked adapter inference profiles.")
+    requested_quality: Optional[str] = Field(None, deprecated=True, description="Deprecated requested quality tier. Does not override locked adapter inference profiles.")
+    object_type: str = Field("general", deprecated=True, description="Deprecated object type. Does not override locked adapter inference profiles.")
+    symmetry: str = Field("none", deprecated=True, description="Deprecated symmetry setting. Does not override locked adapter inference profiles.")
+
+    @field_validator("auto_rig_mode")
+    @classmethod
+    def validate_auto_rig_mode(cls, value):
+        normalized = str(value or "full").strip().lower()
+        if normalized not in {"full", "skeleton", "skin"}:
+            raise ValueError("Invalid auto_rig_mode. Must be one of: 'full', 'skeleton', 'skin'")
+        return normalized
+
+    @field_validator("topology_mode")
+    @classmethod
+    def validate_topology_mode(cls, value):
+        if value is None:
+            return value
+        normalized = str(value).strip().lower()
+        if normalized not in {"triangle", "quad"}:
+            raise ValueError("Invalid topology_mode. Must be one of: 'triangle', 'quad'")
+        return normalized
+
+    @field_validator("rig_type")
+    @classmethod
+    def validate_rig_type(cls, value):
+        if value is None:
+            return None
+        normalized = str(value).strip().lower()
+        if normalized not in {"none", "generic", "humanoid", "quadruped", "bird", "insect", "custom"}:
+            raise ValueError("Invalid rig_type. Must be one of: 'none', 'generic', 'humanoid', 'quadruped', 'bird', 'insect', 'custom'")
+        return normalized
+
+    @field_validator("export_formats")
+    @classmethod
+    def validate_export_formats(cls, value):
+        if value is None:
+            return None
+        allowed = {"glb", "fbx", "obj", "stl", "3mf"}
+        for fmt in value:
+            if fmt not in allowed:
+                raise ValueError(f"Invalid export format '{fmt}'. Allowed: {sorted(allowed)}")
+        return value
+
+    @field_validator("lod_preset")
+    @classmethod
+    def validate_lod_preset(cls, value):
+        if value is None:
+            return value
+        normalized = str(value).strip().lower()
+        if normalized not in {"mobile", "low", "medium", "high", "cinematic"}:
+            raise ValueError(
+                "Invalid lod_preset. Must be one of: 'mobile', 'low', 'medium', 'high', 'cinematic'"
+            )
+        return normalized
+
+    @field_validator("intent")
+    @classmethod
+    def validate_intent(cls, v):
+        if v is None:
+            return None
+        v_str = str(v).strip().lower()
+        if not v_str:
+            return None
+        if v_str not in CANONICAL_INTENTS:
+            raise ValueError(
+                f"Invalid intent '{v}'. Canonical presets are: {', '.join(sorted(CANONICAL_INTENTS))}"
+            )
+        return v_str
 
     @field_validator("mesh_style")
     @classmethod
@@ -378,30 +486,89 @@ class ImageToTexturedMeshRequest(BaseModel):
     model_preference: Optional[str] = Field(
         None, description="Explicit model override; intent presets choose a model when omitted"
     )
-    intent: Optional[str] = Field(None, description="Deterministic smart-generation intent")
+    auto_mode: Optional[bool] = Field(
+        None,
+        description="Enable smart model selection when model_preference is omitted; an explicit model_preference always takes precedence.",
+    )
+    input_prep: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Optional input image preparation overrides (e.g. remove_background, tight_crop, margin, resize, upscale_small).",
+    )
+    intent: Optional[str] = Field(None, description="Deterministic smart-generation intent: 'mobile', 'game_ready', 'cinematic', 'animation', '3d_print', 'native'")
     preprocessing_artifact_id: Optional[str] = Field(None, description="Approved preprocessing artifact ID")
     preprocessing_review_override: bool = Field(False, description="Explicitly allow a flagged preprocessing preview after review")
     enhancement_enabled: bool = Field(False, description="Use the approved preprocessing artifact")
-    enable_printability_check: bool = Field(False, description="Run final printability QA")
-    enable_auto_repair: bool = Field(False, description="Allow the shared repair stage to mutate the mesh for printability")
-    enable_auto_rig: bool = Field(False, description="Run UniRig after production processing")
+    enable_printability_check: Optional[bool] = Field(None, description="Run final printability QA; omitted values fall back to the intent preset")
+    enable_auto_repair: Optional[bool] = Field(None, description="Allow the shared repair stage to mutate the mesh for printability; omitted values fall back to the intent preset")
+    enable_auto_rig: Optional[bool] = Field(None, description="Run UniRig after production processing; omitted values fall back to the intent preset")
     auto_rig_mode: str = Field("full", description="UniRig mode: full, skeleton, or skin")
+    generate_lod: Optional[bool] = Field(None, description="Build the LOD hierarchy; omitted values fall back to the intent preset")
+    lod_preset: Optional[str] = Field(None, description="LOD ratio preset: 'mobile', 'low', 'medium', 'high' or 'cinematic'")
+    lod_count: Optional[int] = Field(None, ge=0, le=4, description="Number of LOD levels to generate (0-4); 0 disables the LOD chain")
     model_parameters: Optional[dict] = Field(
         None,
         description="Model-specific parameters (query /system/models/{model_id}/parameters for schema)"
     )
-    physics_enabled: bool = Field(False, description="Request physics-ready post-processing for this generated asset")
+    physics_enabled: Optional[bool] = Field(None, description="Request physics-ready post-processing; omitted values fall back to the intent preset")
     physics_config: Optional[dict] = Field(None, description="Provider-neutral physics controller values")
     topology_mode: Optional[str] = Field("triangle", description="Topology mode: 'triangle' or 'quad'")
     quad_topology: bool = Field(False, description="Request quad-dominant topology")
     enable_postprocess: bool = Field(True, description="Run production postprocessing pipeline after mesh generation. If False, postprocessing is bypassed.")
     candidate_count: int = Field(1, ge=1, le=int(get_quality_config()["seeds"]["max_candidates"]), description="Candidate variations to generate (1-4, default 1)")
+    part_count_range: Optional[str] = Field(None, description="Target part count range for segmentation: '1', '3-6', '6-15', '15+'")
+    rig_type: Optional[str] = Field(None, description="Rig type: 'none', 'generic', 'humanoid', 'quadruped', 'bird', 'insect', 'custom'")
+    export_formats: Optional[List[str]] = Field(None, description="Export formats: 'glb', 'fbx', 'obj', 'stl', '3mf'")
+    slicer_handoff: Optional[bool] = Field(None, description="Hand the print-ready mesh to a slicer (STL/3MF handoff); omitted values fall back to the intent preset")
     asset_name: Optional[str] = Field(None, description="Asset base stem name")
     image_name: Optional[str] = Field(None, description="Original image filename")
-    mesh_style: str = Field("auto", description="Mesh style: 'clean', 'detailed', or 'auto'")
-    requested_quality: Optional[str] = Field(None, description="Requested quality tier: 'fast', 'balanced', or 'high'")
-    object_type: str = Field("general", description="Object type: 'mechanical', 'organic', 'character', or 'general'")
-    symmetry: str = Field("none", description="Symmetry: 'bilateral', 'radial', or 'none'")
+    mesh_style: str = Field("auto", deprecated=True, description="Deprecated mesh style hint. Does not override locked adapter inference profiles.")
+    requested_quality: Optional[str] = Field(None, deprecated=True, description="Deprecated requested quality tier. Does not override locked adapter inference profiles.")
+    object_type: str = Field("general", deprecated=True, description="Deprecated object type. Does not override locked adapter inference profiles.")
+    symmetry: str = Field("none", deprecated=True, description="Deprecated symmetry setting. Does not override locked adapter inference profiles.")
+
+    @field_validator("auto_rig_mode")
+    @classmethod
+    def validate_auto_rig_mode(cls, value):
+        normalized = str(value or "full").strip().lower()
+        if normalized not in {"full", "skeleton", "skin"}:
+            raise ValueError("Invalid auto_rig_mode. Must be one of: 'full', 'skeleton', 'skin'")
+        return normalized
+
+    @field_validator("topology_mode")
+    @classmethod
+    def validate_topology_mode(cls, value):
+        if value is None:
+            return value
+        normalized = str(value).strip().lower()
+        if normalized not in {"triangle", "quad"}:
+            raise ValueError("Invalid topology_mode. Must be one of: 'triangle', 'quad'")
+        return normalized
+
+    @field_validator("lod_preset")
+    @classmethod
+    def validate_lod_preset(cls, value):
+        if value is None:
+            return value
+        normalized = str(value).strip().lower()
+        if normalized not in {"mobile", "low", "medium", "high", "cinematic"}:
+            raise ValueError(
+                "Invalid lod_preset. Must be one of: 'mobile', 'low', 'medium', 'high', 'cinematic'"
+            )
+        return normalized
+
+    @field_validator("intent")
+    @classmethod
+    def validate_intent(cls, v):
+        if v is None:
+            return None
+        v_str = str(v).strip().lower()
+        if not v_str:
+            return None
+        if v_str not in CANONICAL_INTENTS:
+            raise ValueError(
+                f"Invalid intent '{v}'. Canonical presets are: {', '.join(sorted(CANONICAL_INTENTS))}"
+            )
+        return v_str
 
     @field_validator("mesh_style")
     @classmethod
@@ -510,10 +677,10 @@ class ImageMeshPaintingRequest(BaseModel):
     mask_file_id: Optional[str] = Field(None, description="File ID for spot retexture UV mask image")
     postprocess_mode: Optional[str] = Field("manual_mesh_tool", description="Postprocessing mode: 'manual_mesh_tool' bypasses raw decimation/remeshing pipeline")
     enable_postprocess: bool = Field(False, description="Run production postprocessing pipeline after mesh generation. If False, postprocessing is bypassed.")
-    mesh_style: str = Field("auto", description="Mesh style: 'clean', 'detailed', or 'auto'")
-    requested_quality: Optional[str] = Field(None, description="Requested quality tier: 'fast', 'balanced', or 'high'")
-    object_type: str = Field("general", description="Object type: 'mechanical', 'organic', 'character', or 'general'")
-    symmetry: str = Field("none", description="Symmetry: 'bilateral', 'radial', or 'none'")
+    mesh_style: str = Field("auto", deprecated=True, description="Deprecated mesh style hint. Does not override locked adapter inference profiles.")
+    requested_quality: Optional[str] = Field(None, deprecated=True, description="Deprecated requested quality tier. Does not override locked adapter inference profiles.")
+    object_type: str = Field("general", deprecated=True, description="Deprecated object type. Does not override locked adapter inference profiles.")
+    symmetry: str = Field("none", deprecated=True, description="Deprecated symmetry setting. Does not override locked adapter inference profiles.")
 
     @field_validator("mesh_style")
     @classmethod
@@ -733,7 +900,6 @@ async def process_file_input(
 async def text_mesh_painting(
     mesh_request: TextMeshPaintingRequest,
     scheduler: MultiprocessModelScheduler = Depends(get_scheduler),
-    current_user = Depends(get_current_user_or_none),
     file_store: Optional[FileStore] = Depends(get_file_store),
 ):
     """
@@ -749,7 +915,7 @@ async def text_mesh_painting(
     """
     tracked_temp_dirs: List[str] = []
     try:
-        user_id = getattr(current_user, "user_id", None)
+        user_id = None
         
         # Validate model preference
         validate_model_preference(
@@ -823,7 +989,12 @@ async def text_mesh_painting(
 
 
 async def _resolve_generation_plan(request, *, default_model: str, default_feature: str, scheduler):
-    model_id = request.model_preference or default_model
+    explicit_model = (
+        request.model_preference
+        if _is_explicit_model_preference(request.model_preference)
+        else None
+    )
+    model_id = explicit_model or default_model
     feature = default_feature
     preset = {}
     preset_metadata = {}
@@ -833,7 +1004,7 @@ async def _resolve_generation_plan(request, *, default_model: str, default_featu
         resolved = resolve_intent(
             request.intent,
             settings,
-            explicit_model=request.model_preference,
+            explicit_model=explicit_model,
         )
         model_id = resolved["model_id"]
         feature = resolved["feature"]
@@ -862,7 +1033,6 @@ async def _resolve_generation_plan(request, *, default_model: str, default_featu
 async def image_to_raw_mesh(
     mesh_request: ImageToRawMeshRequest,
     scheduler: MultiprocessModelScheduler = Depends(get_scheduler),
-    current_user = Depends(get_current_user_or_none),
     file_store: Optional[FileStore] = Depends(get_file_store),
 ):
     """
@@ -878,9 +1048,19 @@ async def image_to_raw_mesh(
     """
     tracked_temp_dirs: List[str] = []
     try:
-        user_id = getattr(current_user, "user_id", None)
+        user_id = None
 
-        # Early planner invocation to obtain would_have_chosen and input_prep flags
+        # A concrete user model choice takes precedence over automatic selection.
+        from core.planner import plan_generation, get_planner_apply_config
+        apply_cfg = get_planner_apply_config()
+        has_explicit_model = _is_explicit_model_preference(mesh_request.model_preference)
+        if has_explicit_model:
+            is_auto = False
+        elif mesh_request.auto_mode is not None:
+            is_auto = bool(mesh_request.auto_mode)
+        else:
+            is_auto = bool(apply_cfg.get("model_choice", False))
+
         req_qual = getattr(mesh_request, "requested_quality", None) or getattr(mesh_request, "quality_mode", None) or "balanced"
         planner_req = {
             "mesh_style": getattr(mesh_request, "mesh_style", "auto") or "auto",
@@ -889,9 +1069,11 @@ async def image_to_raw_mesh(
             "symmetry": getattr(mesh_request, "symmetry", "none") or "none",
             "target_polycount": getattr(mesh_request, "target_polycount", None),
             "input_type": "image",
+            "model_preference": mesh_request.model_preference,
+            "auto_mode": is_auto,
+            "input_prep": mesh_request.input_prep,
         }
         from core.runtime_probe import probe_runtime
-        from core.planner import plan_generation, get_planner_apply_config
         try:
             runtime_facts = probe_runtime()
         except Exception as e:
@@ -905,20 +1087,36 @@ async def image_to_raw_mesh(
         generation_plan = plan_generation(planner_req, runtime_facts)
         would_have_chosen = generation_plan.get("would_have_chosen") or generation_plan.get("adapter")
         logger.info("Planner would_have_chosen: %s, reasons: %s", would_have_chosen, generation_plan.get("reasons"))
-        apply_cfg = get_planner_apply_config()
 
-        if mesh_request.model_preference:
+        if not is_auto and has_explicit_model:
             model_id, feature, preset, preset_metadata = await _resolve_generation_plan(
                 mesh_request,
                 default_model="hunyuan3d_shape_v21_image_to_raw_mesh",
                 default_feature="image_to_raw_mesh",
                 scheduler=scheduler,
             )
-        elif apply_cfg.get("model_choice", False) and would_have_chosen:
-            model_id = would_have_chosen
-            feature = "image_to_raw_mesh"
-            preset = {}
-            preset_metadata = {"applied_preset": preset, "chosen_model": model_id, "planner_applied": True}
+        elif (
+            is_auto
+            and would_have_chosen
+            and scheduler.validate_model_preference(
+                would_have_chosen, "image_to_raw_mesh"
+            )
+        ):
+            if mesh_request.intent:
+                _, feature, preset, preset_metadata = await _resolve_generation_plan(
+                    mesh_request,
+                    default_model=would_have_chosen,
+                    default_feature="image_to_raw_mesh",
+                    scheduler=scheduler,
+                )
+                model_id = would_have_chosen
+                preset_metadata["chosen_model"] = model_id
+                preset_metadata["planner_applied"] = True
+            else:
+                model_id = would_have_chosen
+                feature = "image_to_raw_mesh"
+                preset = {}
+                preset_metadata = {"applied_preset": preset, "chosen_model": model_id, "planner_applied": True}
         else:
             model_id, feature, preset, preset_metadata = await _resolve_generation_plan(
                 mesh_request,
@@ -974,7 +1172,7 @@ async def image_to_raw_mesh(
                 profile=preprocessing_profile,
                 remove_background=bool(prep_flags.get("remove_background", True)),
                 auto_crop=bool(prep_flags.get("tight_crop", True)),
-                upscale=bool(prep_flags.get("upscale_if_small", True)),
+                upscale=bool(prep_flags.get("upscale_small", prep_flags.get("upscale_if_small", True))),
             )
             image_file_path = enhanced["approved_path"]
             preprocessing_metadata = enhanced["metadata"]
@@ -987,6 +1185,17 @@ async def image_to_raw_mesh(
         )
         # Filter out None values from model_parameters so pop() fallbacks work correctly
         params = {k: v for k, v in (mesh_request.model_parameters or {}).items() if v is not None}
+        for key in (
+            "candidate_count",
+            "enable_postprocess",
+            "topology_mode",
+            "quad_topology",
+            "part_count_range",
+            "rig_type",
+            "export_formats",
+            "slicer_handoff",
+        ):
+            params.pop(key, None)
         # Keep texture-stage controls out of model-specific inference parameters.
         params.pop("texture_resolution", None)
         params.pop("texture_resolution_preset", None)
@@ -1007,24 +1216,14 @@ async def image_to_raw_mesh(
             nested_target_polycount,
             preset.get("target_polycount"),
         )
-        # Intent presets take precedence over frontend default autoOptimizeSettings (e.g. generateLOD: true, lodPreset: 'high', lodCount: 4)
-        if "generate_lod" in preset:
-            lod_enabled = bool(preset["generate_lod"])
-            params.pop("generateLOD", None)
-        else:
-            lod_enabled = bool(params.pop("generateLOD", True))
-
-        if "lod_preset" in preset:
-            lod_preset = str(preset["lod_preset"])
-            params.pop("lodPreset", None)
-        else:
-            lod_preset = str(params.pop("lodPreset", "high"))
-
-        if "lod_count" in preset:
-            lod_count = int(preset["lod_count"])
-            params.pop("lodCount", None)
-        else:
-            lod_count = int(params.pop("lodCount", 4))
+        # Production options: explicit request value > intent preset > backend default.
+        # Legacy `model_parameters` production keys are ignored and never reach job inputs.
+        params.pop("generateLOD", None)
+        params.pop("lodPreset", None)
+        params.pop("lodCount", None)
+        lod_enabled = bool(_resolve_preset_option(mesh_request.generate_lod, preset, "generate_lod", True))
+        lod_preset = str(_resolve_preset_option(mesh_request.lod_preset, preset, "lod_preset", "high"))
+        lod_count = int(_resolve_preset_option(mesh_request.lod_count, preset, "lod_count", 4))
 
         if "auto_uv" in preset:
             auto_uv = bool(preset["auto_uv"])
@@ -1043,23 +1242,31 @@ async def image_to_raw_mesh(
             quality = str(params.pop("quality", mesh_request.quality_mode or "high"))
         params.pop("quality", None)
 
+        params.pop("enable_printability_check", None)
+        params.pop("enable_auto_repair", None)
+        params.pop("enable_auto_rig", None)
         enable_printability = bool(
-            params.pop(
-                "enable_printability_check",
-                mesh_request.enable_printability_check or preset.get("enable_printability_check", False),
-            )
+            _resolve_preset_option(mesh_request.enable_printability_check, preset, "enable_printability_check", False)
         )
         enable_auto_repair = bool(
-            params.pop(
-                "enable_auto_repair",
-                mesh_request.enable_auto_repair or preset.get("enable_auto_repair", False),
-            )
+            _resolve_preset_option(mesh_request.enable_auto_repair, preset, "enable_auto_repair", False)
         )
         enable_auto_rig = bool(
-            params.pop(
-                "enable_auto_rig",
-                mesh_request.enable_auto_rig or preset.get("enable_auto_rig", False),
-            )
+            _resolve_preset_option(mesh_request.enable_auto_rig, preset, "enable_auto_rig", False)
+        )
+        physics_enabled = bool(_resolve_preset_option(mesh_request.physics_enabled, preset, "collision", False))
+        texture_resolution = int(
+            _resolve_preset_option(mesh_request.texture_resolution, preset, "texture_resolution", 2048)
+        )
+        part_count_range = str(
+            _resolve_preset_option(mesh_request.part_count_range, preset, "part_count_range", "1")
+        )
+        rig_type = str(_resolve_preset_option(mesh_request.rig_type, preset, "rig_type", "none"))
+        export_formats = list(
+            _resolve_preset_option(mesh_request.export_formats, preset, "export_formats", ["glb"])
+        )
+        slicer_handoff = bool(
+            _resolve_preset_option(mesh_request.slicer_handoff, preset, "slicer_handoff", False)
         )
 
         if not mesh_request.enable_postprocess:
@@ -1069,6 +1276,16 @@ async def image_to_raw_mesh(
             enable_auto_repair = False
             enable_auto_rig = False
             target_polycount = 0
+        elif mesh_request.intent == "native" or target_polycount == -1:
+            if mesh_request.intent == "native":
+                if mesh_request.texture_enabled is None and mesh_request.generate_texture is None:
+                    texture_enabled = False
+                lod_enabled = False
+                enable_printability = False
+                enable_auto_repair = False
+                enable_auto_rig = False
+                auto_uv = False
+            target_polycount = -1
 
         job_request = JobRequest(
             feature=feature,
@@ -1078,7 +1295,7 @@ async def image_to_raw_mesh(
                 "image_path": image_file_path,
                 "reference_image_path": original_image_path,
                 "output_format": mesh_request.output_format,
-                "texture_resolution": mesh_request.texture_resolution,
+                "texture_resolution": texture_resolution,
                 "bake_normal_maps": mesh_request.bake_normal_maps,
                 "texture_enabled": texture_enabled,
                 "intent": mesh_request.intent,
@@ -1098,7 +1315,7 @@ async def image_to_raw_mesh(
                 "lodCount": lod_count,
                 "auto_uv": auto_uv,
                 "quality": quality,
-                "physics_enabled": mesh_request.physics_enabled or preset.get("collision", False),
+                "physics_enabled": physics_enabled,
                 "physics_config": mesh_request.physics_config,
                 "enable_printability_check": enable_printability,
                 "enable_auto_repair": enable_auto_repair,
@@ -1108,6 +1325,10 @@ async def image_to_raw_mesh(
                 "quad_topology": bool(mesh_request.quad_topology or mesh_request.topology_mode == "quad"),
                 "enable_postprocess": mesh_request.enable_postprocess,
                 "candidate_count": int(mesh_request.candidate_count or 1),
+                "part_count_range": part_count_range,
+                "rig_type": rig_type,
+                "export_formats": export_formats,
+                "slicer_handoff": slicer_handoff,
                 **params,
             },
             model_preference=model_id,
@@ -1116,14 +1337,18 @@ async def image_to_raw_mesh(
                 "asset_name": chosen_stem,
                 "image_name": chosen_stem,
                 "candidate_count": int(mesh_request.candidate_count or 1),
+                "part_count_range": part_count_range,
+                "rig_type": rig_type,
+                "export_formats": export_formats,
+                "slicer_handoff": slicer_handoff,
                 "postprocess_mode": "production_mesh" if mesh_request.enable_postprocess else "none",
                 "enable_postprocess": mesh_request.enable_postprocess,
                 "feature_type": feature,
-                "texture_resolution": mesh_request.texture_resolution,
+                "texture_resolution": texture_resolution,
                 "bake_normal_maps": mesh_request.bake_normal_maps,
                 "texture_enabled": texture_enabled,
                 "reference_image_path": original_image_path,
-                "physics_enabled": mesh_request.physics_enabled or preset.get("collision", False),
+                "physics_enabled": physics_enabled,
                 "physics_config": mesh_request.physics_config,
                 "intent": mesh_request.intent,
                 "mesh_style": getattr(mesh_request, "mesh_style", "auto") or "auto",
@@ -1131,7 +1356,9 @@ async def image_to_raw_mesh(
                 "object_type": getattr(mesh_request, "object_type", "general") or "general",
                 "symmetry": getattr(mesh_request, "symmetry", "none") or "none",
                 "plan": generation_plan,
+                "fallback_chain": generation_plan.get("fallback_chain", []),
                 **preset_metadata,
+                "model_selection": "explicit" if has_explicit_model else "automatic",
                 "preprocessing": preprocessing_metadata,
                 "preprocessing_review_override": mesh_request.preprocessing_review_override,
                 "enhancement_enabled": mesh_request.enhancement_enabled,
@@ -1164,6 +1391,11 @@ async def image_to_raw_mesh(
         for td in tracked_temp_dirs:
             shutil.rmtree(td, ignore_errors=True)
         raise
+    except ValueError as e:
+        for td in tracked_temp_dirs:
+            shutil.rmtree(td, ignore_errors=True)
+        logger.warning(f"Validation error in image_to_raw_mesh: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         for td in tracked_temp_dirs:
             shutil.rmtree(td, ignore_errors=True)
@@ -1174,7 +1406,6 @@ async def image_to_raw_mesh(
 async def image_to_textured_mesh(
     mesh_request: ImageToTexturedMeshRequest,
     scheduler: MultiprocessModelScheduler = Depends(get_scheduler),
-    current_user = Depends(get_current_user_or_none),
     file_store: Optional[FileStore] = Depends(get_file_store),
 ):
     """
@@ -1190,8 +1421,18 @@ async def image_to_textured_mesh(
     """
     tracked_temp_dirs: List[str] = []
     try:
-        user_id = getattr(current_user, "user_id", None)
-        # Early planner invocation to obtain would_have_chosen and input_prep flags
+        user_id = None
+        # A concrete user model choice takes precedence over automatic selection.
+        from core.planner import plan_generation, get_planner_apply_config
+        apply_cfg = get_planner_apply_config()
+        has_explicit_model = _is_explicit_model_preference(mesh_request.model_preference)
+        if has_explicit_model:
+            is_auto = False
+        elif mesh_request.auto_mode is not None:
+            is_auto = bool(mesh_request.auto_mode)
+        else:
+            is_auto = bool(apply_cfg.get("model_choice", False))
+
         req_qual = getattr(mesh_request, "requested_quality", None) or getattr(mesh_request, "quality_mode", None) or "balanced"
         planner_req = {
             "mesh_style": getattr(mesh_request, "mesh_style", "auto") or "auto",
@@ -1200,9 +1441,11 @@ async def image_to_textured_mesh(
             "symmetry": getattr(mesh_request, "symmetry", "none") or "none",
             "target_polycount": getattr(mesh_request, "target_polycount", None),
             "input_type": "image",
+            "model_preference": mesh_request.model_preference,
+            "auto_mode": is_auto,
+            "input_prep": mesh_request.input_prep,
         }
         from core.runtime_probe import probe_runtime
-        from core.planner import plan_generation, get_planner_apply_config
         try:
             runtime_facts = probe_runtime()
         except Exception as e:
@@ -1216,20 +1459,36 @@ async def image_to_textured_mesh(
         generation_plan = plan_generation(planner_req, runtime_facts)
         would_have_chosen = generation_plan.get("would_have_chosen") or generation_plan.get("adapter")
         logger.info("Planner would_have_chosen: %s, reasons: %s", would_have_chosen, generation_plan.get("reasons"))
-        apply_cfg = get_planner_apply_config()
 
-        if mesh_request.model_preference:
+        if not is_auto and has_explicit_model:
             model_id, feature, preset, preset_metadata = await _resolve_generation_plan(
                 mesh_request,
                 default_model="trellis_image_to_textured_mesh",
                 default_feature="image_to_textured_mesh",
                 scheduler=scheduler,
             )
-        elif apply_cfg.get("model_choice", False) and would_have_chosen:
-            model_id = would_have_chosen
-            feature = "image_to_textured_mesh"
-            preset = {}
-            preset_metadata = {"applied_preset": preset, "chosen_model": model_id, "planner_applied": True}
+        elif (
+            is_auto
+            and would_have_chosen
+            and scheduler.validate_model_preference(
+                would_have_chosen, "image_to_textured_mesh"
+            )
+        ):
+            if mesh_request.intent:
+                _, feature, preset, preset_metadata = await _resolve_generation_plan(
+                    mesh_request,
+                    default_model=would_have_chosen,
+                    default_feature="image_to_textured_mesh",
+                    scheduler=scheduler,
+                )
+                model_id = would_have_chosen
+                preset_metadata["chosen_model"] = model_id
+                preset_metadata["planner_applied"] = True
+            else:
+                model_id = would_have_chosen
+                feature = "image_to_textured_mesh"
+                preset = {}
+                preset_metadata = {"applied_preset": preset, "chosen_model": model_id, "planner_applied": True}
         else:
             model_id, feature, preset, preset_metadata = await _resolve_generation_plan(
                 mesh_request,
@@ -1285,7 +1544,7 @@ async def image_to_textured_mesh(
                 profile=preprocessing_profile,
                 remove_background=bool(prep_flags.get("remove_background", True)),
                 auto_crop=bool(prep_flags.get("tight_crop", True)),
-                upscale=bool(prep_flags.get("upscale_if_small", True)),
+                upscale=bool(prep_flags.get("upscale_small", prep_flags.get("upscale_if_small", True))),
             )
             image_file_path = enhanced["approved_path"]
             preprocessing_metadata = enhanced["metadata"]
@@ -1309,6 +1568,17 @@ async def image_to_textured_mesh(
         )
         # Filter out None values from model_parameters so pop() fallbacks work correctly
         params = {k: v for k, v in (mesh_request.model_parameters or {}).items() if v is not None}
+        for key in (
+            "candidate_count",
+            "enable_postprocess",
+            "topology_mode",
+            "quad_topology",
+            "part_count_range",
+            "rig_type",
+            "export_formats",
+            "slicer_handoff",
+        ):
+            params.pop(key, None)
         # Preserve nested resolution from old clients, but never pass it to geometry inference.
         source_texture_resolution = params.pop("texture_resolution", None)
         legacy_preset = params.pop("texture_resolution_preset", None)
@@ -1325,24 +1595,14 @@ async def image_to_textured_mesh(
             nested_target_polycount,
             preset.get("target_polycount"),
         )
-        # Intent presets take precedence over frontend default autoOptimizeSettings (e.g. generateLOD: true, lodPreset: 'high', lodCount: 4)
-        if "generate_lod" in preset:
-            lod_enabled = bool(preset["generate_lod"])
-            params.pop("generateLOD", None)
-        else:
-            lod_enabled = bool(params.pop("generateLOD", True))
-
-        if "lod_preset" in preset:
-            lod_preset = str(preset["lod_preset"])
-            params.pop("lodPreset", None)
-        else:
-            lod_preset = str(params.pop("lodPreset", "high"))
-
-        if "lod_count" in preset:
-            lod_count = int(preset["lod_count"])
-            params.pop("lodCount", None)
-        else:
-            lod_count = int(params.pop("lodCount", 4))
+        # Production options: explicit request value > intent preset > backend default.
+        # Legacy `model_parameters` production keys are ignored and never reach job inputs.
+        params.pop("generateLOD", None)
+        params.pop("lodPreset", None)
+        params.pop("lodCount", None)
+        lod_enabled = bool(_resolve_preset_option(mesh_request.generate_lod, preset, "generate_lod", True))
+        lod_preset = str(_resolve_preset_option(mesh_request.lod_preset, preset, "lod_preset", "high"))
+        lod_count = int(_resolve_preset_option(mesh_request.lod_count, preset, "lod_count", 4))
 
         if "auto_uv" in preset:
             auto_uv = bool(preset["auto_uv"])
@@ -1373,29 +1633,36 @@ async def image_to_textured_mesh(
             next((bool(value) for value in nested_texture_flags if value is not None), True),
         )
         texture_resolution = int(
-            mesh_request.texture_resolution
-            or source_texture_resolution
-            or preset.get("texture_resolution")
-            or 2048
-        )
-        enable_printability = bool(
-            params.pop(
-                "enable_printability_check",
-                mesh_request.enable_printability_check or preset.get("enable_printability_check", False),
+            _resolve_preset_option(
+                mesh_request.texture_resolution,
+                preset,
+                "texture_resolution",
+                source_texture_resolution or 2048,
             )
+        )
+        part_count_range = str(
+            _resolve_preset_option(mesh_request.part_count_range, preset, "part_count_range", "1")
+        )
+        rig_type = str(_resolve_preset_option(mesh_request.rig_type, preset, "rig_type", "none"))
+        export_formats = list(
+            _resolve_preset_option(mesh_request.export_formats, preset, "export_formats", ["glb"])
+        )
+        slicer_handoff = bool(
+            _resolve_preset_option(mesh_request.slicer_handoff, preset, "slicer_handoff", False)
+        )
+        params.pop("enable_printability_check", None)
+        params.pop("enable_auto_repair", None)
+        params.pop("enable_auto_rig", None)
+        enable_printability = bool(
+            _resolve_preset_option(mesh_request.enable_printability_check, preset, "enable_printability_check", False)
         )
         enable_auto_repair = bool(
-            params.pop(
-                "enable_auto_repair",
-                mesh_request.enable_auto_repair or preset.get("enable_auto_repair", False),
-            )
+            _resolve_preset_option(mesh_request.enable_auto_repair, preset, "enable_auto_repair", False)
         )
         enable_auto_rig = bool(
-            params.pop(
-                "enable_auto_rig",
-                mesh_request.enable_auto_rig or preset.get("enable_auto_rig", False),
-            )
+            _resolve_preset_option(mesh_request.enable_auto_rig, preset, "enable_auto_rig", False)
         )
+        physics_enabled = bool(_resolve_preset_option(mesh_request.physics_enabled, preset, "collision", False))
 
         if not mesh_request.enable_postprocess:
             texture_enabled = False
@@ -1404,6 +1671,16 @@ async def image_to_textured_mesh(
             enable_auto_repair = False
             enable_auto_rig = False
             target_polycount = 0
+        elif mesh_request.intent == "native" or target_polycount == -1:
+            if mesh_request.intent == "native":
+                if mesh_request.texture_enabled is None and mesh_request.generate_texture is None:
+                    texture_enabled = False
+                lod_enabled = False
+                enable_printability = False
+                enable_auto_repair = False
+                enable_auto_rig = False
+                auto_uv = False
+            target_polycount = -1
 
         job_request = JobRequest(
             feature=feature,
@@ -1435,7 +1712,7 @@ async def image_to_textured_mesh(
                 "lodCount": lod_count,
                 "auto_uv": auto_uv,
                 "quality": quality,
-                "physics_enabled": mesh_request.physics_enabled or preset.get("collision", False),
+                "physics_enabled": physics_enabled,
                 "physics_config": mesh_request.physics_config,
                 "enable_printability_check": enable_printability,
                 "enable_auto_repair": enable_auto_repair,
@@ -1445,6 +1722,10 @@ async def image_to_textured_mesh(
                 "quad_topology": bool(mesh_request.quad_topology or mesh_request.topology_mode == "quad"),
                 "enable_postprocess": mesh_request.enable_postprocess,
                 "candidate_count": int(mesh_request.candidate_count or 1),
+                "part_count_range": part_count_range,
+                "rig_type": rig_type,
+                "export_formats": export_formats,
+                "slicer_handoff": slicer_handoff,
                 **params,
             },
             model_preference=model_id,
@@ -1453,6 +1734,10 @@ async def image_to_textured_mesh(
                 "asset_name": chosen_stem,
                 "image_name": chosen_stem,
                 "candidate_count": int(mesh_request.candidate_count or 1),
+                "part_count_range": part_count_range,
+                "rig_type": rig_type,
+                "export_formats": export_formats,
+                "slicer_handoff": slicer_handoff,
                 "postprocess_mode": "production_mesh" if mesh_request.enable_postprocess else "none",
                 "enable_postprocess": mesh_request.enable_postprocess,
                 "feature_type": feature,
@@ -1460,7 +1745,7 @@ async def image_to_textured_mesh(
                 "bake_normal_maps": mesh_request.bake_normal_maps,
                 "texture_enabled": texture_enabled,
                 "reference_image_path": original_image_path,
-                "physics_enabled": mesh_request.physics_enabled or preset.get("collision", False),
+                "physics_enabled": physics_enabled,
                 "physics_config": mesh_request.physics_config,
                 "intent": mesh_request.intent,
                 "mesh_style": getattr(mesh_request, "mesh_style", "auto") or "auto",
@@ -1468,7 +1753,9 @@ async def image_to_textured_mesh(
                 "object_type": getattr(mesh_request, "object_type", "general") or "general",
                 "symmetry": getattr(mesh_request, "symmetry", "none") or "none",
                 "plan": generation_plan,
+                "fallback_chain": generation_plan.get("fallback_chain", []),
                 **preset_metadata,
+                "model_selection": "explicit" if has_explicit_model else "automatic",
                 "preprocessing": preprocessing_metadata,
                 "preprocessing_review_override": mesh_request.preprocessing_review_override,
                 "enhancement_enabled": mesh_request.enhancement_enabled,
@@ -1501,6 +1788,11 @@ async def image_to_textured_mesh(
         for td in tracked_temp_dirs:
             shutil.rmtree(td, ignore_errors=True)
         raise
+    except ValueError as e:
+        for td in tracked_temp_dirs:
+            shutil.rmtree(td, ignore_errors=True)
+        logger.warning(f"Validation error in image_to_textured_mesh: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         for td in tracked_temp_dirs:
             shutil.rmtree(td, ignore_errors=True)
@@ -1511,7 +1803,6 @@ async def image_to_textured_mesh(
 async def image_mesh_painting(
     mesh_request: ImageMeshPaintingRequest,
     scheduler: MultiprocessModelScheduler = Depends(get_scheduler),
-    current_user = Depends(get_current_user_or_none),
     file_store: Optional[FileStore] = Depends(get_file_store),
 ):
     """
@@ -1527,7 +1818,7 @@ async def image_mesh_painting(
     """
     tracked_temp_dirs: List[str] = []
     try:
-        user_id = getattr(current_user, "user_id", None)
+        user_id = None
         
         if mesh_request.mask_path or mesh_request.mask_base64 or mesh_request.mask_file_id:
             raise HTTPException(
@@ -1589,6 +1880,8 @@ async def image_mesh_painting(
                 "mask_path": mask_file_path,
                 "output_format": mesh_request.output_format,
                 "texture_resolution": mesh_request.texture_resolution,
+                "topology_mode": "quad" if mesh_request.quad_topology or mesh_request.topology_mode == "quad" else mesh_request.topology_mode,
+                "quad_topology": bool(mesh_request.quad_topology or mesh_request.topology_mode == "quad"),
                 "resolution": (
                     (mesh_request.model_parameters or {}).get("resolution")
                     or (
@@ -1641,7 +1934,6 @@ async def image_mesh_painting(
 async def generate_mesh_from_image(
     mesh_request: ImageToRawMeshRequest,
     scheduler: MultiprocessModelScheduler = Depends(get_scheduler),
-    current_user = Depends(get_current_user_or_none),
     file_store: Optional[FileStore] = Depends(get_file_store),
 ):
     """
@@ -1652,7 +1944,6 @@ async def generate_mesh_from_image(
     return await image_to_raw_mesh(
         mesh_request=mesh_request,
         scheduler=scheduler,
-        current_user=current_user,
         file_store=file_store,
     )
 
@@ -1663,7 +1954,6 @@ async def generate_mesh_from_image(
 async def generate_mesh_from_image_batch(
     batch_request: BatchImageToMeshRequest,
     scheduler: MultiprocessModelScheduler = Depends(get_scheduler),
-    current_user = Depends(get_current_user_or_none),
     file_store: Optional[FileStore] = Depends(get_file_store),
 ):
     """
@@ -1675,8 +1965,7 @@ async def generate_mesh_from_image_batch(
         res = await image_to_raw_mesh(
             mesh_request=item,
             scheduler=scheduler,
-            current_user=current_user,
-            file_store=file_store,
+                file_store=file_store,
         )
         job_ids.append(res.job_id)
     return BatchMeshGenerationResponse(
@@ -1717,7 +2006,6 @@ async def cancel_mesh_generation(
     job_id: str,
     request: Request,
     scheduler: MultiprocessModelScheduler = Depends(get_scheduler),
-    current_user = Depends(get_current_user_or_none),
 ):
     """Cancel a queued mesh-generation job without deleting its history record."""
     try:
@@ -1725,11 +2013,6 @@ async def cancel_mesh_generation(
         if job_status is None:
             raise HTTPException(status_code=404, detail="Job not found")
 
-        if current_user:
-            from core.auth.models import UserRole
-            job_user_id = job_status.get("user_id")
-            if current_user.role != UserRole.ADMIN and job_user_id != current_user.user_id:
-                raise HTTPException(status_code=403, detail="Access denied to this job")
 
         current_status = job_status.get("status")
         if current_status not in {"queued", "processing", "running"}:

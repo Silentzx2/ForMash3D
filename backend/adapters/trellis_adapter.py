@@ -24,6 +24,22 @@ from core.utils.mesh_utils import MeshProcessor
 
 logger = logging.getLogger(__name__)
 
+# LOCKED / ACTIVE: values used by inference (raw + painting feature paths).
+# BASELINE: previous effective runtime values (source_quality="max", num_inference_steps=100, ss_sampling_steps=100, slat_sampling_steps=100, guidance_scale=7.5, simplify=0.0, low_vram=false)
+# EXPERIMENTAL: selected experimental values, snapshot (2026-10-20) for stress-test; use only for benchmarking.
+# SUPPORTED BY: TRELLIS adapter, EXPERIMENTAL-MODEL-SETTINGS.md section "TRELLIS (image/text geometry and supported painting paths)".
+# ROLLBACK: previous effective values; scheduler strips frontend overrides before adapter applies lock.
+_LOCKED_INFERENCE_PROFILE = {
+    "source_quality": "max",
+    "num_inference_steps": 100,
+    "ss_sampling_steps": 100,
+    "slat_sampling_steps": 100,
+    "guidance_scale": 7.5,
+    "slat_cfg_strength": 3.0,
+    "simplify": 0.0,
+    "low_vram": False,
+}
+
 # EXPERIMENTAL_MAX_DETAIL snapshot (2026-10-20): TRELLIS stage steps are capped at 50; raw simplification remains 0.0.
 # The adapter currently exposes one shared guidance_scale although upstream separates sparse (7.5) and SLAT (3.0).
 # Ask the user once and obtain explicit confirmation before future changes to these locked presets.
@@ -165,6 +181,7 @@ class TrellisTextConditionedMeshAdapterCommon(TextToMeshModel):
         Returns:
             Dictionary with generated mesh information
         """
+        inputs = {**inputs, **_LOCKED_INFERENCE_PROFILE}
         try:
             if not torch.cuda.is_available():
                 raise RuntimeError("TRELLIS requires CUDA; CPU inference is not supported.")
@@ -215,7 +232,7 @@ class TrellisTextConditionedMeshAdapterCommon(TextToMeshModel):
                 outputs = self.pipeline.run_variant(
                     input_mesh,
                     prompt=text_prompt,
-                    slat_sampler_params={"steps": slat_steps, "cfg_strength": 3.0},
+                    slat_sampler_params={"steps": slat_steps, "cfg_strength": _LOCKED_INFERENCE_PROFILE["slat_cfg_strength"]},
                     formats=["gaussian"],
                 )
                 # get ready for later texturing
@@ -240,7 +257,7 @@ class TrellisTextConditionedMeshAdapterCommon(TextToMeshModel):
                     text_prompt,
                     texture_prompt=texture_text_prompt,
                     sparse_structure_sampler_params={"steps": ss_steps, "cfg_strength": guidance},
-                    slat_sampler_params={"steps": slat_steps, "cfg_strength": 3.0},
+                    slat_sampler_params={"steps": slat_steps, "cfg_strength": _LOCKED_INFERENCE_PROFILE["slat_cfg_strength"]},
                     seed=seed,
                     formats=["gaussian", "mesh"],
                 )
@@ -313,7 +330,7 @@ class TrellisTextConditionedMeshAdapterCommon(TextToMeshModel):
                         "texture_bake_mode": texture_bake_mode,
                         "simplify_ratio": simplify,
                         "thumbnail_generated": thumbnail_generated,
-                        "slat_cfg_strength": 3.0,
+                        "slat_cfg_strength": _LOCKED_INFERENCE_PROFILE["slat_cfg_strength"],
                         "texture_size": texture_resolution,
                         "bake_mode": texture_bake_mode,
                     },
@@ -377,17 +394,19 @@ class TrellisTextConditionedMeshAdapterCommon(TextToMeshModel):
                 "ss_sampling_steps": {
                     "type": "integer",
                     "description": "Experimental max-detail sampling steps; upstream supports up to 50. Ask before changing this locked preset.",
-                    "default": 100,
+                    "default": _LOCKED_INFERENCE_PROFILE["ss_sampling_steps"],
                     "minimum": 1,
                     "maximum": 200,
+                    "readOnly": True,
                     "required": False
                 },
                 "slat_sampling_steps": {
                     "type": "integer",
                     "description": "Experimental max-detail sampling steps; upstream supports up to 50. Ask before changing this locked preset.",
-                    "default": 100,
+                    "default": _LOCKED_INFERENCE_PROFILE["slat_sampling_steps"],
                     "minimum": 1,
                     "maximum": 200,
+                    "readOnly": True,
                     "required": False
                 },
                 "texture_resolution": {
@@ -560,6 +579,7 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
         Returns:
             Dictionary with generated mesh information
         """
+        inputs = {**inputs, **_LOCKED_INFERENCE_PROFILE}
         try:
             if not torch.cuda.is_available():
                 raise RuntimeError("TRELLIS requires CUDA; CPU inference is not supported.")
@@ -611,7 +631,7 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
                         input_mesh,
                         Image.open(image_path),
                         seed=seed,
-                        slat_sampler_params={"steps": slat_steps, "cfg_strength": 3.0},
+                        slat_sampler_params={"steps": slat_steps, "cfg_strength": _LOCKED_INFERENCE_PROFILE["slat_cfg_strength"]},
                         formats=["gaussian"],
                     )
                     candidate_mesh = input_mesh
@@ -620,7 +640,7 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
                         Image.open(image_path),
                         preprocess_image=True,
                         sparse_structure_sampler_params={"steps": ss_steps, "cfg_strength": guidance},
-                        slat_sampler_params={"steps": slat_steps, "cfg_strength": 3.0},
+                        slat_sampler_params={"steps": slat_steps, "cfg_strength": _LOCKED_INFERENCE_PROFILE["slat_cfg_strength"]},
                         seed=seed,
                         formats=["gaussian", "mesh"],
                     )
@@ -650,7 +670,7 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
                     Image.open(image_path),
                     preprocess_image=True,
                     sparse_structure_sampler_params={"steps": ss_steps, "cfg_strength": guidance},
-                    slat_sampler_params={"steps": slat_steps, "cfg_strength": 3.0},
+                    slat_sampler_params={"steps": slat_steps, "cfg_strength": _LOCKED_INFERENCE_PROFILE["slat_cfg_strength"]},
                     seed=seed,
                     formats=["mesh"],
                 )
@@ -729,7 +749,7 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
                         "texture_bake_mode": tex_bake_mode if has_texture else None,
                         "simplify_ratio": simplify,
                         "thumbnail_generated": thumbnail_generated,
-                        "slat_cfg_strength": 3.0,
+                        "slat_cfg_strength": _LOCKED_INFERENCE_PROFILE["slat_cfg_strength"],
                         "texture_size": texture_resolution if has_texture else None,
                         "bake_mode": tex_bake_mode if has_texture else None,
                     },
@@ -802,17 +822,19 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
                 "ss_sampling_steps": {
                     "type": "integer",
                     "description": "Sparse structure sampling steps; use maximum-fidelity source sampling.",
-                    "default": 100,
+                    "default": _LOCKED_INFERENCE_PROFILE["ss_sampling_steps"],
                     "minimum": 1,
                     "maximum": 200,
+                    "readOnly": True,
                     "required": False
                 },
                 "slat_sampling_steps": {
                     "type": "integer",
                     "description": "Structured latent sampling steps; use maximum-fidelity source sampling.",
-                    "default": 100,
+                    "default": _LOCKED_INFERENCE_PROFILE["slat_sampling_steps"],
                     "minimum": 1,
                     "maximum": 200,
+                    "readOnly": True,
                     "required": False
                 },
                 "texture_resolution": {
@@ -828,6 +850,7 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
                     "default": 0.0,
                     "minimum": 0.0,
                     "maximum": 1.0,
+                    "readOnly": True,
                     "required": False
                 },
                 "texture_bake_mode": {
@@ -951,4 +974,3 @@ TRELLISTextConditionedMeshAdapterCommon = TrellisTextConditionedMeshAdapterCommo
 TRELLISImageToMeshAdapterCommon = TrellisImageToMeshAdapterCommon
 TRELLISImageMeshPaintingAdapter = TrellisImageMeshPaintingAdapter
 TRELLISTextMeshPaintingAdapter = TrellisTextMeshPaintingAdapter
-

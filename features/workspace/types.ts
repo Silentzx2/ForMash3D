@@ -4,13 +4,13 @@ import { validate3DFile } from './lib/fileValidation';
 import { requireUploadFileId } from './lib/uploadResponse';
 
 export type ToolType =
+  | 'tools'
   | 'model'
   | 'segment'
   | 'remesh'
   | 'texture'
   | 'edit'
   | 'uv'
-  | 'upscale'
   | 'pbr'
   | 'environment'
   | 'animation'
@@ -443,6 +443,7 @@ export interface TextureSettings {
   lowVram?: boolean;
   maxNumView?: number;
   generatePBR?: boolean;
+  quadCompatibleUv?: boolean;
 }
 
 export interface AutoOptimizeSettings {
@@ -469,22 +470,13 @@ export interface GenerationSettings {
   image: string | null;
   imageFileId?: string | null;
   aiModel: string;
-  meshQuality: 'low' | 'medium' | 'high' | 'ultra';
   textureQuality: 'low' | 'medium' | 'high' | '8k';
   quadTopology: boolean;
-  topologyMode?: 'triangle' | 'quad' | 'adaptive';
+  topologyMode?: 'triangle' | 'quad';
   seed: number;
-  guidanceScale: number;
-  /** User/model preset parameters merged after the existing model profile. */
-  modelParameterOverrides?: Record<string, unknown>;
   removeBackground: boolean;
-  lowVram?: boolean;
-  vramMode?: 'auto' | 'normal' | 'low';
   autoOptimizeSettings: AutoOptimizeSettings;
-  sharpFeaturePreservation?: boolean;
-  angleCreaseThreshold?: number;
   highResolutionNormalBaking?: boolean;
-  textureFidelityPreset?: 'ultra' | 'high' | 'balanced' | 'compressed';
   generateTexture?: boolean;
   texture_enabled?: boolean;
   textureEnabled?: boolean;
@@ -493,19 +485,14 @@ export interface GenerationSettings {
   gameReady?: boolean;
   targetPlatform?: 'generic' | 'mobile' | 'low' | 'medium' | 'high' | 'cinematic';
   generateLOD?: boolean;
-  lodPreset?: 'mobile' | 'low' | 'medium' | 'high' | 'custom';
+  lodPreset?: 'mobile' | 'low' | 'medium' | 'high' | 'cinematic';
   lodCount?: number;
   generateCollision?: boolean;
   physics?: PhysicsSettings;
   generatePBR?: boolean;
   prompt?: string;
   imageName?: string;
-
   negativePrompt?: string;
-  enableFlashVDM?: boolean;
-  lowVramMode?: 'auto' | 'normal' | 'low';
-  maxNumView?: number;
-  resolution?: number;
   paintResolution?: 512 | 768;
   intent?: string;
   preprocessingArtifactId?: string | null;
@@ -516,16 +503,13 @@ export interface GenerationSettings {
   enablePrintabilityCheck?: boolean;
   enableAutoRepair?: boolean;
   enableAutoRig?: boolean;
-  autoRigMode?: string;
+  autoRigMode?: 'full' | 'skeleton' | 'skin';
   enablePostprocess?: boolean;
   candidateCount?: number;
-  quality?: 'fast' | 'balanced' | 'high';
-  requested_quality?: 'fast' | 'balanced' | 'high';
-  meshStyle?: 'auto' | 'clean' | 'detailed';
-  mesh_style?: 'auto' | 'clean' | 'detailed';
-  objectType?: 'general' | 'mechanical' | 'organic' | 'character';
-  object_type?: 'general' | 'mechanical' | 'organic' | 'character';
-  symmetry?: 'none' | 'bilateral' | 'radial';
+  partCountRange?: '1' | '3-6' | '6-15' | '15+';
+  rigType?: 'none' | 'generic' | 'humanoid' | 'quadruped' | 'bird' | 'insect' | 'custom';
+  exportFormats?: string[];
+  slicerHandoff?: boolean;
 }
 
 

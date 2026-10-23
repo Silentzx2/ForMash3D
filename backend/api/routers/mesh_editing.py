@@ -13,7 +13,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from api.dependencies import get_current_user_or_none, get_file_store, get_scheduler
+from api.dependencies import get_file_store, get_scheduler
 from api.routers.file_upload import resolve_file_id_async
 from core.file_store import FileStore
 from core.scheduler.job_queue import JobRequest
@@ -213,23 +213,21 @@ async def process_file_input(
 async def text_mesh_editing(
     request: TextMeshEditingRequest,
     scheduler: MultiprocessModelScheduler = Depends(get_scheduler),
-    current_user = Depends(get_current_user_or_none),
     file_store: Optional[FileStore] = Depends(get_file_store),
 ):
     """
     Edit a 3D mesh using text guidance.
-    
+
     Args:
         request: Text-guided mesh editing parameters
         scheduler: Model scheduler dependency
-        current_user: Current authenticated user
         file_store: File store dependency
-    
+
     Returns:
         Job information for the mesh editing task
     """
     try:
-        user_id = current_user.user_id if current_user else None
+        user_id = None
         
         # Process mesh input
         mesh_file_path = await process_file_input(
@@ -296,23 +294,21 @@ async def text_mesh_editing(
 async def image_mesh_editing(
     request: ImageMeshEditingRequest,
     scheduler: MultiprocessModelScheduler = Depends(get_scheduler),
-    current_user = Depends(get_current_user_or_none),
     file_store: Optional[FileStore] = Depends(get_file_store),
 ):
     """
     Edit a 3D mesh using image guidance.
-    
+
     Args:
         request: Image-guided mesh editing parameters
         scheduler: Model scheduler dependency
-        current_user: Current authenticated user
         file_store: File store dependency
-    
+
     Returns:
         Job information for the mesh editing task
     """
     try:
-        user_id = current_user.user_id if current_user else None
+        user_id = None
         
         # Process mesh input
         mesh_file_path = await process_file_input(

@@ -29,6 +29,20 @@ os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
 logger = logging.getLogger(__name__)
 
+# LOCKED / ACTIVE: values used by inference.
+# BASELINE: previous effective runtime values (source_quality="max", input_processing=true, do_refine=true, expansion_weight=0.1, init_type="std", low_vram=false)
+# EXPERIMENTAL: selected experimental values, snapshot (2026-10-20) for stress-test; use only for benchmarking.
+# SUPPORTED BY: Unique3D adapter, EXPERIMENTAL-MODEL-SETTINGS.md section "Unique3D".
+# ROLLBACK: previous effective values; scheduler strips frontend overrides before adapter applies lock.
+_LOCKED_INFERENCE_PROFILE = {
+    "source_quality": "max",
+    "input_processing": True,
+    "do_refine": True,
+    "expansion_weight": 0.1,
+    "init_type": "std",
+    "low_vram": False,
+}
+
 
 # EXPERIMENTAL_MAX_DETAIL (2026-10-20): preserve upstream-supported seed=1145, input processing,
 # refinement enabled, expansion_weight=0.1 and init_type="std". No configurable inference-step/CFG
@@ -722,6 +736,7 @@ trainers:
         Returns:
             Dictionary with generation results
         """
+        inputs = {**inputs, **_LOCKED_INFERENCE_PROFILE}
         try:
             if not torch.cuda.is_available():
                 raise RuntimeError("Unique3D requires CUDA; CPU fallback is not supported")
@@ -944,20 +959,23 @@ trainers:
                     "type": "boolean",
                     "description": "Remove background from input image (automatic background removal)",
                     "default": True,
+                    "readOnly": True,
                     "required": False
                 },
                 "do_refine": {
                     "type": "boolean",
                     "description": "Refine multiview details for higher quality",
                     "default": True,
+                    "readOnly": True,
                     "required": False
                 },
                 "expansion_weight": {
                     "type": "number",
                     "description": "Expansion weight for mesh generation (-1.0 to 1.0)",
-                    "default": 1.5,
-                    "minimum": -2.0,
-                    "maximum": 2.0,
+                    "default": 0.1,
+                    "minimum": -1.0,
+                    "maximum": 1.0,
+                    "readOnly": True,
                     "required": False
                 },
                 "init_type": {
@@ -965,6 +983,7 @@ trainers:
                     "description": "Mesh initialization type",
                     "default": "std",
                     "enum": ["std", "thin"],
+                    "readOnly": True,
                     "required": False
                 }
             }

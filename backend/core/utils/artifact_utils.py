@@ -18,6 +18,26 @@ def sha256_file(path: str | Path) -> str:
     return digest.hexdigest()
 
 
+def resolve_manifest_path(model_path: str | Path | None) -> Optional[Path]:
+    """Resolve a manifest-declared path (for example ``backend/pretrained/TRELLIS``).
+
+    Manifest paths are written relative to the repository root, but the API and
+    scheduler processes do not run from the repository root, so the lookup must
+    not depend on the current working directory.
+    """
+    if not model_path:
+        return None
+    path = Path(str(model_path)).expanduser()
+    if path.is_absolute():
+        return path if path.exists() else None
+
+    repo_root = Path(__file__).resolve().parents[3]
+    for candidate in (repo_root / path, repo_root / "backend" / path, Path.cwd() / path):
+        if candidate.exists():
+            return candidate.resolve()
+    return None
+
+
 def resolve_declared_artifact(
     asset_root: str | Path,
     declarations: Mapping[str, Any],

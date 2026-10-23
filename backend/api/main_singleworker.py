@@ -210,6 +210,12 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 async def add_process_time_header(request: Request, call_next):
     """Add processing time header to responses"""
     start_time = time.time()
+    if request.url.path.startswith("/api/"):
+        from api.dependencies import apply_rate_limit
+        limited_response = await apply_rate_limit(request, get_settings())
+        if limited_response is not None:
+            limited_response.headers["X-Process-Time"] = str(time.time() - start_time)
+            return limited_response
     response = await call_next(request)
     process_time = time.time() - start_time
     response.headers["X-Process-Time"] = str(process_time)
@@ -311,6 +317,7 @@ async def internal_error_handler(request: Request, exc: Exception):
 # Include routers
 app.include_router(system.router, prefix="/api/v1/system", tags=["System"])
 app.include_router(database.router, prefix="/api/v1/system/database", tags=["Database"])
+
 
 app.include_router(file_upload.router, prefix="/api/v1", tags=["File Upload"])
 

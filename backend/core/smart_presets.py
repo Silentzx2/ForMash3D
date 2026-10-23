@@ -9,8 +9,46 @@ except ImportError:
     torch = None
 import yaml
 
+try:
+    from backend.core.utils.artifact_utils import resolve_manifest_path
+except ImportError:
+    from core.utils.artifact_utils import resolve_manifest_path
+
 
 CONFIG = Path(__file__).resolve().parents[1] / "config" / "smart_presets.yaml"
+
+CANONICAL_INTENTS = frozenset({"mobile", "game_ready", "cinematic", "animation", "3d_print", "native", "game_ready_quad", "multi_variant"})
+
+NATIVE_PRESET: Dict[str, Any] = {
+    "label": "Native / Raw",
+    "target_polycount": -1,
+    "texture_resolution": 0,
+    "generate_lod": False,
+    "lod_preset": "high",
+    "lod_count": 0,
+    "collision": False,
+    "production_qa": False,
+    "auto_uv": False,
+    "enable_auto_rig": False,
+    "enable_printability_check": False,
+    "enable_auto_repair": False,
+    "topology_mode": "triangle",
+    "quad_topology": False,
+    "candidate_count": 1,
+    "part_count_range": "1",
+    "rig_type": "none",
+    "export_formats": ["glb"],
+    "slicer_handoff": False,
+    "preferred_features": ["image_to_raw_mesh", "image_to_textured_mesh"],
+    "model_priority": [
+        "hunyuan3d_shape_v21_image_to_raw_mesh",
+        "unique3d_image_to_raw_mesh",
+        "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh",
+        "triposg_image_to_raw_mesh",
+        "trellis2_image_to_textured_mesh",
+        "trellis_image_to_textured_mesh",
+    ],
+}
 
 def load_smart_presets() -> Dict[str, Any]:
     data = yaml.safe_load(CONFIG.read_text(encoding="utf-8"))
@@ -42,18 +80,8 @@ def get_available_vram_mb() -> Optional[int]:
 def _model_ready(config: Any) -> bool:
     if not getattr(config, "enabled", True):
         return False
-    model_path = getattr(config, "model_path", None)
-    if not model_path:
-        return False
-    path = Path(str(model_path)).expanduser()
-    if not path.is_absolute():
-        candidates = [
-            Path.cwd() / path,
-            Path(__file__).resolve().parents[1] / path,
-            Path(__file__).resolve().parents[2] / str(model_path).replace("backend/", "", 1),
-        ]
-        path = next((candidate for candidate in candidates if candidate.exists()), path)
-    if not path.exists():
+    path = resolve_manifest_path(getattr(config, "model_path", None))
+    if path is None:
         return False
     if path.is_file():
         return path.stat().st_size > 0
@@ -88,8 +116,12 @@ def resolve_intent(
 ) -> Dict[str, Any]:
     data = load_smart_presets()
     preset = data["intents"].get(intent)
+    if not preset and intent == "native":
+        preset = dict(NATIVE_PRESET)
     if not preset:
-        raise ValueError(f"Unknown intent preset: {intent}")
+        raise ValueError(
+            f"Unknown intent preset: {intent}. Canonical presets are: {', '.join(sorted(CANONICAL_INTENTS))}"
+        )
 
     configs = _configs(settings)
     profile = get_gpu_memory_profile()

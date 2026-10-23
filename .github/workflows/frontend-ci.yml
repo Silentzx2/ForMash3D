@@ -41,5 +41,8 @@ jobs:
       - name: TypeScript type-check
         run: bun run test
 
+      - name: Run all frontend contract tests
+        run: bun test
+
       - name: Build production application
         run: bun run build

@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 
-from api.dependencies import get_current_user_optional, get_scheduler, verify_api_key
+from api.dependencies import get_scheduler, verify_api_key
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -45,18 +45,8 @@ _MAX_BULK_PAGES = 200
 
 
 async def _admin_user(request: Request, _: bool = Depends(verify_api_key)):
-    """Same trust boundary as the job-management endpoints: API key required,
-    and admin role required whenever a user is authenticated."""
-    from core.auth.models import UserRole
-
-    current_user = await get_current_user_optional(
-        request.headers.get("authorization"), request
-    )
-    if current_user and current_user.role != UserRole.ADMIN:
-        raise HTTPException(
-            status_code=403, detail="Admin access required for database operations"
-        )
-    return current_user
+    """API key required for database operations."""
+    return None
 
 
 def _models_root() -> Path:
