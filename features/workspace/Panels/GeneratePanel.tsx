@@ -858,7 +858,7 @@ export const GeneratePanel: React.FC = () => {
     }
   };
 
-  const selectOutputPreset = useCallback((presetId: 'mobile' | 'game_ready' | 'cinematic' | 'animation' | '3d_print' | 'native') => {
+  const selectOutputPreset = useCallback((presetId: 'mobile' | 'game_ready' | 'cinematic' | 'animation' | '3d_print' | 'native' | 'game_ready_quad' | 'multi_variant') => {
     if (presetId === 'native') {
       setGenerationSettings(prev => ({
         ...prev,
@@ -901,7 +901,17 @@ export const GeneratePanel: React.FC = () => {
         ...prev.autoOptimizeSettings,
         targetPolycount: Number(presetData.target_polycount ?? 0),
       },
-    }));
+      // Let the chosen intent preset drive the matching production controls so the
+      // UI recipe matches the backend preset exactly (quad topology, segmentation,
+      // rig type, export formats and slicer handoff).
+      ...(presetData.quad_topology !== undefined
+        ? { topologyMode: presetData.quad_topology ? 'quad' : 'triangle', quadTopology: Boolean(presetData.quad_topology) }
+        : {}),
+      ...(presetData.part_count_range !== undefined ? { partCountRange: presetData.part_count_range } : {}),
+      ...(presetData.rig_type !== undefined ? { rigType: presetData.rig_type } : {}),
+      ...(presetData.export_formats !== undefined ? { exportFormats: [...presetData.export_formats] } : {}),
+      ...(presetData.slicer_handoff !== undefined ? { slicerHandoff: Boolean(presetData.slicer_handoff) } : {}),
+    }))
   }, [setGenerationSettings, smartPresets]);
 
   const appliedRouteIntent = useRef<string | null>(null);
@@ -909,7 +919,7 @@ export const GeneratePanel: React.FC = () => {
     const intent = getPresetIntentFromSearch(routeSearch, SMART_PRESET_FALLBACK);
     if (!intent || appliedRouteIntent.current === intent) return;
     appliedRouteIntent.current = intent;
-    selectOutputPreset(intent as 'mobile' | 'game_ready' | 'cinematic' | 'animation' | '3d_print');
+    selectOutputPreset(intent as 'mobile' | 'game_ready' | 'cinematic' | 'animation' | '3d_print' | 'native' | 'game_ready_quad' | 'multi_variant');
   }, [routeSearch, selectOutputPreset]);
 
   const appliedRoutePrompt = useRef<string | null>(null);
@@ -1823,14 +1833,16 @@ export const GeneratePanel: React.FC = () => {
                 </span>
               </div>
 
-              {/* Canonical 6 Presets */}
-              <div className="grid grid-cols-3 gap-1.5">
+              {/* Canonical presets (mirrors backend/intents in smart_presets.yaml) */}
+              <div className="grid grid-cols-4 gap-1.5">
                 {[
                   { id: 'mobile', label: 'Mobile' },
                   { id: 'game_ready', label: 'Game Ready' },
+                  { id: 'game_ready_quad', label: 'Game Ready (Quad)' },
                   { id: 'cinematic', label: 'Cinematic' },
                   { id: 'animation', label: 'Animation' },
                   { id: '3d_print', label: '3D Print' },
+                  { id: 'multi_variant', label: 'Multi-Variant' },
                   { id: 'native', label: 'Native' },
                 ].map(({ id, label }) => {
                   const presetData = smartPresets[id] ?? SMART_PRESET_FALLBACK[id];
@@ -2096,6 +2108,87 @@ export const GeneratePanel: React.FC = () => {
                   <div className={`absolute top-0.5 w-3.5 h-3.5 rounded-full bg-black transition-transform ${
                     (generationSettings.highResolutionNormalBaking ?? true) ? 'translate-x-4' : 'translate-x-0.5'
                   }`} />
+                </button>
+              </div>
+            </div>
+
+            {/* Part Segmentation, Rig Type & Export Formats */}
+            <div className={`rounded-xl border bg-[hsl(var(--surface-0))] p-2.5 space-y-2.5 transition-all ${isPostprocessOff ? 'border-white/[0.06] opacity-60' : 'border-white/[0.1]'}`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-zinc-100">
+                  <HugeiconsIcon icon={LayersIcon} size={16} className={`w-3.5 h-3.5 ${isPostprocessOff ? 'text-zinc-600' : 'text-primary'}`} />
+                  <span>Part Segmentation &amp; Export</span>
+                </div>
+                <span className="text-[9px] text-zinc-500">{isPostprocessOff ? 'Blocked in Fast Mode' : 'Preset-driven, overridable'}</span>
+              </div>
+
+              {/* Part count range (segmentation presets) */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-zinc-300 text-[10.5px] font-medium">Target Part Count</span>
+                  <span className="text-[9px] text-zinc-400 font-mono uppercase">{generationSettings.partCountRange || '1'}</span>
+                </div>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {[
+                    { value: '1', label: '1', sub: 'Single' },
+                    { value: '3-6', label: '3-6', sub: 'Sub-assembly' },
+                    { value: '6-15', label: '6-15', sub: 'Detailed' },
+                    { value: '15+', label: '15+', sub: 'Complex' },
+                  ].map(({ value, label, sub }) => {
+                    const isSel = generationSettings.partCountRange === value;
+                    return (
+                      <button key={value} type="button" disabled={isPostprocessOff} onClick={() => { if (isPostprocessOff) return; setGenerationSettings(prev => ({ ...prev, partCountRange: value as '1' | '3-6' | '6-15' | '15+' })) }} className={`py-1.5 rounded-lg text-center transition-all flex flex-col items-center justify-center cursor-pointer ${isSel ? 'bg-primary text-black font-black shadow-sm' : 'bg-[hsl(var(--surface-1))] text-zinc-400 hover:text-white border border-white/[0.06]'}`}>
+                        <span className="text-[10px] font-mono font-bold leading-tight">{label}</span>
+                        <span className={`text-[7.5px] ${isSel ? 'text-black/80 font-bold' : 'text-zinc-500'}`}>{sub}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Rig type */}
+              <div className="space-y-1 pt-1 border-t border-white/[0.06]">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-zinc-300 text-[10.5px] font-medium">Rig Type</span>
+                  <span className="text-[9px] text-zinc-400 font-mono capitalize">{generationSettings.rigType || 'none'}</span>
+                </div>
+                <select value={generationSettings.rigType || 'none'} onChange={e => setGenerationSettings(prev => ({ ...prev, rigType: e.target.value as GenerationSettings['rigType'] }))} disabled={isPostprocessOff} className="w-full rounded-md bg-[hsl(var(--surface-1))] border border-white/[0.08] px-2 py-1.5 text-[10px] text-zinc-200 cursor-pointer">
+                  <option value="none">None</option>
+                  <option value="generic">Generic</option>
+                  <option value="humanoid">Humanoid</option>
+                  <option value="quadruped">Quadruped</option>
+                  <option value="bird">Bird</option>
+                  <option value="insect">Insect</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </div>
+
+              {/* Export formats */}
+              <div className="space-y-1 pt-1 border-t border-white/[0.06]">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-zinc-300 text-[10.5px] font-medium">Export Formats</span>
+                  <span className="text-[9px] text-zinc-400 font-mono uppercase">{generationSettings.exportFormats?.join(', ') || 'glb'}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {(['glb', 'fbx', 'obj', 'stl', '3mf'] as const).map(fmt => {
+                    const isSel = (generationSettings.exportFormats || []).includes(fmt);
+                    return (
+                      <button key={fmt} type="button" disabled={isPostprocessOff} onClick={() => { if (isPostprocessOff) return; setGenerationSettings(prev => { const cur = prev.exportFormats || []; const next = isSel ? cur.filter(f => f !== fmt) : [...cur, fmt]; return { ...prev, exportFormats: next }; }) }} className={`py-1.5 rounded-lg text-center transition-all flex flex-col items-center justify-center cursor-pointer ${isSel ? 'bg-primary text-black font-black shadow-sm' : 'bg-[hsl(var(--surface-1))] text-zinc-400 hover:text-white border border-white/[0.06]'}`}>
+                        <span className="text-[9.5px] font-mono font-bold leading-tight">{fmt.toUpperCase()}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Slicer handoff toggle */}
+              <div className="flex items-center justify-between p-2 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.06] pt-1.5">
+                <div>
+                  <span className="text-xs font-semibold text-zinc-200 block">Slicer Handoff</span>
+                  <span className="text-[9.5px] text-zinc-500 block">Hand the print-ready mesh to a slicer (STL/3MF)</span>
+                </div>
+                <button type="button" disabled={isPostprocessOff} onClick={() => { if (isPostprocessOff) return; setGenerationSettings(p => ({ ...p, slicerHandoff: !p.slicerHandoff })) }} className={`w-8 h-4.5 rounded-full transition-colors relative cursor-pointer ${generationSettings.slicerHandoff ? 'bg-primary' : 'bg-zinc-700'} ${isPostprocessOff ? 'opacity-40 cursor-not-allowed' : ''}`}>
+                  <div className={`absolute top-0.5 w-3.5 h-3.5 rounded-full bg-black transition-transform ${generationSettings.slicerHandoff ? 'translate-x-4' : 'translate-x-0.5'}`} />
                 </button>
               </div>
             </div>

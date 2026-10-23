@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from api.dependencies import get_current_user_or_none, get_file_store, get_scheduler
+from api.dependencies import get_file_store, get_scheduler
 from api.routers.file_upload import resolve_file_id_async, resolve_input_reference_async
 from core.file_store import FileStore
 from core.scheduler.job_queue import JobRequest
@@ -117,7 +117,6 @@ class MeshSegmentationResponse(BaseModel):
 async def segment_mesh(
     request: MeshSegmentationRequest,
     scheduler: MultiprocessModelScheduler = Depends(get_scheduler),
-    current_user = Depends(get_current_user_or_none),
     file_store: Optional[FileStore] = Depends(get_file_store),
 ):
     """
@@ -134,8 +133,8 @@ async def segment_mesh(
     temp_dir = None
     scheduled = False
     try:
-        user_id = current_user.user_id if current_user else None
-        
+        user_id = None
+
         # Validate model preference
         validate_model_preference(
             request.model_preference, "mesh_segmentation", scheduler

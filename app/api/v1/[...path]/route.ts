@@ -170,10 +170,12 @@ export async function POST(
     let body: BodyInit | undefined;
     const headers: Record<string, string> = {};
     
+    
+    
     // Forward authorization header if present
     const auth = request.headers.get('authorization');
     if (auth) headers['authorization'] = auth;
-    
+
     const isMultipart = contentType.includes('multipart/form-data');
     if (isMultipart) {
       body = request.body || undefined;
@@ -287,13 +289,13 @@ export async function OPTIONS(
 // Helper: Get headers to forward to backend
 function getForwardingHeaders(request: NextRequest): HeadersInit {
   const headers: HeadersInit = {};
-  
+
   const contentType = request.headers.get('content-type');
   if (contentType) headers['content-type'] = contentType;
-  
+
   const auth = request.headers.get('authorization');
   if (auth) headers['authorization'] = auth;
-  
+
   return headers;
 }
 

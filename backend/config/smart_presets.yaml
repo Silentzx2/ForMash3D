@@ -19,6 +19,7 @@ intents:
     part_count_range: "3-6"
     rig_type: generic
     export_formats: [glb, fbx]
+    slicer_handoff: false
     preferred_features: [image_to_textured_mesh, image_to_raw_mesh]
     model_priority:
       - trellis2_image_to_textured_mesh
@@ -46,6 +47,7 @@ intents:
     part_count_range: "15+"
     rig_type: generic
     export_formats: [glb, fbx, obj]
+    slicer_handoff: false
     preferred_features: [image_to_textured_mesh, image_to_raw_mesh]
     model_priority:
       - trellis2_image_to_textured_mesh
@@ -72,6 +74,7 @@ intents:
     part_count_range: "6-15"
     rig_type: humanoid
     export_formats: [glb, fbx]
+    slicer_handoff: false
     preferred_features: [image_to_raw_mesh, image_to_textured_mesh]
     model_priority:
       - unique3d_image_to_raw_mesh
@@ -98,6 +101,7 @@ intents:
     part_count_range: "1"
     rig_type: none
     export_formats: [glb, stl, "3mf"]
+    slicer_handoff: true
     preferred_features: [image_to_raw_mesh, image_to_textured_mesh]
     model_priority:
       - unique3d_image_to_raw_mesh
@@ -122,6 +126,7 @@ intents:
     part_count_range: "3-6"
     rig_type: generic
     export_formats: [glb]
+    slicer_handoff: false
     preferred_features: [image_to_raw_mesh, image_to_textured_mesh]
     model_priority:
       - unique3d_image_to_raw_mesh
@@ -147,6 +152,7 @@ intents:
     part_count_range: "3-6"
     rig_type: generic
     export_formats: [glb, fbx]
+    slicer_handoff: false
     preferred_features: [image_to_textured_mesh, image_to_raw_mesh]
     model_priority:
       - unique3d_image_to_raw_mesh
@@ -173,6 +179,7 @@ intents:
     part_count_range: "3-6"
     rig_type: generic
     export_formats: [glb]
+    slicer_handoff: false
     preferred_features: [image_to_raw_mesh, image_to_textured_mesh]
     model_priority:
       - trellis2_image_to_textured_mesh
@@ -200,6 +207,7 @@ intents:
     part_count_range: "1"
     rig_type: none
     export_formats: [glb]
+    slicer_handoff: false
     preferred_features: [image_to_raw_mesh, image_to_textured_mesh]
     model_priority:
       - hunyuan3d_shape_v21_image_to_raw_mesh

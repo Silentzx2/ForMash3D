@@ -38,6 +38,7 @@ NATIVE_PRESET: Dict[str, Any] = {
     "part_count_range": "1",
     "rig_type": "none",
     "export_formats": ["glb"],
+    "slicer_handoff": False,
     "preferred_features": ["image_to_raw_mesh", "image_to_textured_mesh"],
     "model_priority": [
         "hunyuan3d_shape_v21_image_to_raw_mesh",

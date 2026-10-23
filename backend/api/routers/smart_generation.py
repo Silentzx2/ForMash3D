@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
-from api.dependencies import get_current_settings, get_current_user_or_none, get_file_store, get_scheduler
+from api.dependencies import get_current_settings, get_file_store, get_scheduler
 from api.routers.mesh_generation import (
     ImageToRawMeshRequest,
     ImageToTexturedMeshRequest,
@@ -177,7 +177,6 @@ def _build_smart_request(request: SmartGenerationRequest, resolved: Dict[str, An
 async def smart_generation(
     request: SmartGenerationRequest,
     scheduler=Depends(get_scheduler),
-    current_user=Depends(get_current_user_or_none),
     file_store=Depends(get_file_store),
     settings=Depends(get_current_settings),
 ):
