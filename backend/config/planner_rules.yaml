@@ -3,7 +3,7 @@ schema_version: "1.0.0"
 # Application policy: feature switches controlling whether planner decisions override legacy behavior
 apply:
   model_choice: false
-  auto_seeds: false
+  auto_seeds: true
   input_prep: true
 
 # Adapter capabilities and resource constraints

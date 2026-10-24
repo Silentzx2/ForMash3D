@@ -222,3 +222,34 @@ def test_smart_intent_preserves_only_user_supplied_model_as_explicit():
 
     assert automatic.model_preference is None
     assert explicit.model_preference == "user-selected-model"
+
+
+def test_auto_seeds_enabled_executes_planned_candidate_count():
+    seed_plan = resolve_seed_plan(
+        {"candidate_count": None, "plan": {"num_seeds": 3}},
+        {"seed": 10},
+        seeds_cfg={"base_seed": 41, "seed_step": 5, "max_candidates": 4},
+        apply_cfg={"auto_seeds": True},
+    )
+
+    assert seed_plan["candidate_count"] == 3
+    assert seed_plan["auto_seeds_enabled"] is True
+    assert seed_plan["seed_schedule"] == [10, 15, 20]
+
+
+def test_rate_limit_disabled_allows_arbitrary_requests():
+    import asyncio
+    from unittest.mock import MagicMock
+    from api.dependencies import _rate_limit_result
+
+    request = MagicMock()
+    request.state = MagicMock()
+    request.state._formash_rate_limit_result = None
+
+    settings = MagicMock()
+    settings.security.rate_limit_enabled = False
+    settings.security.rate_limit_per_minute = 0
+
+    result = asyncio.run(_rate_limit_result(request, settings))
+    assert result["allowed"] is True
+    assert result["limit"] == 0

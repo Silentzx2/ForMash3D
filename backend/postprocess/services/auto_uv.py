@@ -112,7 +112,12 @@ def _unwrap_xatlas(
 
     out.visual = trimesh.visual.TextureVisuals(
         uv=np.asarray(out_uv),
-        material=source_material if source_material is not None else trimesh.visual.material.PBRMaterial(name="xatlas"),
+        material=source_material if source_material is not None else trimesh.visual.material.PBRMaterial(
+            name="xatlas",
+            baseColorFactor=[0.82, 0.82, 0.82, 1.0],
+            metallicFactor=0.0,
+            roughnessFactor=0.7,
+        ),
         image=source_image if source_image is not None else None,
     )
     if source_vertex_colors is not None:

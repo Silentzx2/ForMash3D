@@ -908,6 +908,13 @@ def _export_glb(mesh: trimesh.Trimesh) -> bytes:
         _ = mesh.vertex_normals
     tree_postprocessor = None
     mat = getattr(getattr(mesh, "visual", None), "material", None)
+    if isinstance(mat, trimesh.visual.material.PBRMaterial):
+        if getattr(mat, "metallicFactor", None) is None:
+            mat.metallicFactor = 0.0 if getattr(mat, "metallicRoughnessTexture", None) is None else 1.0
+        if getattr(mat, "roughnessFactor", None) is None:
+            mat.roughnessFactor = 0.7 if getattr(mat, "metallicRoughnessTexture", None) is None else 1.0
+        if getattr(mat, "baseColorFactor", None) is None and getattr(mat, "baseColorTexture", None) is None:
+            mat.baseColorFactor = [0.82, 0.82, 0.82, 1.0]
     has_normal_tex = mat is not None and getattr(mat, "normalTexture", None) is not None
     if has_normal_tex and hasattr(mesh.visual, "uv") and mesh.visual.uv is not None:
         tangents = compute_mesh_tangents(mesh)
@@ -1338,6 +1345,8 @@ def _build_result(
         ),
         "zip_url": f"{base_url}/download?artifact_format=zip",
         "asset_root": str(asset_dir),
+        "topology": "Quad" if (generated.get("retopo_stats", {}).get("quad_faces") or inputs.get("topology_mode") == "quad" or meta.get("topology_mode") == "quad" or inputs.get("quad_topology") or meta.get("quad_topology")) else "Triangle",
+        "quad_topology": bool(generated.get("retopo_stats", {}).get("quad_faces") or inputs.get("topology_mode") == "quad" or meta.get("topology_mode") == "quad" or inputs.get("quad_topology") or meta.get("quad_topology")),
         "asset_name": asset_name,
         "target_polycount": target_polycount,
         "lod_enabled": lod_enabled,
@@ -2428,11 +2437,15 @@ def run_postprocess_job(
                         )
                         pbr_mat = None
                     else:
+                        base_factor = [1.0, 1.0, 1.0, 1.0] if base_img is not None else [0.82, 0.82, 0.82, 1.0]
                         pbr_mat = trimesh.visual.material.PBRMaterial(
                             name="GameReady_PBR",
                             normalTexture=norm_img,
                             baseColorTexture=base_img,
+                            baseColorFactor=base_factor,
                             metallicRoughnessTexture=orm_img,
+                            metallicFactor=0.0 if orm_img is None else 1.0,
+                            roughnessFactor=0.7 if orm_img is None else 1.0,
                             occlusionTexture=orm_img if orm_img is not None else ao_img,
                         )
                     if uvs is not None and pbr_mat is not None:
@@ -2805,11 +2818,17 @@ def run_postprocess_job(
             "warnings": [f"Final inspection failed: {exc}"],
         }
 
+    is_quad_dominant = bool(retopo_stats.get("quad_faces")) or (is_quad_requested and retopo_ran)
+    quad_face_count = retopo_stats.get("quad_face_count") or (len(retopo_stats["quad_faces"]) if retopo_stats.get("quad_faces") else None)
+
     quality_trace["game_ready"] = {
         **mesh_stats(uv_mesh).model_dump(),
         "native_textures": _has_native_textures(uv_mesh),
         "uv_seam_vertex_delta": len(uv_mesh.vertices) - len(mesh.vertices),
         "qa": qa_report,
+        "quad_dominant": is_quad_dominant,
+        "quad_face_count": quad_face_count,
+        "topology": "Quad" if is_quad_dominant else "Triangle",
     }
     final_topology_gate = evaluate_topology_gate(
         mesh=uv_mesh.copy(),

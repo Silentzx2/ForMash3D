@@ -240,23 +240,96 @@ def clean_slivers(V, F, min_quality=0.02):
     return np.ascontiguousarray(m.vertices), np.ascontiguousarray(m.faces.astype(np.int64))
 
 
+def pair_triangles_to_quads(V: np.ndarray, F: np.ndarray, max_dihedral_deg: float = 35.0) -> tuple[np.ndarray, list[list[int]]]:
+    """Pure-Python curvature-aware greedy triangle pairing to quad-dominant polygon list."""
+    if len(F) == 0:
+        return np.asarray(V), []
+    try:
+        m = trimesh.Trimesh(V, F, process=False)
+        face_normals = m.face_normals
+        adj = m.face_adjacency
+        adj_edges = m.face_adjacency_edges
+        if len(adj) == 0:
+            return np.asarray(V), [list(f) for f in F]
+
+        cos_thresh = np.cos(np.radians(max_dihedral_deg))
+        dots = np.sum(face_normals[adj[:, 0]] * face_normals[adj[:, 1]], axis=1)
+        valid_mask = dots >= cos_thresh
+
+        valid_adj = adj[valid_mask]
+        valid_edges = adj_edges[valid_mask]
+        valid_dots = dots[valid_mask]
+
+        order = np.argsort(-valid_dots)
+        used_faces = set()
+        quad_polys = []
+
+        for idx in order:
+            f1, f2 = int(valid_adj[idx, 0]), int(valid_adj[idx, 1])
+            if f1 in used_faces or f2 in used_faces:
+                continue
+
+            u, v = int(valid_edges[idx, 0]), int(valid_edges[idx, 1])
+            f1_verts = [int(x) for x in F[f1]]
+            f2_verts = [int(x) for x in F[f2]]
+            try:
+                w1 = next(vert for vert in f1_verts if vert not in (u, v))
+                w2 = next(vert for vert in f2_verts if vert not in (u, v))
+            except StopIteration:
+                continue
+
+            idx_u = f1_verts.index(u)
+            if f1_verts[(idx_u + 1) % 3] == v:
+                quad = [u, w2, v, w1]
+            else:
+                quad = [v, w2, u, w1]
+
+            pts = V[quad]
+            e0 = pts[1] - pts[0]
+            e1 = pts[2] - pts[1]
+            e2 = pts[3] - pts[2]
+            e3 = pts[0] - pts[3]
+            avg_n = (face_normals[f1] + face_normals[f2]) * 0.5
+
+            c0 = float(np.dot(np.cross(e0, -e3), avg_n))
+            c1 = float(np.dot(np.cross(e1, -e0), avg_n))
+            c2 = float(np.dot(np.cross(e2, -e1), avg_n))
+            c3 = float(np.dot(np.cross(e3, -e2), avg_n))
+
+            if c0 > 0 and c1 > 0 and c2 > 0 and c3 > 0:
+                used_faces.add(f1)
+                used_faces.add(f2)
+                quad_polys.append(quad)
+
+        for fi in range(len(F)):
+            if fi not in used_faces:
+                quad_polys.append([int(x) for x in F[fi]])
+
+        return np.asarray(V), quad_polys
+    except Exception:
+        return np.asarray(V), [list(f) for f in F]
+
+
 def to_quad_dominant(V, F):
-    ms = ml.MeshSet()
-    ms.add_mesh(ml.Mesh(np.asarray(V, float), np.asarray(F, np.int64)))
-    # align edges to curvature first, then pair triangles into quads
-    try:
-        ms.meshing_edge_flip_by_curvature_optimization(iterations=2)
-    except Exception:
-        pass
-    ms.meshing_tri_to_quad_by_smart_triangle_pairing()
-    mm = ms.current_mesh()
-    # pymeshlab stores quads as two coplanar tris with a face-flag; expose polygonal
-    # faces if available, else return the (quad-paired) triangle matrix.
-    try:
-        polys = mm.polygonal_face_list()
-        return np.asarray(mm.vertex_matrix()), polys
-    except Exception:
-        return np.asarray(mm.vertex_matrix()), np.asarray(mm.face_matrix())
+    if ml is not None:
+        try:
+            ms = ml.MeshSet()
+            ms.add_mesh(ml.Mesh(np.asarray(V, float), np.asarray(F, np.int64)))
+            # align edges to curvature first, then pair triangles into quads
+            try:
+                ms.meshing_edge_flip_by_curvature_optimization(iterations=2)
+            except Exception:
+                pass
+            ms.meshing_tri_to_quad_by_smart_triangle_pairing()
+            mm = ms.current_mesh()
+            try:
+                polys = mm.polygonal_face_list()
+                return np.asarray(mm.vertex_matrix()), polys
+            except Exception:
+                return np.asarray(mm.vertex_matrix()), np.asarray(mm.face_matrix())
+        except Exception:
+            pass
+    return pair_triangles_to_quads(V, F)
 
 
 def quadriflow_available():
