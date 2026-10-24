@@ -1,3 +1,4 @@
+import ast
 import hashlib
 from pathlib import Path
 
@@ -28,3 +29,18 @@ def test_master_immutability_audit_uses_compatible_hash_contract(tmp_path: Path)
 
     working_copy.write_bytes(b"changed working copy")
     assert not audit_master_immutability(master, working_copy)
+
+
+
+def test_auto_rigging_uses_the_canonical_hash_helper():
+    route_path = Path(__file__).resolve().parents[1] / "api" / "routers" / "auto_rigging.py"
+    route_ast = ast.parse(route_path.read_text(encoding="utf-8"))
+    imports = [
+        (node.module, alias.name, alias.asname)
+        for node in ast.walk(route_ast)
+        if isinstance(node, ast.ImportFrom)
+        for alias in node.names
+    ]
+
+    assert ("core.utils.artifact_utils", "sha256_file", None) in imports
+    assert not any(alias_name == "_sha256_file" for _, alias_name, _ in imports)

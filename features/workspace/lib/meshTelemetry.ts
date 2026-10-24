@@ -189,7 +189,35 @@ export function prepareMeshTangentsAndNormals(mesh: THREE.Mesh): void {
   const geom = mesh.geometry;
   if (!geom || !geom.attributes?.position) return;
 
-  if (!geom.attributes.normal) {
+  const position = geom.attributes.position;
+  const normal = geom.attributes.normal;
+  let normalsAreInvalid = (
+    !normal
+    || normal.count !== position.count
+    || normal.itemSize < 3
+  );
+
+  if (!normalsAreInvalid && normal) {
+    const values = normal.array as ArrayLike<number>;
+    const stride = normal.itemSize;
+    for (let i = 0; i < normal.count; i++) {
+      const x = Number(values[i * stride]);
+      const y = Number(values[i * stride + 1]);
+      const z = Number(values[i * stride + 2]);
+      if (
+        !Number.isFinite(x)
+        || !Number.isFinite(y)
+        || !Number.isFinite(z)
+        || x * x + y * y + z * z < 1e-12
+      ) {
+        normalsAreInvalid = true;
+        break;
+      }
+    }
+  }
+
+  if (normalsAreInvalid) {
+    geom.deleteAttribute('normal');
     geom.computeVertexNormals();
   }
 

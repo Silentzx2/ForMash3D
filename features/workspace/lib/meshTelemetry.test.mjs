@@ -69,3 +69,35 @@ test('prepareMeshTangentsAndNormals computes normals and tangents for mesh', () 
   assert.equal(mesh.castShadow, true);
   assert.equal(mesh.receiveShadow, true);
 });
+
+
+test('recomputes zero and non-finite imported normals before viewport shading', () => {
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute([
+    0, 0, 0,
+    1, 0, 0,
+    0, 1, 0,
+  ], 3));
+  geometry.setIndex([0, 1, 2]);
+  geometry.setAttribute('normal', new THREE.Float32BufferAttribute([
+    0, 0, 0,
+    Number.NaN, 0, 0,
+    0, 0, 0,
+  ], 3));
+
+  const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial());
+  prepareMeshTangentsAndNormals(mesh);
+
+  const normals = geometry.getAttribute('normal');
+  assert.ok(normals);
+  for (let i = 0; i < normals.count; i++) {
+    const normal = new THREE.Vector3().fromBufferAttribute(normals, i);
+    assert.ok(Number.isFinite(normal.x));
+    assert.ok(Number.isFinite(normal.y));
+    assert.ok(Number.isFinite(normal.z));
+    assert.ok(normal.length() > 0.99);
+  }
+
+  geometry.dispose();
+  mesh.material.dispose();
+});

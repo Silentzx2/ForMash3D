@@ -1,3 +1,10 @@
+## 2026-10-24 — Postprocess texture, retopo fidelity and viewer shading guards
+
+- Auto-rig job scheduling now uses the canonical streaming SHA-256 helper instead of importing a deleted private pipeline symbol.
+- Textured GLBs receive safe metallic/roughness defaults only when omitted for albedo-only materials; UVs and degenerate base-colour atlases are checked before the texture stage is marked complete. Final game-ready export preserves the painter's original GLB scene/material bindings instead of flattening and re-exporting it.
+- Auto-retopology now rejects candidates that exceed the configured normalized surface-drift gate, allowing pipeline callers to retain the previous valid derivative. Invalid imported vertex normals are recomputed, and wireframe shading uses a depth-writing surface so rear edges do not masquerade as internal duplicate geometry.
+- Regression tests cover the hash import contract, retopo drift rejection, GLB JSON chunk preservation, and invalid viewport normals. Tests are added; runtime/CI results must be checked separately.
+
 ## 2026-10-23 — Production readiness verification
 
 - All test gates green: backend `pytest` 40 passed / 6 skipped, Bun frontend 54 passed / 0 failed, `npx tsc --noEmit` zero errors; no mock data is served by production API paths.

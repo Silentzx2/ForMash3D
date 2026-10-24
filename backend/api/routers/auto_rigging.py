@@ -184,7 +184,8 @@ async def generate_rig(
             user_id=user_id,
         )
 
-        from postprocess.pipeline import _sha256_file, prepare_asset_job_workspace
+        from core.utils.artifact_utils import sha256_file
+        from postprocess.pipeline import prepare_asset_job_workspace
 
         asset_root, master_path = await run_in_threadpool(
             prepare_asset_job_workspace, mesh_file_path, job_request.job_id
@@ -196,7 +197,7 @@ async def generate_rig(
             "asset_root": str(asset_root),
             "source_path": str(Path(mesh_file_path).resolve()),
             "source_master_path": str(master_path),
-            "source_sha256": await run_in_threadpool(_sha256_file, mesh_file_path),
+            "source_sha256": await run_in_threadpool(sha256_file, mesh_file_path),
         })
 
         job_id = await scheduler.schedule_job(job_request)

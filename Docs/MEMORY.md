@@ -1,3 +1,11 @@
+## 2026-10-24 — Postprocess / viewer regression fixes
+
+- **Auto-rig scheduling:** `backend/api/routers/auto_rigging.py` now imports `sha256_file` from `core.utils.artifact_utils`, the canonical streaming hash utility; it no longer imports the removed private `_sha256_file` name from `postprocess.pipeline`.
+- **Black albedo-only texture output:** the texture stage patches only missing PBR factors inside the GLB JSON chunk (preserving the mesh, images and binary chunks), checks UV validity and rejects an all-black/all-white base-colour atlas, and retains the painter's GLB for final game-ready export rather than flattening a multi-node scene and re-exporting one `Trimesh`.
+- **Retopology quality protection:** `run_auto_retopo` checks surface drift through the existing `quality.gate.max_native_mesh_normalized_drift` threshold from `backend/config/quality.yaml`. A failed/unverifiable drift check rejects the retopo candidate; pipeline callers that already catch retopo exceptions continue with their prior repaired mesh.
+- **Viewport shading:** imported normal attributes containing zero-length or non-finite vectors are recomputed. Wireframe mode now draws visible edges over an opaque depth-writing base surface, so back-facing/rear/internal edges are not rendered as a second wireframe shell. This fixes the viewer presentation path; it does not delete genuine overlapping geometry in a source file.
+- **Verification boundary:** focused regression tests were added for canonical hash import, retopo drift, textured GLB chunk preservation and invalid normals. The push-triggered GitHub Actions checks must be inspected before claiming tests passed. GPU inference and comparison against the user's actual asset are not performed by these source-level tests.
+
 ## 2026-10-24 — Auto-Seeds Activation, Rate-Limiter Deactivation, Non-Textured PBR Shading & Quad Topology Fixes
 
 - **Non-textured mesh PBR shading fix (weird black mirror with white specks)**:

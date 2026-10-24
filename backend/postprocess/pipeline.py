@@ -173,6 +173,95 @@ def _validate_texture_atlas_dimension(
     return True, actual, None
 
 
+def _normalize_textured_glb_pbr_defaults(glb_path: Path) -> int:
+    """Apply safe PBR defaults to albedo-only materials without re-exporting geometry.
+
+    glTF defaults an omitted metallicFactor to 1.0. For AI-painted materials that
+    carry base colour but no metallic/roughness map, this can render the albedo
+    almost black under a studio environment. Patch only omitted factors in the
+    GLB JSON chunk and leave geometry, images, extensions, and explicit factors
+    byte-for-byte intact.
+    """
+    payload = glb_path.read_bytes()
+    if len(payload) < 20:
+        raise RuntimeError("Textured GLB is truncated or missing its first chunk.")
+
+    magic, version, declared_length = struct.unpack_from("<4sII", payload, 0)
+    if magic != b"glTF" or version != 2 or declared_length != len(payload):
+        raise RuntimeError("Texturing adapter returned an invalid GLB 2.0 container.")
+
+    chunks: list[tuple[bytes, bytes]] = []
+    document: Optional[Dict[str, Any]] = None
+    offset = 12
+    while offset < len(payload):
+        if offset + 8 > len(payload):
+            raise RuntimeError("Textured GLB contains a truncated chunk header.")
+        chunk_length, chunk_type = struct.unpack_from("<I4s", payload, offset)
+        offset += 8
+        chunk_end = offset + chunk_length
+        if chunk_end > len(payload):
+            raise RuntimeError("Textured GLB contains a truncated chunk payload.")
+        chunk_payload = payload[offset:chunk_end]
+        if chunk_type == b"JSON":
+            if document is not None:
+                raise RuntimeError("Textured GLB contains duplicate JSON chunks.")
+            try:
+                parsed = json.loads(chunk_payload.decode("utf-8").rstrip(" \t\r\n\x00"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise RuntimeError("Textured GLB has an unreadable JSON chunk.") from exc
+            if not isinstance(parsed, dict):
+                raise RuntimeError("Textured GLB JSON root must be an object.")
+            document = parsed
+        chunks.append((chunk_type, chunk_payload))
+        offset = chunk_end
+
+    if document is None:
+        raise RuntimeError("Textured GLB has no JSON chunk.")
+
+    normalized_materials = 0
+    materials = document.get("materials", [])
+    if isinstance(materials, list):
+        for material in materials:
+            if not isinstance(material, dict):
+                continue
+            pbr = material.get("pbrMetallicRoughness")
+            if not isinstance(pbr, dict) or "baseColorTexture" not in pbr:
+                continue
+            # Preserve explicit authored factors; repair only the glTF metallic
+            # default for albedo-only materials and give missing roughness a
+            # neutral studio value.
+            before = dict(pbr)
+            if "metallicRoughnessTexture" not in pbr:
+                pbr.setdefault("metallicFactor", 0.0)
+                pbr.setdefault("roughnessFactor", 0.7)
+            if pbr != before:
+                normalized_materials += 1
+
+    if normalized_materials == 0:
+        return 0
+
+    rebuilt = bytearray(struct.pack("<4sII", b"glTF", 2, 0))
+    for chunk_type, chunk_payload in chunks:
+        if chunk_type == b"JSON":
+            chunk_payload = json.dumps(
+                document, ensure_ascii=False, separators=(",", ":")
+            ).encode("utf-8")
+            chunk_payload += b" " * ((-len(chunk_payload)) % 4)
+        if len(chunk_payload) % 4:
+            raise RuntimeError(f"Textured GLB chunk {chunk_type!r} is not 4-byte aligned.")
+        rebuilt.extend(struct.pack("<I4s", len(chunk_payload), chunk_type))
+        rebuilt.extend(chunk_payload)
+
+    struct.pack_into("<I", rebuilt, 8, len(rebuilt))
+    temporary_path = glb_path.with_name(f".{glb_path.name}.pbr.tmp")
+    try:
+        temporary_path.write_bytes(rebuilt)
+        temporary_path.replace(glb_path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
+    return normalized_materials
+
+
 def _execute_texture_stage(
     job_id: str,
     asset_dir: Path,
@@ -341,6 +430,13 @@ def _execute_texture_stage(
 
         _check_cancelled(cancel_checker)
 
+        normalized_material_count = _normalize_textured_glb_pbr_defaults(textured_glb_path)
+        if normalized_material_count:
+            logger.info(
+                "[POSTPROCESS TEXTURE] Applied safe PBR defaults to %d albedo-only material(s).",
+                normalized_material_count,
+            )
+
         standard_textured = texture_dir / "textured.glb"
         if not standard_textured.exists() or standard_textured.resolve() != textured_glb_path.resolve():
             shutil.copy2(textured_glb_path, standard_textured)
@@ -353,6 +449,24 @@ def _execute_texture_stage(
         if not valid_dim:
             raise RuntimeError(dimension_error or "Texture atlas dimensions could not be verified.")
         assert base_color is not None
+        pbr_output_report = _run_pbr_validation(textured_glb_path, required=True)
+        base_color_degenerate = any(
+            "degenerate texture map 'base_color'" in str(warning).lower()
+            for warning in pbr_output_report.get("warnings", [])
+        )
+        if pbr_output_report.get("uv_valid") is not True:
+            uv_warnings = [
+                str(warning) for warning in pbr_output_report.get("warnings", [])
+                if "uv" in str(warning).lower()
+            ]
+            raise RuntimeError(
+                "Textured GLB has missing or invalid UV coordinates: "
+                + ("; ".join(uv_warnings) if uv_warnings else "UV validation failed.")
+            )
+        if base_color_degenerate:
+            raise RuntimeError(
+                "Textured GLB contains a degenerate base-colour atlas (uniform black or white)."
+            )
         base_color.save(texture_dir / "base_color.png")
 
         logger.info(
@@ -365,6 +479,8 @@ def _execute_texture_stage(
             "preset": preset_label,
             "target_atlas_size": target_atlas_size,
             "validated_atlas_dimension": actual_dim,
+            "pbr_validation": pbr_output_report,
+            "normalized_material_count": normalized_material_count,
             "textured_glb": str(textured_glb_path),
             "texture_maps": {p.stem: str(p) for p in texture_dir.glob("*.png")},
         }
@@ -2573,7 +2689,18 @@ def run_postprocess_job(
     _check_cancelled(cancel_checker)
     _emit(progress, 0.62, "game_ready", "Writing game-ready formats.")
     if not is_raw_native_passthrough:
-        game_ready_glb_bytes = _export_glb(game_ready_mesh)
+        if texture_stage_info.get("status") == "completed" and texture_stage_info.get("textured_glb"):
+            textured_source_path = Path(texture_stage_info["textured_glb"])
+            if not textured_source_path.is_file():
+                raise FileNotFoundError(
+                    f"Validated textured GLB disappeared before final export: {textured_source_path}"
+                )
+            # load_mesh() flattens GLB scenes for geometric metrics/LODs. Do not
+            # re-export that flattened Trimesh: it can discard per-node materials,
+            # UV assignments, and embedded texture bindings from the painter output.
+            game_ready_glb_bytes = textured_source_path.read_bytes()
+        else:
+            game_ready_glb_bytes = _export_glb(game_ready_mesh)
     _save_file(glb_path, game_ready_glb_bytes)
     game_ready["glb"] = str(glb_path)
     pbr_validation_required = bool(texture_enabled or native_textures or should_bake)

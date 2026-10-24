@@ -3550,11 +3550,13 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
           switch (mode) {
             case 'wireframe':
               if (!cache.wireframe) {
+                // Draw an opaque depth-writing surface first; the green wire
+                // overlay below then shows visible edges, not rear shells.
                 cache.wireframe = new THREE.MeshStandardMaterial({
-                  color: 0x00ff88,
-                  wireframe: true,
-                  roughness: 0.6,
-                  metalness: 0.1,
+                  color: 0x071a12,
+                  wireframe: false,
+                  roughness: 0.85,
+                  metalness: 0.0,
                 });
               }
               targetMat = cache.wireframe;
@@ -3672,7 +3674,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
           // Pro Studio Wireframe on Shaded:
           // Renders crisp topology wire lines cleanly overlaid onto the solid lit geometry
           let wireOverlay = child.children.find((c) => c.userData?.isWireframeOverlay) as THREE.Mesh | undefined;
-          if (showWireframe && !isWireOnly) {
+          if (showWireframe || isWireOnly) {
             if (!wireOverlay) {
               const wireMat = new THREE.MeshBasicMaterial({
                 color: 0x00f5a0,

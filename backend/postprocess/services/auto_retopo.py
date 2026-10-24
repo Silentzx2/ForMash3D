@@ -10,6 +10,8 @@ from typing import Callable, Optional
 
 import trimesh
 
+from core.quality.evaluation import compare_meshes, quality_gate
+
 from ..schemas import AutoRetopoOptions
 from .autoretopo import AutoRetopo, RetopoConfig
 from .autoretopo import gpu
@@ -20,6 +22,32 @@ CancelChecker = Optional[Callable[[], bool]]
 def _check_cancelled(cancel_checker: CancelChecker) -> None:
     if cancel_checker is not None and cancel_checker():
         raise InterruptedError("Auto-retopology cancelled by user")
+
+
+def _assert_surface_fidelity(
+    reference: trimesh.Trimesh,
+    candidate: trimesh.Trimesh,
+) -> dict:
+    """Reject a retopo derivative whose sampled surface drift exceeds quality.yaml."""
+    comparison = compare_meshes(reference, candidate, seed=1)
+    gate = quality_gate(comparison)
+    if gate.get("passed") is not True:
+        drift = gate.get("normalized_surface_drift")
+        threshold = gate.get("threshold")
+        if drift is not None and threshold is not None:
+            reason = f"normalized surface drift {float(drift):.4f} exceeds configured limit {float(threshold):.4f}"
+        else:
+            reason = str(gate.get("reason") or "surface-fidelity metrics are unavailable")
+        raise RuntimeError(
+            "Auto-retopology quality gate rejected the candidate: " + reason
+        )
+    return {
+        **gate,
+        "decision": "accepted",
+        "sample_count": int(comparison.get("sample_count", 0)),
+        "f_score": float(comparison.get("f_score", 0.0)),
+        "chamfer_distance": float(comparison.get("chamfer_distance", 0.0)),
+    }
 
 
 def run_auto_retopo(
@@ -68,7 +96,9 @@ def run_auto_retopo(
         # the error path (e.g. a shell-stage OOM) so a failed run cleans up too.
         gpu.free_gpu_memory()
 
+    fidelity_gate = _assert_surface_fidelity(result.original, result.mesh)
     stats = {
+        "fidelity_gate": fidelity_gate,
         "metrics": result.metrics,
         "timings": result.timings,
         "quad_face_count": (len(result.quad_faces) if result.quad_faces is not None else None),
