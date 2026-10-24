@@ -1,10 +1,10 @@
 # ── Model-only dependencies (GPU/CUDA mode) ───────────────────
 # Installed only when compute mode is cuda. These are heavy ML packages
 # required by model adapters (TRELLIS, Hunyuan3D, TripoSG, Unique3D, etc.).
-transformers==4.44.2
-diffusers==0.30.3
+transformers==5.10.1
+diffusers==0.38.0
 huggingface_hub>=0.25.0,<0.26.0
-datasets==3.6.0
+datasets==5.0.1
 safetensors>=0.4.4
 einops>=0.8.0
 rembg>=2.0.60
