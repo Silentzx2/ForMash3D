@@ -3139,10 +3139,22 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                 if (child.material) {
                   const mats = Array.isArray(child.material) ? child.material : [child.material];
                   mats.forEach((m) => {
-                    if (m instanceof THREE.MeshStandardMaterial && m.normalMap) {
-                      const ns = currentAsset?.materialConfig?.normalScale ?? 1.0;
-                      m.normalScale.set(ns, ns);
-                      m.needsUpdate = true;
+                    if (m instanceof THREE.MeshStandardMaterial) {
+                      // Non-textured models with missing diffuse map & high metalness (glTF default 1.0)
+                      // must not render as pitch-black mirror
+                      if (!m.map && m.metalness > 0.1) {
+                        m.metalness = 0.05;
+                        m.roughness = Math.max(0.65, m.roughness);
+                        if (m.color.r < 0.25 && m.color.g < 0.25 && m.color.b < 0.25) {
+                          m.color.setHex(0xd0d5dc);
+                        }
+                        m.needsUpdate = true;
+                      }
+                      if (m.normalMap) {
+                        const ns = currentAsset?.materialConfig?.normalScale ?? 1.0;
+                        m.normalScale.set(ns, ns);
+                        m.needsUpdate = true;
+                      }
                     }
                   });
                 }

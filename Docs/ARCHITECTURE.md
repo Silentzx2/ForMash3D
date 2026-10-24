@@ -671,7 +671,8 @@ logging:
   file: null
 
 security:
-  rate_limit_per_minute: 60
+  rate_limit_enabled: false
+  rate_limit_per_minute: 0
   cors_origins: ["*"]
   api_key_required: false
 

@@ -354,10 +354,21 @@ async def _rate_limit_result(request: Request, settings) -> Dict[str, Any]:
     if cached is not None:
         return cached
 
+    rate_limit_enabled = getattr(settings.security, "rate_limit_enabled", False)
+    limit = int(getattr(settings.security, "rate_limit_per_minute", 0))
+    if not rate_limit_enabled or limit <= 0:
+        result = {
+            "allowed": True,
+            "limit": 0,
+            "remaining": 0,
+            "retry_after": 0,
+        }
+        request.state._formash_rate_limit_result = result
+        return result
+
     now = time.time()
     window = int(now // 60)
     retry_after = max(1, 60 - int(now % 60))
-    limit = max(1, int(settings.security.rate_limit_per_minute))
     client = getattr(request, "client", None)
     client_ip = str(getattr(client, "host", None) or "unknown")
     client_hash = hashlib.sha256(client_ip.encode("utf-8")).hexdigest()[:32]
@@ -406,6 +417,8 @@ async def apply_rate_limit(request: Request, settings=None):
     if not request.url.path.startswith("/api/"):
         return None
     settings = settings or get_settings()
+    if not getattr(settings.security, "rate_limit_enabled", False) or int(getattr(settings.security, "rate_limit_per_minute", 0)) <= 0:
+        return None
     try:
         result = await _rate_limit_result(request, settings)
     except HTTPException as exc:
@@ -432,6 +445,8 @@ async def check_rate_limit(
     settings=Depends(get_current_settings),
 ):
     """Dependency form of the same enforced rate limit, for route-level use."""
+    if not getattr(settings.security, "rate_limit_enabled", False) or int(getattr(settings.security, "rate_limit_per_minute", 0)) <= 0:
+        return True
     result = await _rate_limit_result(request, settings)
     if not result["allowed"]:
         raise HTTPException(

@@ -82,7 +82,7 @@ The API supports simple mode and optional authentication, controlled by `P3D_USE
 
 ### Rate limiting
 
-All `/api/*` requests are limited by `security.rate_limit_per_minute` (default: 60 requests per minute per immediate peer IP). Exceeding the fixed-window limit returns HTTP `429` and a `Retry-After` header. Multi-worker deployments use an atomic counter in the existing Redis connection; single-worker deployments use a process-local counter. Reverse-proxy limits are recommended as an additional perimeter control. When deployed behind a reverse proxy, configure trusted-proxy behavior at the ASGI/server layer; arbitrary `X-Forwarded-For` values are not trusted.
+Rate limiting is controlled by `security.rate_limit_enabled` and `security.rate_limit_per_minute` in `backend/config/system.yaml`. In personal/self-hosted deployment, rate limiting is disabled by default (`rate_limit_enabled: false`, `rate_limit_per_minute: 0`) so local frontend polling (job status, telemetry HUD, client logging) is never blocked. When enabled, requests are limited per immediate peer IP; exceeding the fixed-window limit returns HTTP `429` and a `Retry-After` header. Multi-worker deployments use an atomic counter in the existing Redis connection; single-worker deployments use a process-local counter. Reverse-proxy limits are recommended as an additional perimeter control. When deployed behind a reverse proxy, configure trusted-proxy behavior at the ASGI/server layer; arbitrary `X-Forwarded-For` values are not trusted.
 
 ---
 

@@ -1,3 +1,18 @@
+## 2026-10-24 — Auto-Seeds Activation, Rate-Limiter Deactivation, Non-Textured PBR Shading & Quad Topology Fixes
+
+- **Non-textured mesh PBR shading fix (weird black mirror with white specks)**:
+  - Root cause: In `backend/postprocess/pipeline.py` & `auto_uv.py`, untextured/baked GLTF meshes exported `PBRMaterial` without `pbrMetallicRoughness` factors. In the glTF 2.0 / Three.js specification, omitted metallic factors default to `1.0` (100% metallic mirror) with zero diffuse reflectance, turning the mesh pitch black with noisy specular white specks.
+  - Fix: Added explicit studio clay PBR factors (`metallicFactor=0.0`, `roughnessFactor=0.7`, `baseColorFactor=[0.82, 0.82, 0.82, 1.0]`) in `_export_glb`, bake material assembly, and `auto_uv.py`. Also added protective metalness clamping in `MeshViewer.tsx` for any loaded untextured GLTF.
+- **Quad topology conversion fix**:
+  - Root cause: `to_quad_dominant` in `remesh.py` unconditionally invoked `pymeshlab.MeshSet()`, which crashed with `AttributeError` on environments without pymeshlab (`ml is None`), causing quad conversion to silently abort and retain triangles. Additionally, `pipeline.py` never populated `topology: "Quad"` or `quad_dominant: True` in `_build_result` or `quality_trace["game_ready"]`.
+  - Fix: Implemented pure-Python/NumPy curvature-aware greedy triangle pairing (`pair_triangles_to_quads`) as an automatic zero-dependency fallback. Wired `topology: "Quad"` and `quad_topology: True` into `_build_result` and `quality_trace["game_ready"]`, ensuring quad OBJ export and quad metadata contract.
+- **Auto-seeds enabled**:
+  - `backend/config/planner_rules.yaml`: set `apply.auto_seeds: true` so the planner automatically executes multi-seed candidate scoring for requested quality tiers instead of collapsing to a single candidate.
+- **Rate limiting disabled for personal/self-hosted deployment**:
+  - `backend/config/system.yaml` & `backend/core/config.py`: configured `rate_limit_enabled: false` and `rate_limit_per_minute: 0`.
+  - `backend/api/dependencies.py`: short-circuited `apply_rate_limit`, `check_rate_limit`, and `_rate_limit_result` when disabled or limit <= 0 to eliminate HTTP 429 locks during concurrent telemetry HUD polling, task progress polling (`/api/v1/system/jobs/*`), and client action logging.
+  - Verification: 12/12 pytest tests pass (`test_topology_repair.py`, `test_seed_request_contract.py`), 54/54 bun tests pass, `tsc --noEmit` 0 errors.
+
 ## 2026-10-23 — Production Readiness + Beta Phase
 
 - Auth removed entirely from backend + frontend (personal/self-hosted use, no paid SaaS)

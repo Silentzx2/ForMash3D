@@ -95,7 +95,8 @@ class LoggingConfig(BaseSettings):
 
 
 class SecurityConfig(BaseSettings):
-    rate_limit_per_minute: int = 60
+    rate_limit_enabled: bool = False
+    rate_limit_per_minute: int = 0
     cors_origins: List[str] = ["*"]
     api_key_required: bool = False
     # Optional privileged server credential; injected from P3D_API_KEY at runtime.
