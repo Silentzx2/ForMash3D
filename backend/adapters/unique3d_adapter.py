@@ -706,14 +706,23 @@ trainers:
         init_type: str = "std"
     ):
         """Run geometry reconstruction and refinement."""
+        self._ensure_unique3d_in_path()
         # Import reconstruction modules
         from scripts.multiview_inference import geo_reconstruct
+
+        effective_do_refine = do_refine
+        try:
+            from app.all_models import model_zoo
+            if getattr(model_zoo, "pipe_disney_controlnet_tile_ipadapter_i2i", None) is None:
+                effective_do_refine = False
+        except Exception:
+            effective_do_refine = False
         
         return geo_reconstruct(
             rgb_pils=rgb_pils,
             normal_pils=normal_pils,
             front_pil=front_pil,
-            do_refine=do_refine,
+            do_refine=effective_do_refine,
             predict_normal=predict_normal,
             expansion_weight=expansion_weight,
             init_type=init_type
@@ -990,3 +999,4 @@ trainers:
         }
 
 # Import at function level where used, not module level (pytorch3d may not be available)
+Unique3DAdapter = Unique3DImageToRawMeshAdapter

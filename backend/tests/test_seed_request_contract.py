@@ -305,3 +305,33 @@ def test_legacy_textured_mesh_model_preference_normalizes_to_raw_mesh():
         runtime,
     )
     assert plan["adapter"] == "trellis2_image_to_raw_mesh"
+
+
+def test_random_seed_dynamic_assignment_when_seed_unspecified():
+    import random
+    from core.config import get_quality_config
+    from core.planner import get_planner_apply_config, resolve_seed_plan
+
+    request_inputs = {}
+    model_inputs = {}
+
+    seeds = set()
+    for _ in range(5):
+        seeds_cfg = dict(get_quality_config()["seeds"])
+        if model_inputs.get("seed") is None and request_inputs.get("seed") is None:
+            seeds_cfg["base_seed"] = random.randint(10000, 999999)
+        plan = resolve_seed_plan(
+            request_inputs,
+            model_inputs,
+            seeds_cfg=seeds_cfg,
+            apply_cfg=get_planner_apply_config(),
+        )
+        seed = plan["base_seed"]
+        assert 10000 <= seed <= 999999
+        seeds.add(seed)
+
+    # Over 5 runs with range 10000..999999, seeds should not all be identical
+    assert len(seeds) > 1
+
+
+

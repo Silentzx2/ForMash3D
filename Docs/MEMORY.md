@@ -1,3 +1,13 @@
+## 2026-10-24 — Dynamic Random Seed Assignment & Unique3D Refinement Safeguards
+
+- **Dynamic Random Seed Assignment**:
+  - Root cause: `features/workspace/store/WorkspaceContext.tsx` and `stores/useAppStore.ts` hardcoded `seed: 42891`, and `backend/core/planner.py` / `quality.yaml` defaulted to static `base_seed: 42891`, causing every generation job without an explicit user seed to repeat the fixed schedule `[42891, 44228, 45565]`.
+  - Fix: Updated `WorkspaceContext.tsx` and `useAppStore.ts` to assign dynamic random seeds (`Math.floor(Math.random() * 900000) + 100000`). In `multiprocess_scheduler.py`, when a job has no explicit user seed, dynamically generate a fresh random base seed (`random.randint(10000, 999999)`).
+- **Unique3D Refinement Safeguards**:
+  - Root cause: When `do_refine: True` was enabled without SD controlnet tile IP-adapter weights loaded in `model_zoo`, `pipe_disney_controlnet_tile_ipadapter_i2i` returned `None`, raising `TypeError: 'NoneType' object is not callable` in `refine_lr_to_sr.py` / `refine_rgb`.
+  - Fix: In `backend/adapters/unique3d_adapter.py`, inspect `model_zoo.pipe_disney_controlnet_tile_ipadapter_i2i` and demote `effective_do_refine = False` if missing. In `backend/thirdparty/Unique3D`, safely bypass refinement and fall back to Lanczos resizing when `pipe is None`. Pushed sub-repo changes to `Silentzx2/ForMash3D-ThirdParty` (`main`).
+- **Verification**: 53 passed, 7 skipped backend tests, 55 passed bun tests, `npx tsc --noEmit` clean.
+
 ## 2026-10-24 — Multi-GPU Load Sharing Planning & Raw Mesh Model Route Normalization
 
 - **Multi-GPU VRAM load sharing in planner**:

@@ -48,6 +48,7 @@ import logging
 import multiprocessing as mp
 import os
 import queue
+import random
 import shutil
 import threading
 import tempfile
@@ -863,7 +864,9 @@ def _process_job_in_worker(
         # runtime log reports the candidates and the exact seeds that run.
         from core.config import get_quality_config
         from core.planner import get_planner_apply_config, resolve_seed_plan
-        seeds_cfg = get_quality_config()["seeds"]
+        seeds_cfg = dict(get_quality_config()["seeds"])
+        if model_inputs.get("seed") is None and request_inputs.get("seed") is None:
+            seeds_cfg["base_seed"] = random.randint(10000, 999999)
         seed_plan = resolve_seed_plan(
             request_inputs,
             model_inputs,
@@ -875,6 +878,8 @@ def _process_job_in_worker(
         seed_step = int(seed_plan["seed_step"])
         early_stop_score = float(seeds_cfg["early_stop_score"])
         seed_schedule = list(seed_plan["seed_schedule"])
+        if "seed" not in model_inputs or model_inputs["seed"] is None:
+            model_inputs["seed"] = base_seed
 
         runtime_log = {
             "model": model_id,
