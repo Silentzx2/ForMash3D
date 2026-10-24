@@ -1,3 +1,13 @@
+## 2026-10-24 — Multi-GPU Load Sharing Planning & Raw Mesh Model Route Normalization
+
+- **Multi-GPU VRAM load sharing in planner**:
+  - Root cause: `backend/core/runtime_probe.py` only queried GPU 0 (`torch.cuda.mem_get_info(0)`), setting `free_vram_gb` to single-device memory (e.g. 14.36 GB). In `backend/core/planner.py`, candidates were rejected if `vram_budget_gb > free_vram_gb`, ignoring `multi_gpu` capability where aggregate VRAM across multiple GPUs (e.g. 28.72 GB) satisfies the model budget (23.0 GB) and `low_vram_supported` threshold (10.0 GB).
+  - Fix: Extended `probe_runtime` to inspect all devices (`gpu_count`, `aggregate_free_vram_gb`, `max_free_vram_gb`). Updated planner Check D to allow multi-GPU load sharing when `multi_gpu` is enabled and aggregate VRAM >= model budget, or low-VRAM sequential offload mode when free VRAM >= low-VRAM requirement.
+- **Raw mesh model routing**:
+  - Root cause: UI and preset priorities referenced deprecated legacy textured alias `trellis2_image_to_textured_mesh` instead of `trellis2_image_to_raw_mesh` for `image-to-raw-mesh` generation.
+  - Fix: Registered `trellis2_image_to_raw_mesh` in `constants/models.ts` and set as default in `app/page.tsx` and `GeneratePanel.tsx`. Updated `smart_presets.yaml` priorities. Added legacy alias mapping in `backend/api/routers/mesh_generation.py` and `backend/core/planner.py` to route all legacy textured requests to raw geometry models.
+- **Verification**: 52 passed / 6 skipped pytest, 55 passed bun test, `tsc --noEmit` clean. No git push per user instruction.
+
 ## 2026-10-24 — Postprocess / viewer regression fixes
 
 - **Auto-rig scheduling:** `backend/api/routers/auto_rigging.py` now imports `sha256_file` from `core.utils.artifact_utils`, the canonical streaming hash utility; it no longer imports the removed private `_sha256_file` name from `postprocess.pipeline`.

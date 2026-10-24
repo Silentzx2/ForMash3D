@@ -50,6 +50,15 @@ DEFAULT_ADAPTER_CLASS_MAP = {
     "ardy_motion_generation": "ArdyMotionGenerationAdapter",
 }
 
+# Legacy alias mapping for raw geometry routing
+LEGACY_RAW_MODEL_ALIASES = {
+    "trellis2_image_to_textured_mesh": "trellis2_image_to_raw_mesh",
+    "trellis2_image_to_3d": "trellis2_image_to_raw_mesh",
+    "trellis_image_to_textured_mesh": "trellis_image_to_raw_mesh",
+    "trellis_image_to_3d": "trellis_image_to_raw_mesh",
+    "hunyuan3d_shape_v21_image_to_textured_mesh": "hunyuan3d_shape_v21_image_to_raw_mesh",
+}
+
 _RULES_CACHE: Optional[Dict[str, Any]] = None
 _MODELS_CACHE: Optional[Dict[str, Any]] = None
 
@@ -282,6 +291,10 @@ def plan_generation(
     if not auto_mode and explicit_model:
         explicit_model_str = str(explicit_model).strip()
         reasons.append(f"Explicit model choice requested: '{explicit_model_str}'")
+        canonical_model = LEGACY_RAW_MODEL_ALIASES.get(explicit_model_str, explicit_model_str)
+        if canonical_model != explicit_model_str:
+            reasons.append(f"Mapped legacy model '{explicit_model_str}' to raw mesh model '{canonical_model}'")
+            explicit_model_str = canonical_model
         cand_meta = rules.get("adapters", {}).get(explicit_model_str, {})
         candidates.append({
             "adapter": explicit_model_str,
@@ -354,8 +367,19 @@ def plan_generation(
 
     for idx, cand in enumerate(candidates):
         cand_id = cand["adapter"]
+        # Normalize legacy aliases to canonical models
+        canonical_cand_id = LEGACY_RAW_MODEL_ALIASES.get(cand_id, cand_id)
+        if canonical_cand_id != cand_id:
+            cand["adapter"] = canonical_cand_id
+            cand_id = canonical_cand_id
+
         cand_meta = rules.get("adapters", {}).get(cand_id, {})
-        model_meta = models_catalog.get(cand_id, {})
+        model_meta = dict(models_catalog.get(cand_id, {}))
+        alias_target = model_meta.get("alias_of")
+        if alias_target and alias_target in models_catalog:
+            for k, v in models_catalog[alias_target].items():
+                model_meta.setdefault(k, v)
+
         adapter_class = cand_meta.get("adapter_class", DEFAULT_ADAPTER_CLASS_MAP.get(cand_id))
         vram_mb = model_meta.get("vram_requirement")
         vram_budget_gb = round(float(vram_mb) / 1024.0, 2) if vram_mb is not None else float(cand_meta.get("vram_budget_gb", 0.0))
@@ -387,7 +411,7 @@ def plan_generation(
                 warnings.append(f"Preferred candidate '{cand_id}' unavailable: {lic_msg}")
             continue
 
-        # Check D: CUDA and VRAM budget
+        # Check D: CUDA and VRAM budget (single GPU, multi-GPU load sharing, or low-VRAM mode)
         if requires_cuda:
             if not has_cuda:
                 msg = f"Candidate '{cand_id}' requires CUDA, but CUDA is not available."
@@ -395,8 +419,43 @@ def plan_generation(
                 if idx == 0:
                     warnings.append(f"Preferred candidate '{cand_id}' unavailable: {msg}")
                 continue
-            if free_vram_gb is not None and vram_budget_gb > free_vram_gb:
-                msg = f"Candidate '{cand_id}' requires {vram_budget_gb} GB VRAM, but only {free_vram_gb} GB is free."
+
+            caps = dict(model_meta.get("capabilities") or {})
+            multi_gpu = caps.get("multi_gpu", False) or model_meta.get("multi_gpu", False)
+            low_vram_supported = (
+                caps.get("low_vram_supported", False)
+                or caps.get("cpu_offload", False)
+                or "low_vram_requirement" in model_meta
+            )
+            low_vram_mb = model_meta.get("low_vram_requirement")
+            low_vram_gb = round(float(low_vram_mb) / 1024.0, 2) if low_vram_mb is not None else 10.0
+
+            gpu_count = int(runtime.get("gpu_count", 1 if has_cuda else 0))
+            aggregate_free_gb = runtime.get("aggregate_free_vram_gb") or free_vram_gb
+            max_free_gb = runtime.get("max_free_vram_gb") or free_vram_gb
+
+            # 1. Fits on single GPU
+            if max_free_gb is not None and max_free_gb >= vram_budget_gb:
+                pass
+            # 2. Fits across multiple GPUs (load sharing)
+            elif multi_gpu and gpu_count > 1 and aggregate_free_gb is not None and aggregate_free_gb >= vram_budget_gb:
+                reasons.append(
+                    f"Candidate '{cand_id}' requires {vram_budget_gb} GB VRAM; scheduled for multi-GPU load sharing across {gpu_count} GPUs ({aggregate_free_gb} GB aggregate free)."
+                )
+            # 3. Fits low-VRAM sequential offload mode
+            elif low_vram_supported and (
+                (max_free_gb is not None and max_free_gb >= low_vram_gb)
+                or (gpu_count > 1 and aggregate_free_gb is not None and aggregate_free_gb >= low_vram_gb)
+            ):
+                reasons.append(
+                    f"Candidate '{cand_id}' requires {vram_budget_gb} GB VRAM; fits within {low_vram_gb} GB low-VRAM threshold."
+                )
+            # 4. Insufficient VRAM across available hardware
+            elif free_vram_gb is not None:
+                if multi_gpu and gpu_count > 1:
+                    msg = f"Candidate '{cand_id}' requires {vram_budget_gb} GB VRAM across GPUs, but only {aggregate_free_gb} GB is free across {gpu_count} GPUs."
+                else:
+                    msg = f"Candidate '{cand_id}' requires {vram_budget_gb} GB VRAM, but only {max_free_gb if max_free_gb is not None else free_vram_gb} GB is free."
                 reasons.append(f"Candidate {cand_id} skipped: {msg}")
                 warnings.append(f"Fallback from candidate '{cand_id}': {msg}")
                 continue

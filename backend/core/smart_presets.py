@@ -45,8 +45,8 @@ NATIVE_PRESET: Dict[str, Any] = {
         "unique3d_image_to_raw_mesh",
         "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh",
         "triposg_image_to_raw_mesh",
-        "trellis2_image_to_textured_mesh",
-        "trellis_image_to_textured_mesh",
+        "trellis2_image_to_raw_mesh",
+        "trellis_image_to_raw_mesh",
     ],
 }
 

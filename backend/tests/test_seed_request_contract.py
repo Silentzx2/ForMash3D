@@ -253,3 +253,55 @@ def test_rate_limit_disabled_allows_arbitrary_requests():
     result = asyncio.run(_rate_limit_result(request, settings))
     assert result["allowed"] is True
     assert result["limit"] == 0
+
+
+def test_multi_gpu_load_sharing_accepts_candidate_when_single_gpu_is_insufficient():
+    runtime = {
+        "has_cuda": True,
+        "gpu_count": 2,
+        "installed_adapters": ["trellis2_image_to_raw_mesh"],
+        "enabled_adapters": ["trellis2_image_to_raw_mesh"],
+        "free_vram_gb": 14.36,
+        "max_free_vram_gb": 14.36,
+        "aggregate_free_vram_gb": 28.72,
+    }
+    plan = plan_generation(
+        {"model_preference": "trellis2_image_to_raw_mesh", "auto_mode": False},
+        runtime,
+    )
+    assert plan["adapter"] == "trellis2_image_to_raw_mesh"
+    assert any("multi-GPU load sharing" in r or "low-VRAM" in r for r in plan["reasons"])
+
+
+def test_low_vram_mode_accepts_trellis2_when_free_vram_meets_low_threshold():
+    runtime = {
+        "has_cuda": True,
+        "gpu_count": 1,
+        "installed_adapters": ["trellis2_image_to_raw_mesh"],
+        "enabled_adapters": ["trellis2_image_to_raw_mesh"],
+        "free_vram_gb": 14.36,
+        "max_free_vram_gb": 14.36,
+        "aggregate_free_vram_gb": 14.36,
+    }
+    plan = plan_generation(
+        {"model_preference": "trellis2_image_to_raw_mesh", "auto_mode": False},
+        runtime,
+    )
+    assert plan["adapter"] == "trellis2_image_to_raw_mesh"
+
+
+def test_legacy_textured_mesh_model_preference_normalizes_to_raw_mesh():
+    runtime = {
+        "has_cuda": True,
+        "gpu_count": 2,
+        "installed_adapters": ["trellis2_image_to_raw_mesh", "trellis2_image_to_textured_mesh"],
+        "enabled_adapters": ["trellis2_image_to_raw_mesh", "trellis2_image_to_textured_mesh"],
+        "free_vram_gb": 14.36,
+        "max_free_vram_gb": 14.36,
+        "aggregate_free_vram_gb": 28.72,
+    }
+    plan = plan_generation(
+        {"model_preference": "trellis2_image_to_textured_mesh", "auto_mode": False},
+        runtime,
+    )
+    assert plan["adapter"] == "trellis2_image_to_raw_mesh"
