@@ -274,9 +274,20 @@ def _execute_texture_stage(
     cancel_checker: CancelChecker = None,
     progress: GenerationProgress = None,
 ) -> Dict[str, Any]:
-    """Run centralized texture stage using Paint3D (1K/2K) or Hunyuan3D-Paint v2.1 (4K/8K)."""
+    """Run centralized texture stage using Paint3D (1K/2K), Hunyuan3D-Paint v2.1 (4K/8K), or TRELLIS.2."""
     _check_cancelled(cancel_checker)
-    model_id = "paint3d" if preset_label in {"1K", "2K"} else "hunyuan3d_paint_v21"
+    paint_preference = str(
+        job_inputs.get("paint_model_preference")
+        or job_inputs.get("paint_model")
+        or job_metadata.get("paint_model_preference")
+        or job_metadata.get("paint_model")
+        or ""
+    ).strip().lower()
+
+    if paint_preference in {"trellis2", "trellis2_paint", "trellis2_image_mesh_painting"}:
+        model_id = "trellis2_image_mesh_painting"
+    else:
+        model_id = "paint3d" if preset_label in {"1K", "2K"} else "hunyuan3d_paint_v21"
 
     ref_image_path = _resolve_reference_image(job_inputs, job_metadata)
     if not ref_image_path or not ref_image_path.is_file():
@@ -295,7 +306,67 @@ def _execute_texture_stage(
     textured_glb_path = texture_dir / f"{base_name}_textured.glb"
 
     try:
-        if preset_label in {"1K", "2K"}:
+        if model_id == "trellis2_image_mesh_painting":
+            adapter = None
+            try:
+                from core.scheduler.model_factory import ModelFactory
+                for key in ("trellis2_image_mesh_painting", "trellis2_paint"):
+                    if key in ModelFactory.ADAPTER_REGISTRY:
+                        adapter = ModelFactory.create_model_from_config({
+                            "model_id": key,
+                            "vram_requirement": 16000,
+                            "feature_type": "image_mesh_painting",
+                        })
+                        break
+            except Exception as e:
+                logger.debug("ModelFactory Trellis2-Paint lookup: %s", e)
+
+            if adapter is None:
+                try:
+                    from adapters.trellis2_paint_adapter import Trellis2ImageMeshPaintingAdapter
+                    adapter = Trellis2ImageMeshPaintingAdapter(vram_requirement=16000)
+                except Exception as exc:
+                    raise RuntimeError(f"TRELLIS.2 paint adapter could not be loaded: {exc}")
+
+            _check_cancelled(cancel_checker)
+            should_unload_t2 = False
+            from core.models.base import ModelStatus
+            if getattr(adapter, "status", None) in (ModelStatus.UNLOADED, ModelStatus.ERROR):
+                gpu_id = getattr(adapter, "gpu_id", None)
+                if gpu_id is None:
+                    import os
+                    cuda_vis = os.environ.get("CUDA_VISIBLE_DEVICES", "0")
+                    try:
+                        gpu_id = int(cuda_vis.split(",")[0])
+                    except Exception:
+                        gpu_id = 0
+                _emit(progress, 0.66, "texture", f"Loading {model_id} model on GPU {gpu_id}...")
+                adapter.load(gpu_id)
+                _emit(progress, 0.68, "texture", f"{model_id} model loaded successfully")
+                should_unload_t2 = True
+            try:
+                _emit(progress, 0.70, "texture", "Texturing mesh with TRELLIS.2...")
+                res = adapter.process({
+                    "mesh_path": str(target_mesh_path),
+                    "image_path": str(ref_image_path),
+                    "output_format": "glb",
+                    "extension_webp": True,
+                    "progress_callback": lambda stage, frac, msg: _emit(progress, frac, stage, msg),
+                    "timeout_seconds": 1800,
+                    "cancel_checker": cancel_checker,
+                })
+            finally:
+                if should_unload_t2:
+                    try:
+                        adapter.unload()
+                    except Exception:
+                        pass
+            out_mesh = res.get("output_mesh_path") if isinstance(res, dict) else None
+            if not out_mesh or not Path(out_mesh).is_file():
+                raise RuntimeError(f"TRELLIS.2 paint returned no output mesh: {res}")
+            shutil.copy2(out_mesh, textured_glb_path)
+
+        elif preset_label in {"1K", "2K"}:
             adapter = None
             try:
                 from core.scheduler.model_factory import ModelFactory
@@ -2637,7 +2708,18 @@ def run_postprocess_job(
         logger.info("[POSTPROCESS TEXTURE] Stage skipped: textured generation not requested")
     else:
         _save_file(glb_path, _export_glb(uv_mesh))
-        _emit(progress, 0.65, "texture", f"Generating {preset_label} textures with {'paint3d' if preset_label in {'1K', '2K'} else 'hunyuan3d_paint_v21'}...")
+        painter_display = (
+            "trellis2_paint"
+            if str(
+                job_inputs.get("paint_model_preference")
+                or job_inputs.get("paint_model")
+                or job_metadata.get("paint_model_preference")
+                or job_metadata.get("paint_model")
+                or ""
+            ).strip().lower() in {"trellis2", "trellis2_paint", "trellis2_image_mesh_painting"}
+            else ("paint3d" if preset_label in {"1K", "2K"} else "hunyuan3d_paint_v21")
+        )
+        _emit(progress, 0.65, "texture", f"Generating {preset_label} textures with {painter_display}...")
         texture_stage_info = _execute_texture_stage(
             job_id=job_id,
             asset_dir=asset_dir,

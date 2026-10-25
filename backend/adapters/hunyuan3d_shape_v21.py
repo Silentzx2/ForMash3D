@@ -30,9 +30,9 @@ logger = logging.getLogger(__name__)
 # SUPPORTED BY: Hunyuan3D-Shape-v2-1 adapter, EXPERIMENTAL-MODEL-SETTINGS.md section "Hunyuan3D-Shape-v2.1".
 # ROLLBACK: previous effective values; scheduler strips frontend overrides before adapter applies lock.
 _LOCKED_INFERENCE_PROFILE = {
-    "source_quality": "max", "octree_resolution": 768,
+    "source_quality": "max", "octree_resolution": 512,
     "num_inference_steps": 50, "guidance_scale": 7.0,
-    "num_chunks": 80000, "mc_algo": "mc",
+    "num_chunks": 160000, "mc_algo": "mc",
 }
 
 
@@ -332,7 +332,7 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
             logger.info(f"Generating 3D shape with Hunyuan3D-Shape-v2-1 on {self.device}...")
             octree_res = inputs.get("octree_resolution") or inputs.get("octree_res") or inputs.get("grid_resolution")
             if octree_res is None:
-                octree_res = 1300 if inputs.get("source_quality", "max") == "max" else 256
+                octree_res = 512 if inputs.get("source_quality", "max") == "max" else 256
             else:
                 octree_res = int(octree_res)
 
