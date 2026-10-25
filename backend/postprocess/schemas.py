@@ -371,7 +371,7 @@ class MeshStats(BaseModel):
 
 
 class OptimizeOptions(BaseModel):
-    """ForMash3D backend adapter for the Optimize / LOD contract."""
+    """ForMesh3D backend adapter for the Optimize / LOD contract."""
     simplify_ratio: float = Field(default=0.5, ge=0.01, le=1.0)
     target_faces: int | None = Field(default=None, ge=1)
     simplify_error: float = Field(default=0.05, ge=0.001, le=1.0)

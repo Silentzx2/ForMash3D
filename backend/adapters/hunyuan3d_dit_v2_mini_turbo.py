@@ -2,7 +2,7 @@
 Hunyuan3D-DiT-v2-mini-Turbo model adapter for low-VRAM image-to-mesh generation.
 
 This adapter integrates the Hunyuan3D-DiT-v2-mini-Turbo (0.6B) model into
-the ForMash3D mesh generation framework, supporting low-resource shape generation.
+the ForMesh3D mesh generation framework, supporting low-resource shape generation.
 """
 
 import logging

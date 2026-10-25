@@ -1,4 +1,4 @@
-# Architecture — ForMash 3D
+# Architecture — ForMesh 3D
 
 > **Architecture Version**: 0.1.0 (FastAPI + Next.js 16)
 > **Last Verified**: October 22, 2026
@@ -10,7 +10,7 @@
 
 ## 1. Architectural Mission & Overview
 
-ForMash 3D is an end-to-end generative 3D asset pipeline. The system is architected around a clean separation of concerns:
+ForMesh 3D is an end-to-end generative 3D asset pipeline. The system is architected around a clean separation of concerns:
 
 - **Presentation Layer**: Next.js 16 frontend with interactive Three.js 3D viewport, studio workspace tooling, persistent asset thumbnailing/previews, real-time hardware telemetry HUD, viewport background job capsule, and model management.
 - **API Gateway**: FastAPI backend (Python 3.10, Conda env `3daigc-api`) with VRAM-aware multiprocess scheduler, request validation, rate limiting, dual-store job synchronization (Redis + SQLite), and authorized artifact delivery.
@@ -169,7 +169,7 @@ flowchart TD
   - `uv_island_count` (face-adjacency chart components when visual UVs are present)
   - `feature_edge_retention` (share of master edges with dihedral angle > 30.0° retained within angle/distance tolerance; 1.0 if no sharp edges or master is None)
   - Master immutability audit logic: `sha256_file` and `audit_master_immutability` guaranteeing working copies preserve exact SHA-256 master lineage.
-- `backend/core/quality/parity_scorecard.py`: Competitive benchmarking scorecard generator producing `parity_scorecard.json` across rows (`sharpness`, `topology_cleanliness`, `uv_quality`, `texture_quality`, `speed`, `failure_rate`) and columns (`ForMash3D`, `Tripo`, `Meshy`, `Hyper3D`).
+- `backend/core/quality/parity_scorecard.py`: Competitive benchmarking scorecard generator producing `parity_scorecard.json` across rows (`sharpness`, `topology_cleanliness`, `uv_quality`, `texture_quality`, `speed`, `failure_rate`) and columns (`ForMesh3D`, `Tripo`, `Meshy`, `Hyper3D`).
 
 ### Input Image Prep Module (Task 1B)
 - `backend/core/preprocess/image_enhancement.py`: Pillow/RealESRGAN preprocessing for 3D generation intake without mutating the source image; it writes an approved preprocessing artifact instead.
@@ -213,7 +213,7 @@ flowchart TD
 
 ### Final Parity Benchmark & Competitive Scorecard (Task 3D)
 - `scripts/run_final_parity_benchmark.py`: Evaluates canonical test shapes (cube, sphere, cylinder, mechanical prop) comparing raw baseline vs postprocessed meshes across triangle count, hole count, non-manifold edges, feature-edge retention, UV utilization, and PBR validation.
-- Output artifacts: `Docs/baseline_vs_now_benchmark.json` and `parity_scorecard.json` containing authoritative competitive comparisons across ForMash3D, Tripo, Meshy, and Hyper3D.
+- Output artifacts: `Docs/baseline_vs_now_benchmark.json` and `parity_scorecard.json` containing authoritative competitive comparisons across ForMesh3D, Tripo, Meshy, and Hyper3D.
 
 ```mermaid
 flowchart TB
@@ -359,7 +359,7 @@ Image-to-3D preprocessing tests for real transparency rather than alpha-channel 
 
 ### 2.5 Local Wheelhouse
 
-Prebuilt wheels are cached at `backend/thirdparty/wheels/` (inside the main ForMash3D repository). The `download_and_install_release_wheels()` function in `scripts/setup.sh` fetches all `.whl` files from the `ForMash3D/releases/tag/Wheels` GitHub Release and installs them. The install script (`backend/scripts/install.sh`) uses `--find-links="$WHEEL_DIR"` to prefer local prebuilt wheels when installing dependencies, falling back to PyPI/index/Git when no compatible wheel exists. Wheels are automatically downloaded from the ForMash3D GitHub Release at runtime into `backend/thirdparty/wheels/`.
+Prebuilt wheels are cached at `backend/thirdparty/wheels/` (inside the main ForMesh3D repository). The `download_and_install_release_wheels()` function in `scripts/setup.sh` fetches all `.whl` files from the `ForMesh3D/releases/tag/Wheels` GitHub Release and installs them. The install script (`backend/scripts/install.sh`) uses `--find-links="$WHEEL_DIR"` to prefer local prebuilt wheels when installing dependencies, falling back to PyPI/index/Git when no compatible wheel exists. Wheels are automatically downloaded from the ForMesh3D GitHub Release at runtime into `backend/thirdparty/wheels/`.
 
 ---
 
@@ -595,7 +595,7 @@ The active catalog is sourced from `backend/config/models.yaml`. Text-conditione
 ## 8.1 Raw Generation Fidelity / Official Parity Contract
 
 
-Raw generation is model-specific. ForMash3D does not apply one global inference-step contract because released models are tuned/distilled for different schedules.
+Raw generation is model-specific. ForMesh3D does not apply one global inference-step contract because released models are tuned/distilled for different schedules.
 
 ```
 model-specific inference settings

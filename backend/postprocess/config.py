@@ -27,7 +27,7 @@ WORK_DIR: Path = Path(
     os.environ.get("FORMASH_POSTPROCESS_WORK_DIR", str(Path(tempfile.gettempdir()) / "formash3d-postprocess"))
 )
 
-# ForMash3D already exposes the Blender executable through BLENDER_EXECUTABLE.
+# ForMesh3D already exposes the Blender executable through BLENDER_EXECUTABLE.
 BLENDER_EXECUTABLE: str = os.environ.get("BLENDER_EXECUTABLE", "blender")
 
 

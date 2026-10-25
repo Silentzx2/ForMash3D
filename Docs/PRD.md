@@ -1,8 +1,8 @@
-# Product Requirements Document — ForMash 3D
+# Product Requirements Document — ForMesh 3D
 
 ## Product
 
-**ForMash3D** — An open-source, self-hosted platform for generative 3D asset creation, neural mesh synthesis, and automated game-ready post-processing.
+**ForMesh3D** — An open-source, self-hosted platform for generative 3D asset creation, neural mesh synthesis, and automated game-ready post-processing.
 
 ## Problem & Product Position
 
@@ -10,7 +10,7 @@ Creating high-quality 3D assets requires expensive software, extensive artistic 
 
 Existing open-source AI 3D tools produce raw outputs that lack the post-processing pipeline needed for game-ready assets (LOD cascades, physics colliders, quad retopology, UV unwrapping, QA validation).
 
-**ForMash3D addresses this workflow gap** by combining model integrations, local GPU execution, asset preservation, and production-oriented finishing in one studio.
+**ForMesh3D addresses this workflow gap** by combining model integrations, local GPU execution, asset preservation, and production-oriented finishing in one studio.
 
 ## Target Users
 
@@ -274,7 +274,7 @@ flowchart TD
 | FastMesh-V1K | 16 GB | Retopology | ~30 seconds |
 | FastMesh-V4K | 24.5 GB | High-res retopology | ~30 seconds |
 
-FastMesh's V1K/V4K VRAM figures above are conservative ForMash3D scheduler budgets, not official minimums published by the model authors. Upstream lists an A6000-tested environment and uses batch size 3 for V1K and 1 for V4K, but does not state an exact minimum VRAM. Public weight files are approximately 4.38 GB and 4.39 GB respectively; disk size is not peak inference memory. When one card cannot meet the reservation, the adapter uses Accelerate automatic layer placement and admits aggregate memory only if the generated map spans at least two selected GPUs. GPU/checkpoint inference and peak memory still require validation on the target hardware.
+FastMesh's V1K/V4K VRAM figures above are conservative ForMesh3D scheduler budgets, not official minimums published by the model authors. Upstream lists an A6000-tested environment and uses batch size 3 for V1K and 1 for V4K, but does not state an exact minimum VRAM. Public weight files are approximately 4.38 GB and 4.39 GB respectively; disk size is not peak inference memory. When one card cannot meet the reservation, the adapter uses Accelerate automatic layer placement and admits aggregate memory only if the generated map spans at least two selected GPUs. GPU/checkpoint inference and peak memory still require validation on the target hardware.
 
 ## QA Scoring Methodology
 
@@ -290,7 +290,7 @@ FastMesh's V1K/V4K VRAM figures above are conservative ForMash3D scheduler budge
 
 ## Third-Party Model Licenses
 
-ForMash 3D does not own or claim rights to third-party architectures or weights. See `backend/thirdparty/LICENSE` and `backend/postprocess/THIRD_PARTY_LICENSE.md` for complete licensing information.
+ForMesh 3D does not own or claim rights to third-party architectures or weights. See `backend/thirdparty/LICENSE` and `backend/postprocess/THIRD_PARTY_LICENSE.md` for complete licensing information.
 
 ## Configuration
 
@@ -299,7 +299,7 @@ Key environment variables in `.env`:
 ```env
 ENVIRONMENT=development
 DEBUG=true
-APP_NAME=ForMash 3D API
+APP_NAME=ForMesh 3D API
 APP_VERSION=0.1.0
 BACKEND_URL=http://localhost:7842
 REDIS_URL=redis://localhost:6379/0

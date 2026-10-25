@@ -1,4 +1,4 @@
-# Architecture Decisions — ForMash 3D
+# Architecture Decisions — ForMesh 3D
 
 > **Version**: 0.1.0
 > **Last Updated**: September 2026

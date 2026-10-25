@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Verification Script for ForMash 3D Model Integration & Runtime Loop
+Verification Script for ForMesh 3D Model Integration & Runtime Loop
 Validates:
 1. Model configs, adapters, parameter schemas for TripoSG and ARDY.
 2. Motion converter (ARDY rotation matrix -> Three.js quaternions + motion.json).
@@ -154,7 +154,7 @@ def test_redis_connection_pool():
 
 if __name__ == "__main__":
     print("=======================================================")
-    print("Starting ForMash 3D Contract & Runtime Verification Loop")
+    print("Starting ForMesh 3D Contract & Runtime Verification Loop")
     print("=======================================================")
     try:
         test_file_path_resolver()

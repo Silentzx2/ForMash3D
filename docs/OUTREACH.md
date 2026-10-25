@@ -1,34 +1,34 @@
-# Outreach — ForMash3D
+# Outreach — ForMesh3D
 
 Ready-to-post drafts for community platforms.
 
 ## Reddit
 
 **r/opensource:**  
-"ForMash3D is now in beta — a fully self-hosted, open-source alternative to Tripo/Meshy/Hyper3D. Image-to-3D, quad retopology, PBR texturing, auto-rigging, all running on your local GPU. No cloud, no subscriptions. Apache-2.0. https://github.com/Silentzx2/ForMash3D"
+"ForMesh3D is now in beta — a fully self-hosted, open-source alternative to Tripo/Meshy/Hyper3D. Image-to-3D, quad retopology, PBR texturing, auto-rigging, all running on your local GPU. No cloud, no subscriptions. Apache-2.0. https://github.com/Silentzx2/ForMesh3D"
 
 **r/gamedev:**  
-"Game-ready 3D assets without the cloud. ForMash3D beta is out — self-hosted image-to-3D with quad retopology, LODs, collision hulls, and Unity/Unreal/Godot export. Runs on your own NVIDIA GPU. https://github.com/Silentzx2/ForMash3D"
+"Game-ready 3D assets without the cloud. ForMesh3D beta is out — self-hosted image-to-3D with quad retopology, LODs, collision hulls, and Unity/Unreal/Godot export. Runs on your own NVIDIA GPU. https://github.com/Silentzx2/ForMesh3D"
 
 **r/StableDiffusion:**  
-"If you run local models, you'll like ForMash3D. Self-hosted 3D generation with Hunyuan3D, TRELLIS, TripoSG, Unique3D — all managed through one FastAPI + Next.js studio. Beta now. https://github.com/Silentzx2/ForMash3D"
+"If you run local models, you'll like ForMesh3D. Self-hosted 3D generation with Hunyuan3D, TRELLIS, TripoSG, Unique3D — all managed through one FastAPI + Next.js studio. Beta now. https://github.com/Silentzx2/ForMesh3D"
 
 ## Hacker News "Show HN"
 
-"Show HN: ForMash3D — Self-hosted, open-source image-to-3D studio (Tripo/Meshy/Hyper3D alternative)"
+"Show HN: ForMesh3D — Self-hosted, open-source image-to-3D studio (Tripo/Meshy/Hyper3D alternative)"
 
 ## Dev.to / Hashnode
 
-Title: "Building a self-hosted Tripo alternative: ForMash3D beta"  
+Title: "Building a self-hosted Tripo alternative: ForMesh3D beta"  
 Body: Write about why local 3D generation matters, the architecture (FastAPI + Next.js + model adapters), and how to get started with `bash scripts/setup.sh`.
 
 ## X / LinkedIn
 
-"ForMash3D beta is live — a fully self-hosted, open-source 3D generation studio. Image-to-3D, quad retopology, PBR texturing, auto-rigging, all on your local GPU. No cloud fees. Apache-2.0. https://github.com/Silentzx2/ForMash3D"
+"ForMesh3D beta is live — a fully self-hosted, open-source 3D generation studio. Image-to-3D, quad retopology, PBR texturing, auto-rigging, all on your local GPU. No cloud fees. Apache-2.0. https://github.com/Silentzx2/ForMesh3D"
 
 ## Hugging Face Community
 
-Post in the Spaces/Discussions section about ForMash3D integrating HF models (Hunyuan3D, TRELLIS, TripoSG, Unique3D) into a self-hosted studio.
+Post in the Spaces/Discussions section about ForMesh3D integrating HF models (Hunyuan3D, TRELLIS, TripoSG, Unique3D) into a self-hosted studio.
 
 ## Lists to Submit
 

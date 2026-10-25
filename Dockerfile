@@ -1,4 +1,4 @@
-# Single All-in-One Dockerfile for ForMash3D Studio
+# Single All-in-One Dockerfile for ForMesh3D Studio
 # Contains: CUDA 12.4, Python 3.10 Conda Env (3daigc-api), PyTorch 2.6.0,
 #           All Generative 3D Model Adapters, Headless Blender Post-processing,
 #           Embedded Redis Queue, Multi-Worker FastAPI Backend (Port 7842),

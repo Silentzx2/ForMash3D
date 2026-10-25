@@ -1,11 +1,11 @@
 <!-- ===================== HERO BANNER ===================== -->
 
 <p align="center">
-  <img src="assets/banner.png" alt="ForMash3D Banner — Open Source Generative 3D Mesh Studio" width="100%">
+  <img src="assets/banner.png" alt="ForMesh3D Banner — Open Source Generative 3D Mesh Studio" width="100%">
 </p>
 
 <h1 align="center">
-    ForMash3D — Open-Source Self-Hosted Image-to-3D AI Generator
+    ForMesh3D — Open-Source Self-Hosted Image-to-3D AI Generator
 </h1>
 
 <p align="center">
@@ -15,26 +15,26 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Deployment-100%25_Self--Hosted_&_Local_GPU-10B981?style=for-the-badge&logo=serverfault&logoColor=white" alt="Self-Hosted"></a>
-  <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Compute-NVIDIA_CUDA_12.4-76B900?style=for-the-badge&logo=nvidia&logoColor=white" alt="CUDA 12.4"></a>
-  <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Models-Neural_3D_Adapters-8B5CF6?style=for-the-badge&logo=huggingface&logoColor=white" alt="ForMash3D neural 3D model integrations"></a>
-  <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Backend-FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI"></a>
-  <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Frontend-Next.js_16-000000?style=for-the-badge&logo=nextdotjs&logoColor=white" alt="Next.js 16"></a>
+  <a href="https://github.com/Silentzx2/ForMesh3D"><img src="https://img.shields.io/badge/Deployment-100%25_Self--Hosted_&_Local_GPU-10B981?style=for-the-badge&logo=serverfault&logoColor=white" alt="Self-Hosted"></a>
+  <a href="https://github.com/Silentzx2/ForMesh3D"><img src="https://img.shields.io/badge/Compute-NVIDIA_CUDA_12.4-76B900?style=for-the-badge&logo=nvidia&logoColor=white" alt="CUDA 12.4"></a>
+  <a href="https://github.com/Silentzx2/ForMesh3D"><img src="https://img.shields.io/badge/Models-Neural_3D_Adapters-8B5CF6?style=for-the-badge&logo=huggingface&logoColor=white" alt="ForMesh3D neural 3D model integrations"></a>
+  <a href="https://github.com/Silentzx2/ForMesh3D"><img src="https://img.shields.io/badge/Backend-FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI"></a>
+  <a href="https://github.com/Silentzx2/ForMesh3D"><img src="https://img.shields.io/badge/Frontend-Next.js_16-000000?style=for-the-badge&logo=nextdotjs&logoColor=white" alt="Next.js 16"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue?style=for-the-badge" alt="License Apache-2.0"></a>
 </p>
 
 <p align="center">
-  <strong>⚡ Quick Start:</strong> <code>git clone https://github.com/Silentzx2/ForMash3D.git</code> → <code>bash scripts/setup.sh</code> → <code>bash scripts/start.sh</code> → Open <a href="http://localhost:3000">http://localhost:3000</a>
+  <strong>⚡ Quick Start:</strong> <code>git clone https://github.com/Silentzx2/ForMesh3D.git</code> → <code>bash scripts/setup.sh</code> → <code>bash scripts/start.sh</code> → Open <a href="http://localhost:3000">http://localhost:3000</a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/Silentzx2/ForMash3D/releases"><img src="https://img.shields.io/badge/Phase-BETA-ffb703?style=for-the-badge" alt="BETA phase"></a>
+  <a href="https://github.com/Silentzx2/ForMesh3D/releases"><img src="https://img.shields.io/badge/Phase-BETA-ffb703?style=for-the-badge" alt="BETA phase"></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/Silentzx2/ForMash3D/stargazers"><img src="https://img.shields.io/github/stars/Silentzx2/ForMash3D?style=for-the-badge" alt="GitHub stars"></a>
-  <a href="https://github.com/Silentzx2/ForMash3D/commits/main"><img src="https://img.shields.io/github/last-commit/Silentzx2/ForMash3D?style=for-the-badge" alt="Last commit"></a>
-  <a href="https://github.com/Silentzx2/ForMash3D/issues"><img src="https://img.shields.io/github/issues/Silentzx2/ForMash3D?style=for-the-badge" alt="Issues"></a>
+  <a href="https://github.com/Silentzx2/ForMesh3D/stargazers"><img src="https://img.shields.io/github/stars/Silentzx2/ForMesh3D?style=for-the-badge" alt="GitHub stars"></a>
+  <a href="https://github.com/Silentzx2/ForMesh3D/commits/main"><img src="https://img.shields.io/github/last-commit/Silentzx2/ForMesh3D?style=for-the-badge" alt="Last commit"></a>
+  <a href="https://github.com/Silentzx2/ForMesh3D/issues"><img src="https://img.shields.io/github/issues/Silentzx2/ForMesh3D?style=for-the-badge" alt="Issues"></a>
   <a href="docs/GITHUB_SETUP.md"><img src="https://img.shields.io/badge/CPU%20mode-supported-5319e7?style=for-the-badge" alt="CPU mode supported"></a>
 </p>
 
@@ -63,11 +63,11 @@
 ## 🌟 Overview & Product Vision
 
 > [!NOTE]
-> **Phase: BETA** — ForMash3D has graduated from early development. Core studio, API gateway, and post-processing pipeline are stabilizing; breaking changes may still land before 1.0.
+> **Phase: BETA** — ForMesh3D has graduated from early development. Core studio, API gateway, and post-processing pipeline are stabilizing; breaking changes may still land before 1.0.
 
-**ForMash3D** is an open-source, self-hosted generative 3D asset creation and mesh-finishing platform. It bridges modern state-of-the-art open research models into a single, cohesive studio running entirely on your local workstation or private GPU cluster.
+**ForMesh3D** is an open-source, self-hosted generative 3D asset creation and mesh-finishing platform. It bridges modern state-of-the-art open research models into a single, cohesive studio running entirely on your local workstation or private GPU cluster.
 
-ForMash3D unifies neural 3D generation, asset finishing, validation, and export into one self-hosted workflow for 3D technical artists, game developers, and researchers:
+ForMesh3D unifies neural 3D generation, asset finishing, validation, and export into one self-hosted workflow for 3D technical artists, game developers, and researchers:
 - **100% Private & Self-Hosted**: Run generation locally on NVIDIA GPUs without subscriptions, cloud queues, or uploading proprietary concept art to external servers.
 - **Immutable Source Preservation**: Model-native generation is snapshotted at `master/source.glb` before production optimization or decimation.
 - **Production Asset Finishing**: Features a complete post-processing pipeline forked and customized from **[3DGenStudio](https://github.com/visualbruno/3DGenStudio)**, delivering watertight repair, conformal UV unwrapping, PBR material baking, quad retopology, multi-tier LOD cascades, and CoACD convex physics collision hulls.
@@ -77,14 +77,14 @@ ForMash3D unifies neural 3D generation, asset finishing, validation, and export 
 > [!WARNING]
 > ### ⚖️ Licensing, Commercial & SaaS Advisory (Important)
 >
-> 1. **Core Repository License**: ForMash3D's original code (orchestrator, API gateway, scheduler, and Next.js studio UI) is open-source under the **[Apache License 2.0](LICENSE)**.
+> 1. **Core Repository License**: ForMesh3D's original code (orchestrator, API gateway, scheduler, and Next.js studio UI) is open-source under the **[Apache License 2.0](LICENSE)**.
 > 2. **Post-Processing Provenance**: The mesh post-processing engine (`backend/postprocess/`) was forked and customized from **[visualbruno/3DGenStudio](https://github.com/visualbruno/3DGenStudio)** under the **3D Gen Studio Community License**. See **[backend/postprocess/THIRD_PARTY_LICENSE.md](backend/postprocess/THIRD_PARTY_LICENSE.md)**.
-> 3. **Commercial Ownership of Outputs**: **You own 100% of the 3D meshes, textures, rigs, and assets generated with ForMash3D**. You are completely free to use, monetize, sell, or include them in commercial games and software without restrictions.
+> 3. **Commercial Ownership of Outputs**: **You own 100% of the 3D meshes, textures, rigs, and assets generated with ForMesh3D**. You are completely free to use, monetize, sell, or include them in commercial games and software without restrictions.
 > 4. **Notice for Commercial & SaaS Implementors**:
->    - The Apache 2.0 license applies **strictly to ForMash3D's original code**. We do **not** own or re-license the underlying third-party models, research weights, or ported submodules.
+>    - The Apache 2.0 license applies **strictly to ForMesh3D's original code**. We do **not** own or re-license the underlying third-party models, research weights, or ported submodules.
 >    - The ported `3DGenStudio` post-processing pipeline prohibits hosting the software as a paid public/private commercial SaaS service without explicit written consent from the upstream author (`visualbruno`).
 >    - Individual model checkpoints (e.g. Hunyuan3D-2.1, FastMesh, TripoSG) carry their respective upstream research, academic, or non-commercial licenses (see **[backend/thirdparty/LICENSE](backend/thirdparty/LICENSE)** and individual `backend/thirdparty/<model>/LICENSE` files).
->    - **Do NOT blindly deploy or redistribute ForMash3D as a paid commercial product or SaaS** without auditing and complying with the respective licenses of each integrated model and component!
+>    - **Do NOT blindly deploy or redistribute ForMesh3D as a paid commercial product or SaaS** without auditing and complying with the respective licenses of each integrated model and component!
 
 > [!NOTE]
 > ### 🛡️ Repository Rules & Engineering Standards
@@ -97,7 +97,7 @@ ForMash3D unifies neural 3D generation, asset finishing, validation, and export 
 
 ## 📊 Core Capability Map
 
-| Capability | ForMash3D Implementation |
+| Capability | ForMesh3D Implementation |
 |---|---|
 | Neural 3D Generation | Image-to-3D adapters with model-specific inference contracts |
 | Source Preservation | Immutable master/source.glb checkpoint before production processing |
@@ -110,7 +110,7 @@ ForMash3D unifies neural 3D generation, asset finishing, validation, and export 
 
 ## 🔄 End-to-End Asset Generation Pipeline
 
-ForMash3D enforces an **immutable master preservation architecture**. The raw neural model output is immediately snapshotted at `master/source.glb` before any downstream finishing operations, guaranteeing zero accidental loss of fine surface detail:
+ForMesh3D enforces an **immutable master preservation architecture**. The raw neural model output is immediately snapshotted at `master/source.glb` before any downstream finishing operations, guaranteeing zero accidental loss of fine surface detail:
 
 ```text
    INPUT                     NEURAL GENERATION               CANONICAL CHECKPOINT
@@ -281,7 +281,7 @@ The model registry is dynamically configured via `backend/config/models.yaml` an
 
 ## ⚙️ Production Post-Processing Engine
 
-Raw AI generative meshes typically suffer from non-manifold triangles, missing UV layouts, dense topological noise, and absence of physics colliders. ForMash3D's post-processing engine (ported and enhanced from [3DGenStudio](https://github.com/visualbruno/3DGenStudio)) automates asset finishing:
+Raw AI generative meshes typically suffer from non-manifold triangles, missing UV layouts, dense topological noise, and absence of physics colliders. ForMesh3D's post-processing engine (ported and enhanced from [3DGenStudio](https://github.com/visualbruno/3DGenStudio)) automates asset finishing:
 
 ```text
 backend/storage/models/meshes/<asset_name>_<job_id>/
@@ -344,8 +344,8 @@ The shared Python runtime is version-pinned for supported model adapters: Transf
 ### 1. Clone & Frontend Setup
 
 ```bash
-git clone https://github.com/Silentzx2/ForMash3D.git
-cd ForMash3D
+git clone https://github.com/Silentzx2/ForMesh3D.git
+cd ForMesh3D
 
 # Install frontend dependencies with Bun
 bun install
@@ -399,7 +399,7 @@ The single-container RunPod image uses the same repository-root build context: `
 
 ## 🎮 Studio Workspace Modules
 
-The ForMash3D workspace provides a comprehensive suite of creative 3D tools:
+The ForMesh3D workspace provides a comprehensive suite of creative 3D tools:
 
 - **Generate Studio (`/workspace`)**: Image-to-3D generation with reference image intake, model selector with real-time VRAM estimator & hardware readiness, unified Target Polycount & Output Presets (`mobile`, `game_ready`, `cinematic`, `animation`, `3d_print`, `native`), and genuine production post-processing options (candidates 1–4, quad/tri topology, UV unwrapping, normal baking, LODs, repair, physics colliders). Model inference schedules are locked inside model adapters to guarantee maximum source fidelity without fake UI sliders.
 - **Texture Studio (`/workspace/texture`)**: Multi-view PBR texture painting and PBR map inspection/export (Albedo, Normal, Roughness, Metallic, AO). Paint3D handles 1K/2K, while Hunyuan3D-Paint runs its internal RealESRGAN enhancement for 4K/8K; this is automatic, not a separate UI setting.
@@ -442,7 +442,7 @@ The FastAPI backend exposes comprehensive REST and SSE streaming endpoints:
 
 ## 🛠️ Verification & Test Suite
 
-ForMash3D maintains rigorous unit, integration, and regression test suites:
+ForMesh3D maintains rigorous unit, integration, and regression test suites:
 
 ```bash
 # Backend CPU contract tests (includes the geometry dependencies used by the pipeline).
@@ -471,50 +471,50 @@ bash -n manager.sh backend/scripts/*.sh scripts/*.sh
 ## 🔍 Frequently Asked Questions (FAQ)
 
 <details>
-<summary><strong>How does ForMash3D protect source quality?</strong></summary>
+<summary><strong>How does ForMesh3D protect source quality?</strong></summary>
 
 Source generation uses model-specific inference schedules and source-density settings. The scheduler strips production-only face, decimation, remesh, LOD, physics, and paint orchestration controls before adapter inference. The resulting master/source.glb is immutable; downstream production budgets operate on derived artifacts only.
 </details>
 
 <details>
-<summary><strong>Can I use ForMash3D commercially or deploy it as a paid SaaS service?</strong></summary>
+<summary><strong>Can I use ForMesh3D commercially or deploy it as a paid SaaS service?</strong></summary>
 
-**For Outputs**: Yes! You own 100% of all 3D meshes, textures, rigs, and assets generated with ForMash3D. You may use them in commercial video games, 3D printing, VFX, or digital storefronts.
+**For Outputs**: Yes! You own 100% of all 3D meshes, textures, rigs, and assets generated with ForMesh3D. You may use them in commercial video games, 3D printing, VFX, or digital storefronts.
 
-**For Code & Hosting**: While ForMash3D's original orchestrator is open-source under Apache 2.0, the codebase incorporates ported engines (such as the `3DGenStudio` post-processing pipeline under the 3D Gen Studio Community License) and external neural model weights that carry non-commercial or academic research restrictions. **You may NOT sell the unmodified software or host it as a paid commercial SaaS service without explicit author permission.** Please review **[backend/thirdparty/LICENSE](backend/thirdparty/LICENSE)** and **[backend/postprocess/THIRD_PARTY_LICENSE.md](backend/postprocess/THIRD_PARTY_LICENSE.md)** for details.
+**For Code & Hosting**: While ForMesh3D's original orchestrator is open-source under Apache 2.0, the codebase incorporates ported engines (such as the `3DGenStudio` post-processing pipeline under the 3D Gen Studio Community License) and external neural model weights that carry non-commercial or academic research restrictions. **You may NOT sell the unmodified software or host it as a paid commercial SaaS service without explicit author permission.** Please review **[backend/thirdparty/LICENSE](backend/thirdparty/LICENSE)** and **[backend/postprocess/THIRD_PARTY_LICENSE.md](backend/postprocess/THIRD_PARTY_LICENSE.md)** for details.
 </details>
 
 <details>
 <summary><strong>Can I generate clean quad-topology meshes for game animation?</strong></summary>
 
-Yes. ForMash3D natively integrates **FastMesh** (V1K for rapid prop prototyping and V4K for hero characters) alongside an adaptive **AutoRetopo** pipeline. Unlike raw generative outputs that yield messy triangle soups, ForMash3D outputs clean quad-dominant edge loops with preserved feature creases, ready for skeletal auto-rigging and subdivision.
+Yes. ForMesh3D natively integrates **FastMesh** (V1K for rapid prop prototyping and V4K for hero characters) alongside an adaptive **AutoRetopo** pipeline. Unlike raw generative outputs that yield messy triangle soups, ForMesh3D outputs clean quad-dominant edge loops with preserved feature creases, ready for skeletal auto-rigging and subdivision.
 </details>
 
 <details>
-<summary><strong>How does ForMash3D handle PBR texturing and baking?</strong></summary>
+<summary><strong>How does ForMesh3D handle PBR texturing and baking?</strong></summary>
 
-ForMash3D features **Hunyuan3D-Paint-v2.1**, a 2B parameter diffusion checkpoint that projects multi-view high-resolution textures onto 3D geometry with automated **Real-ESRGAN x4+** super-resolution. The engine bakes complete PBR material channels (Albedo, Tangent Normal, Roughness, Metallic, and Ambient Occlusion) onto clean conformal UV layouts.
+ForMesh3D features **Hunyuan3D-Paint-v2.1**, a 2B parameter diffusion checkpoint that projects multi-view high-resolution textures onto 3D geometry with automated **Real-ESRGAN x4+** super-resolution. The engine bakes complete PBR material channels (Albedo, Tangent Normal, Roughness, Metallic, and Ambient Occlusion) onto clean conformal UV layouts.
 </details>
 
 <details>
-<summary><strong>Can ForMash3D run 100% offline without internet?</strong></summary>
+<summary><strong>Can ForMesh3D run 100% offline without internet?</strong></summary>
 
-Yes. Once your model checkpoints are downloaded via `bash backend/scripts/download_models.sh`, ForMash3D operates **completely offline**. No telemetry, prompts, reference images, or generated models are ever transmitted to any external server, ensuring complete data privacy and NDA compliance for commercial game studios.
+Yes. Once your model checkpoints are downloaded via `bash backend/scripts/download_models.sh`, ForMesh3D operates **completely offline**. No telemetry, prompts, reference images, or generated models are ever transmitted to any external server, ensuring complete data privacy and NDA compliance for commercial game studios.
 </details>
 
 <details>
-<summary><strong>What GPU hardware is required to run ForMash3D?</strong></summary>
+<summary><strong>What GPU hardware is required to run ForMesh3D?</strong></summary>
 
-ForMash3D runs on modern NVIDIA GPUs supporting CUDA 12.4+. VRAM figures are the scheduler reservations declared in `backend/config/models.yaml`:
+ForMesh3D runs on modern NVIDIA GPUs supporting CUDA 12.4+. VRAM figures are the scheduler reservations declared in `backend/config/models.yaml`:
 - **Lightweight Models (6 GB–10 GB VRAM)**: TripoSG (~8 GB), Hunyuan3D-DiT-v2-mini-Turbo (~6 GB), Unique3D (~10 GB), UniRig (~9 GB), PartUV (~7 GB).
 - **Standard Models (11.5 GB–12 GB VRAM)**: TRELLIS (~11.5 GB), Hunyuan3D-Paint v2.1 (~12 GB configured reservation), Paint3D (~12 GB).
 - **Heavy & High-Poly Models (16 GB–24 GB+ VRAM)**: FastMesh V1K (~16 GB) and V4K (~24.5 GB) reserve conservatively per GPU and declare the `accelerate_auto_device_map` multi-GPU strategy, so the planner can consider aggregate VRAM when the adapter supports it; Pixal3D (~18 GB), TRELLIS.2 (~23.5 GB, runs on RTX 3090, 4090, A10, A100).
 </details>
 
 <details>
-<summary><strong>What file formats can ForMash3D export for game engines?</strong></summary>
+<summary><strong>What file formats can ForMesh3D export for game engines?</strong></summary>
 
-ForMash3D exports standard **GLB / glTF 2.0**, **OBJ**, **STL**, and **FBX** (via isolated Blender automation). Downloaded ZIP archives are structured specifically for **Unreal Engine 5**, **Unity**, and **Godot 4**, containing game-ready meshes, LOD cascades (`lod0.glb`–`lod3.glb`), convex collision hulls (`collision.glb`), and portable physics metadata (`physics.json`).
+ForMesh3D exports standard **GLB / glTF 2.0**, **OBJ**, **STL**, and **FBX** (via isolated Blender automation). Downloaded ZIP archives are structured specifically for **Unreal Engine 5**, **Unity**, and **Godot 4**, containing game-ready meshes, LOD cascades (`lod0.glb`–`lod3.glb`), convex collision hulls (`collision.glb`), and portable physics metadata (`physics.json`).
 </details>
 
 ---
@@ -529,7 +529,7 @@ ForMash3D exports standard **GLB / glTF 2.0**, **OBJ**, **STL**, and **FBX** (vi
 
 ## Centralized Runtime Logging
 
-All project-managed runtime output is consolidated in `logs/master.log`: Python/API logging, scheduler and worker events, jobs, Next.js server/build output, startup scripts, and Redis when ForMash3D manages or can reconfigure the local Redis instance. The file is append-only while the app runs and does not rotate into numbered sibling logs.
+All project-managed runtime output is consolidated in `logs/master.log`: Python/API logging, scheduler and worker events, jobs, Next.js server/build output, startup scripts, and Redis when ForMesh3D manages or can reconfigure the local Redis instance. The file is append-only while the app runs and does not rotate into numbered sibling logs.
 
 Use `./manager.sh logs` or `tail -f logs/master.log`. The Admin Logs tab and `/api/v1/system/logs/stream` read this same file. Docker and Docker Compose persist it through the repository-root `logs/` mount. A separately managed remote Redis service keeps its own logs on its host.
 Live streaming emits both newline- and carriage-return-delimited output (including sampling progress) without waiting for a newline. The SSE proxy disables buffering, while the Admin Logs tab batches UI updates per animation frame and keeps a bounded rolling window under high log volume.
@@ -558,7 +558,7 @@ Live streaming emits both newline- and carriage-return-delimited output (includi
 
 ## 📄 License & Attribution
 
-- **ForMash3D Core**: Licensed under the **[Apache License 2.0](LICENSE)**.
+- **ForMesh3D Core**: Licensed under the **[Apache License 2.0](LICENSE)**.
 - **Post-Processing Pipeline**: Ported and adapted from **[visualbruno/3DGenStudio](https://github.com/visualbruno/3DGenStudio)** under the **3D Gen Studio Community License**. See **[backend/postprocess/THIRD_PARTY_LICENSE.md](backend/postprocess/THIRD_PARTY_LICENSE.md)**.
 - **Backend API Gateway Base**: Forked and modernized from **[FishWoWater/3DAIGC-API](https://github.com/FishWoWater/3DAIGC-API)**.
 - **Neural Model Checkpoints**: Individual neural model architectures are subject to their respective original authors' licenses (Hunyuan3D, TRELLIS, TripoSG, FastMesh, etc.). See **[backend/thirdparty/LICENSE](backend/thirdparty/LICENSE)** and individual `backend/thirdparty/<model>/LICENSE` files for full attributions and terms.
@@ -575,7 +575,7 @@ Mesh tools are part of the main FastAPI runtime at `/api/v1/mesh-tools/*`. The d
 
 ## Phase 1 Production Automation
 
-ForMash3D's normal Image → 3D workflow now includes optional production automation without a second pipeline:
+ForMesh3D's normal Image → 3D workflow now includes optional production automation without a second pipeline:
 
 - Generation Preview with reusable preprocessing artifacts, adaptive low-resolution enhancement, and provenance. Foreground masks are validated and preserved through upscaling; failed previews cannot enter inference, and suspicious previews require explicit review.
 - Smart Intent presets for Game Ready, Cinematic, Animation, 3D Print, and Mobile with deterministic backend model selection.
@@ -590,7 +590,7 @@ Inference schedules are adapter-owned and are not editable from the Generate UI.
 
 ## High-Fidelity Generation Architecture
 
-ForMash3D now treats the generated master mesh as the immutable high-fidelity asset and produces optimized/game-ready derivatives from it. Model selection remains additive and capability-aware, so existing models are retained rather than replaced. The scheduler caps tracked VRAM estimates with live device-free memory; supported adapters use actual Accelerate layer maps or component placement when a single GPU cannot meet the reservation.
+ForMesh3D now treats the generated master mesh as the immutable high-fidelity asset and produces optimized/game-ready derivatives from it. Model selection remains additive and capability-aware, so existing models are retained rather than replaced. The scheduler caps tracked VRAM estimates with live device-free memory; supported adapters use actual Accelerate layer maps or component placement when a single GPU cannot meet the reservation.
 
 FastMesh V1K/V4K can shard layers across selected GPUs. Hunyuan3D-Paint uses row-chunk raster interpolation/extraction and can place renderer/super-resolution and multiview diffusion components on separate GPUs. Incomplete placement fails explicitly. Paint3D, UniRig, PartUV, and ARDY are not treated as sharded merely because several GPUs exist; their current adapters remain single-device unless a verified placement implementation is added. Rigged assets regenerate their thumbnail and the viewport resolves canonical GLB/FBX artifact URLs.
 
@@ -598,6 +598,6 @@ Quality diagnostics can compare derivatives to the master and can use reference-
 
 ## High-Fidelity Runtime Hardening — 2026-10-08
 
-ForMash3D now uses a normalized model capability contract for deterministic routing, model-aware preprocessing and resource admission. ARDY motion inference is explicitly CPU-only; its local LLM2Vec text encoder is also forced to CPU, so this feature does not reserve or use GPU VRAM. The scheduler can consider aggregate VRAM only for adapters that explicitly declare a supported multi-GPU strategy. CPU worker/thread policy is auto-scaled from available logical cores with environment overrides.
+ForMesh3D now uses a normalized model capability contract for deterministic routing, model-aware preprocessing and resource admission. ARDY motion inference is explicitly CPU-only; its local LLM2Vec text encoder is also forced to CPU, so this feature does not reserve or use GPU VRAM. The scheduler can consider aggregate VRAM only for adapters that explicitly declare a supported multi-GPU strategy. CPU worker/thread policy is auto-scaled from available logical cores with environment overrides.
 
 Production results keep the immutable source master separate from optimized derivatives and now include final QA/LOD/fidelity diagnostics. A lightweight offline A/B benchmark is available for controlled same-input comparisons; without a real reference mesh, generated-vs-generated geometry metrics remain diagnostic.

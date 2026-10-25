@@ -106,12 +106,12 @@ import bpy, urllib.request, tempfile, os
 
 url = "${window.location.origin}${assetUrl}"
 temp_path = os.path.join(tempfile.gettempdir(), "${assetName}.glb")
-print(f"[ForMash3D Bridge] Downloading {url}...")
+print(f"[ForMesh3D Bridge] Downloading {url}...")
 urllib.request.urlretrieve(url, temp_path)
 
 if temp_path.endswith('.glb') or temp_path.endswith('.gltf'):
     bpy.ops.import_scene.gltf(filepath=temp_path)
-    print("[ForMash3D Bridge] Successfully imported ${assetName} into active scene!")
+    print("[ForMesh3D Bridge] Successfully imported ${assetName} into active scene!")
 `;
 
   const unrealScript = `# Run in Unreal Engine 5 Python Console
@@ -119,7 +119,7 @@ import unreal, urllib.request, os
 
 asset_url = "${window.location.origin}${assetUrl}"
 destination_path = "/Game/ForMash3D/${assetName}"
-print(f"[ForMash3D UE5] Syncing to {destination_path}...")
+print(f"[ForMesh3D UE5] Syncing to {destination_path}...")
 # Live-link payload received over port ${port}
 `;
 

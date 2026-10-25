@@ -190,8 +190,8 @@ async def lifespan(app: FastAPI):
 
 # Create FastAPI application
 app = FastAPI(
-    title="ForMash 3D API",
-    description="ForMash 3D — Generative 3D Asset Creation, Optimization & Game-Ready Pipeline",
+    title="ForMesh 3D API",
+    description="ForMesh 3D — Generative 3D Asset Creation, Optimization & Game-Ready Pipeline",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",

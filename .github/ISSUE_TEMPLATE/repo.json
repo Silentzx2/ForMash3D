@@ -1,5 +1,5 @@
 {
-  "name": "ForMash3D",
+  "name": "ForMesh3D",
   "description": "Open-source, self-hosted AI 3D generation and asset creation platform for GPU-accelerated model workflows, production post-processing, and game-ready delivery.",
   "keywords": [
     "3d-generation",
@@ -71,7 +71,7 @@
       "game-ready 3D post-processing"
     ]
   },
-  "seo_description": "ForMash3D is an open-source, self-hosted AI 3D generation and asset creation platform combining multiple model integrations with VRAM-aware scheduling, production post-processing, physics metadata, and game-ready delivery.",
+  "seo_description": "ForMesh3D is an open-source, self-hosted AI 3D generation and asset creation platform combining multiple model integrations with VRAM-aware scheduling, production post-processing, physics metadata, and game-ready delivery.",
   "elevator_pitch": "A unified self-hosted studio for generating, processing, inspecting, and exporting AI-generated 3D assets.",
   "use_cases": [
     "Image-to-3D generation",

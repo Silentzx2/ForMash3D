@@ -1,5 +1,5 @@
 name: Feature Request / Proposal
-description: Suggest an idea, enhancement, or new feature for ForMash 3D.
+description: Suggest an idea, enhancement, or new feature for ForMesh 3D.
 labels: ["enhancement"]
 body:
   - type: markdown

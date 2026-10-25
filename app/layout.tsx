@@ -16,11 +16,11 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ForMash 3D",
-  description: "ForMash 3D — AI-powered 3D generation and asset creation platform.",
+  title: "ForMesh 3D",
+  description: "ForMesh 3D — AI-powered 3D generation and asset creation platform.",
   openGraph: {
-    title: "ForMash 3D",
-    description: "ForMash 3D — AI-powered 3D generation and asset creation platform.",
+    title: "ForMesh 3D",
+    description: "ForMesh 3D — AI-powered 3D generation and asset creation platform.",
   },
   keywords: [
     "AI 3D",

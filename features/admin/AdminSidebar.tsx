@@ -56,7 +56,7 @@ export default function AdminSidebar({
              <HugeiconsIcon icon={BoxesIcon} size={16} className="w-[18px] h-[18px] text-[hsl(var(--foreground))]" />
           </div>
           <div>
-            <p className="text-[11px] font-bold tracking-[0.15em] text-primary uppercase">ForMash 3D</p>
+            <p className="text-[11px] font-bold tracking-[0.15em] text-primary uppercase">ForMesh 3D</p>
             <p className="text-xs font-medium text-[hsl(var(--muted-foreground))] mt-0.5">Control Panel</p>
           </div>
         </div>

@@ -641,7 +641,7 @@ main_menu(){
       7) cmd_cloudflare ;;
       8) cmd_models ;;
       9) cmd_docker ;;
-      q|Q) printf "\n${CYAN}ForMash 3D manager closed.${NC}\n"; exit 0 ;;
+      q|Q) printf "\n${CYAN}ForMesh 3D manager closed.${NC}\n"; exit 0 ;;
       *) printf "\n${RED}Invalid option.${NC}\n"; sleep 1 ;;
     esac
   done

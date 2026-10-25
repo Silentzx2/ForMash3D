@@ -78,7 +78,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ onMobileMenuToggle, isMobi
           <HugeiconsIcon icon={Menu} size={16} className="w-4 h-4" />
         </button>
 
-        {/* Brand Studio Logo (ForMash 3D) */}
+        {/* Brand Studio Logo (ForMesh 3D) */}
         <div
           onClick={() => navigateToMain('dashboard')}
           className="flex items-center gap-2 cursor-pointer group p-1 flex-shrink-0"
@@ -90,7 +90,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ onMobileMenuToggle, isMobi
             </svg>
           </div>
           <span className="font-extrabold text-xs tracking-wider text-white uppercase font-sans hidden sm:inline group-hover:text-primary transition-colors">
-            ForMash <span className="text-primary font-black">3D</span>
+            ForMesh <span className="text-primary font-black">3D</span>
           </span>
         </div>
 

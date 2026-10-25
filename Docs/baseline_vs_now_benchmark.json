@@ -1,7 +1,7 @@
 {
   "kind": "synthetic_smoke_test",
   "timestamp": "2026-10-20T14:51:14.244608+00:00",
-  "pipeline_version": "ForMash3D Pipeline v2.1",
+  "pipeline_version": "ForMesh3D Pipeline v2.1",
   "summary": {
     "shapes_evaluated": 4,
     "baseline_total_holes": 4,

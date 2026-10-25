@@ -1,8 +1,8 @@
-# TASKS — CPU-Safe Setup + GitHub SEO / Contributor Growth (ForMash3D)
+# TASKS — CPU-Safe Setup + GitHub SEO / Contributor Growth (ForMesh3D)
 
 > COMPLETED 2026-10-23 — Production readiness pass: auth removed entirely from backend + frontend, feature improvements done, `bun test` 54 pass / 0 fail (10 files), `python3 -m pytest backend/tests/` 40 passed / 6 skipped (GPU-dependent), `npx tsc --noEmit` zero errors. Tree at green `dev` HEAD, pushed to `origin/dev`.
 
-Repo: `Silentzx2/ForMash3D` · base commit read: `eca1d78` (main) · Apache-2.0
+Repo: `Silentzx2/ForMesh3D` · base commit read: `eca1d78` (main) · Apache-2.0
 Branch rule: work on `main`; leave `dev` / `Dev` untouched.
 
 ---
@@ -35,7 +35,7 @@ ROLE: Bash/Installer Engineer (conda/uv/PyTorch wheels, apt, CUDA detection) + G
 | F9 | `backend/requirements.txt` has `--extra-index-url .../cu124`; with `--index-strategy unsafe-best-match` a transitive `torch` dependency could replace a CPU torch with a `+cu124` build | `backend/requirements.txt` |
 | F10 | Runtime already tolerates missing/CPU torch in core: guarded imports in `core/config.py`, `gpu_monitor.py`, `runtime_probe.py`, `api/routers/system.py`; adapters are lazy-loaded via `adapters/__init__.py` `_ADAPTER_MAP` | backend |
 | F11 | ARDY is documented CPU-only (README) -> optional CPU-capable extra | README, `thirdparty/ardy` |
-| F12 | Main repo has no `.gitattributes`; wheels now come from GitHub Release tag `Wheels` (not LFS). `ForMash3D-ThirdParty` README may still say "Git LFS mandatory" (not re-checked) | verify |
+| F12 | Main repo has no `.gitattributes`; wheels now come from GitHub Release tag `Wheels` (not LFS). `ForMesh3D-ThirdParty` README may still say "Git LFS mandatory" (not re-checked) | verify |
 | F13 | `Dockerfile` base is `nvidia/cuda:12.4.1`, compose uses `runtime: nvidia` -> Docker has no CPU path | Docker |
 
 ---
@@ -99,7 +99,7 @@ GOAL: more developers find the repo and can start contributing in under 10 minut
 STATUS: not started — planned only; no acceptance criteria met (B5 all [ ]). No community/SEO files added yet.
 
 ### B1. README.md (40 KB — too long above the fold)
-- Replace H1 text with a keyword title: `ForMash3D — Open-Source Self-Hosted Image-to-3D AI Generator` (keywords: image to 3D, text to 3D, self-hosted, open source, game-ready, GLB, retopology, PBR, LODs, auto-rigging).
+- Replace H1 text with a keyword title: `ForMesh3D — Open-Source Self-Hosted Image-to-3D AI Generator` (keywords: image to 3D, text to 3D, self-hosted, open source, game-ready, GLB, retopology, PBR, LODs, auto-rigging).
 - First 160 characters of the README must contain the core pitch (they are used by search snippets).
 - Quick Start line (L27) currently says `bun install` -> `bash scripts/start.sh`, which does not match the real flow (`scripts/setup.sh` first). Make Quick Start match reality; add a second line for CPU/no-GPU mode once Task A lands.
 - Add above the fold: "Beta — contributors wanted" + links to `CONTRIBUTING.md` and `docs/GOOD_FIRST_ISSUES.md`.
@@ -119,7 +119,7 @@ STATUS: not started — planned only; no acceptance criteria met (B5 all [ ]). N
 - 15-20 topics (e.g. `image-to-3d`, `text-to-3d`, `3d-generation`, `generative-ai`, `self-hosted`, `fastapi`, `nextjs`, `glb`, `mesh-generation`, `retopology`, `game-assets`, `pytorch`, `hunyuan3d`, `trellis`, `help-wanted`, `good-first-issue`).
 - Social preview image spec: 1280x640 PNG (`assets/banner.png` exists — check its size; create a variant if needed).
 - Enable Discussions + categories; pin 3-5 starter issues; Release `v0.1.0-beta` notes draft (`docs/RELEASE_NOTES_DRAFT.md`).
-- Verify `ForMash3D-ThirdParty` repo: rename any "AI Studio" text, fix Git LFS statements if LFS is gone (F12), add topics, link back to the main repo.
+- Verify `ForMesh3D-ThirdParty` repo: rename any "AI Studio" text, fix Git LFS statements if LFS is gone (F12), add topics, link back to the main repo.
 
 ### B4. Outreach pack — `docs/OUTREACH.md`
 - Ready-to-post drafts: Reddit (r/opensource, r/gamedev, r/StableDiffusion, r/LocalLLaMA, r/3Dprinting only if relevant), Hacker News "Show HN", Dev.to/Hashnode, X/LinkedIn, Hugging Face community.

@@ -1,5 +1,5 @@
 name: Bug Report
-description: Create a report to help us fix a bug or unexpected behavior in ForMash 3D.
+description: Create a report to help us fix a bug or unexpected behavior in ForMesh 3D.
 labels: ["bug", "triage"]
 body:
   - type: markdown
@@ -10,7 +10,7 @@ body:
   - type: input
     id: version
     attributes:
-      label: ForMash 3D Version / Git Commit
+      label: ForMesh 3D Version / Git Commit
       description: What git commit hash or version are you running? (Run `git rev-parse --short HEAD`)
       placeholder: "e.g. b71b9f0"
     validations:

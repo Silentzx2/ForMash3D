@@ -1,4 +1,4 @@
-"""Physics preparation helpers for generated ForMash3D assets.
+"""Physics preparation helpers for generated ForMesh3D assets.
 
 This module intentionally stays provider-neutral. It validates the small
 canonical physics configuration used by generation jobs, derives safe default

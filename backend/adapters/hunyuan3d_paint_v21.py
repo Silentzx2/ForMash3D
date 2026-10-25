@@ -2,7 +2,7 @@
 Hunyuan3D-Paint-v2-1 model adapter for mesh painting.
 
 This adapter integrates the Hunyuan3D-Paint-v2-1 (2B PBR texture checkpoint)
-into the ForMash3D mesh painting framework, supporting PBR texture generation.
+into the ForMesh3D mesh painting framework, supporting PBR texture generation.
 """
 
 import logging

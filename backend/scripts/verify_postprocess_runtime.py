@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify the non-GPU runtime contract for ForMash3D post-processing."""
+"""Verify the non-GPU runtime contract for ForMesh3D post-processing."""
 
 from __future__ import annotations
 
@@ -69,7 +69,7 @@ def main() -> int:
             )
         else:
             probe = subprocess.run(
-                [sys.executable, "-c", 'import bpy; print("ForMash3D Blender runtime:", bpy.app.version_string)'],
+                [sys.executable, "-c", 'import bpy; print("ForMesh3D Blender runtime:", bpy.app.version_string)'],
                 capture_output=True,
                 text=True,
                 check=False,
@@ -86,7 +86,7 @@ def main() -> int:
                 blender,
                 "--background",
                 "--python-expr",
-                'import bpy; print("ForMash3D Blender runtime:", bpy.app.version_string)',
+                'import bpy; print("ForMesh3D Blender runtime:", bpy.app.version_string)',
             ],
             capture_output=True,
             text=True,

@@ -1,4 +1,4 @@
-"""Quality evaluation helpers for ForMash3D."""
+"""Quality evaluation helpers for ForMesh3D."""
 from .evaluation import (
     chamfer_distance,
     compare_meshes,

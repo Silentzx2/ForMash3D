@@ -14,7 +14,7 @@
 - Client filesystem paths are root-restricted and upload/base64 ingestion is bounded.
 - Resource-blocked jobs rotate instead of globally blocking compatible work.
 
-# 🏛️ ForMash 3D — Complete System Architecture & Pipeline Blueprint
+# 🏛️ ForMesh 3D — Complete System Architecture & Pipeline Blueprint
 
 > **System Version**: 0.1.0 (FastAPI + Next.js 16, Python 3.10)
 > **Target Deployments**: Single- or multi-GPU Linux / Cloud GPU / Local Workstations
@@ -25,7 +25,7 @@
 
 ## 1. Executive System Overview
 
-ForMash 3D is an end-to-end generative 3D reconstruction and asset optimization platform that converts reference images into game-ready 3D assets. Text prompts remain supported for mesh painting, localized mesh editing, and motion generation.
+ForMesh 3D is an end-to-end generative 3D reconstruction and asset optimization platform that converts reference images into game-ready 3D assets. Text prompts remain supported for mesh painting, localized mesh editing, and motion generation.
 
 ### Core Stack
 - **Frontend**: Next.js 16 (React 19, TypeScript, Three.js, React Three Fiber, Tailwind CSS)
@@ -266,7 +266,7 @@ flowchart TD
 | FastMesh-V1K | 16 GB | Retopology | ~30 seconds |
 | FastMesh-V4K | 24.5 GB | High-res retopology | ~30 seconds |
 
-**FastMesh VRAM and weights note:** The 16 GB (V1K) and 24.5 GB (V4K) values are conservative ForMash3D scheduler reservations, not minimums published by upstream. The official repository lists an A6000-tested environment and uses batch size 3 for V1K and 1 for V4K, but does not publish an exact minimum VRAM. Public checkpoint files are about 4.38 GB (V1K) and 4.39 GB (V4K) on disk; disk size is not peak inference memory. FastMesh is single-GPU-only in the current adapter, so 2×T4 aggregate memory is not combined for admission. [Upstream FastMesh](https://github.com/jhkim0759/FastMesh) · [V1K checkpoint](https://huggingface.co/WopperSet/FastMesh-V1K) · [V4K checkpoint](https://huggingface.co/WopperSet/FastMesh-V4K)
+**FastMesh VRAM and weights note:** The 16 GB (V1K) and 24.5 GB (V4K) values are conservative ForMesh3D scheduler reservations, not minimums published by upstream. The official repository lists an A6000-tested environment and uses batch size 3 for V1K and 1 for V4K, but does not publish an exact minimum VRAM. Public checkpoint files are about 4.38 GB (V1K) and 4.39 GB (V4K) on disk; disk size is not peak inference memory. FastMesh is single-GPU-only in the current adapter, so 2×T4 aggregate memory is not combined for admission. [Upstream FastMesh](https://github.com/jhkim0759/FastMesh) · [V1K checkpoint](https://huggingface.co/WopperSet/FastMesh-V1K) · [V4K checkpoint](https://huggingface.co/WopperSet/FastMesh-V4K)
 
 ---
 
@@ -367,7 +367,7 @@ bun run build
 
 ## Production Asset Lifecycle & Two-Way PostProcess Pipeline
 
-ForMash3D executes post-processing via two complementary pathways:
+ForMesh3D executes post-processing via two complementary pathways:
 1. **Conditional Production Chaining:** When `enable_postprocess` is enabled, generation -> raw model output -> immutable `master/source.glb` -> scheduler call to `run_postprocess_job` (repair -> conditional retopo -> target budget -> UV -> bake/texture -> requested LOD/collision -> QA) -> production completion -> `WorkspaceContext.tsx` artifacts. Native/Raw requests with post-processing disabled bypass this chain.
 2. **Manual On-Demand PostProcess: Users can select any workspace model or upload an external mesh (`.glb`, `.obj`, `.stl`, `.ply`) inside `RemeshPanel.tsx`, `UVUnwrapPanel.tsx`, or `MeshSegmentPanel.tsx` to execute discrete operations on demand via REST API (`/api/v1/mesh-retopology/*`, `/api/v1/mesh-uv-unwrapping/*`, `/api/v1/mesh-segmentation/*`).
 The post-processing stage runs in `asyncio.to_thread` so CPU/GPU mesh operations do not block FastAPI's event loop.

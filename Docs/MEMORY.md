@@ -5,7 +5,7 @@
   - Fix: Updated `WorkspaceContext.tsx` and `useAppStore.ts` to assign dynamic random seeds (`Math.floor(Math.random() * 900000) + 100000`). In `multiprocess_scheduler.py`, when a job has no explicit user seed, dynamically generate a fresh random base seed (`random.randint(10000, 999999)`).
 - **Unique3D Refinement Safeguards**:
   - Root cause: When `do_refine: True` was enabled without SD controlnet tile IP-adapter weights loaded in `model_zoo`, `pipe_disney_controlnet_tile_ipadapter_i2i` returned `None`, raising `TypeError: 'NoneType' object is not callable` in `refine_lr_to_sr.py` / `refine_rgb`.
-  - Fix: In `backend/adapters/unique3d_adapter.py`, inspect `model_zoo.pipe_disney_controlnet_tile_ipadapter_i2i` and demote `effective_do_refine = False` if missing. In `backend/thirdparty/Unique3D`, safely bypass refinement and fall back to Lanczos resizing when `pipe is None`. Pushed sub-repo changes to `Silentzx2/ForMash3D-ThirdParty` (`main`).
+  - Fix: In `backend/adapters/unique3d_adapter.py`, inspect `model_zoo.pipe_disney_controlnet_tile_ipadapter_i2i` and demote `effective_do_refine = False` if missing. In `backend/thirdparty/Unique3D`, safely bypass refinement and fall back to Lanczos resizing when `pipe is None`. Pushed sub-repo changes to `Silentzx2/ForMesh3D-ThirdParty` (`main`).
 - **Verification**: 53 passed, 7 skipped backend tests, 55 passed bun tests, `npx tsc --noEmit` clean.
 
 ## 2026-10-24 — Multi-GPU Load Sharing Planning & Raw Mesh Model Route Normalization
@@ -194,7 +194,7 @@
 - **Preset SSOT**: the panel derives the chip summary and recipe values from the backend catalogue instead of a second hardcoded copy. The offline fallback moved to `constants/smartPresetFallback.json` and is guarded by `backend/tests/test_smart_preset_parity.py`. The mobile preset's atlas size was corrected from 512 (rejected by the API) to 1024.
 - **Dead control removed**: the Live execution panel's "Enable Low VRAM Mode (<8GB) & Retry" button could not change anything in the request, so it was deleted.
 - **Verification**: `bun test` 41/41 pass, `npx tsc --noEmit` clean, `npx eslint` clean on the changed files, `backend/tests/test_preset_alignment_and_persistence.py` 24/24 pass, `backend/tests/test_smart_preset_parity.py` passes, and the CI backend contract subset passes (56 tests). The heavy backend modules and GPU inference are **NOT RUN** in this environment (missing `torch`/`trimesh`/`skimage`, no GPU); the 53 import failures are identical before and after this change.
-- **Commit**: `537d8b49` + `47251a8a` pushed to `origin/dev` and `upstream/dev`. The first upstream push failed with `remote: Permission to Silentzx2/ForMash3D.git denied` because the sandbox codespace credential helper (`/.codespaces/bin/gitcredential_github.sh`) is not authorized for that repository; `git -c credential.helper= push` with an explicit credential succeeds. No token was written to the repository, the git config, or disk.
+- **Commit**: `537d8b49` + `47251a8a` pushed to `origin/dev` and `upstream/dev`. The first upstream push failed with `remote: Permission to Silentzx2/ForMesh3D.git denied` because the sandbox codespace credential helper (`/.codespaces/bin/gitcredential_github.sh`) is not authorized for that repository; `git -c credential.helper= push` with an explicit credential succeeds. No token was written to the repository, the git config, or disk.
 
 ---
 
@@ -440,7 +440,7 @@
     - `feature_edge_retention`: float (share of master edges with dihedral angle > 30.0° still present within distance/angle tolerance in mesh; 1.0 if reference is None or has no sharp edges)
   - Master immutability helpers: `sha256_file` and `audit_master_immutability` to guarantee working copies leave master source untouched.
 - Implemented `backend/core/quality/parity_scorecard.py`:
-  - Generates `parity_scorecard.json` template comparing `ForMash3D`, `Tripo`, `Meshy`, `Hyper3D` across `sharpness`, `topology_cleanliness`, `uv_quality`, `texture_quality`, `speed`, and `failure_rate`.
+  - Generates `parity_scorecard.json` template comparing `ForMesh3D`, `Tripo`, `Meshy`, `Hyper3D` across `sharpness`, `topology_cleanliness`, `uv_quality`, `texture_quality`, `speed`, and `failure_rate`.
 - Test suite in `backend/tests/test_mesh_metrics.py` (6/6 passing):
   - Validates all 14 metrics on canonical cube, holes, floaters, degenerate faces, non-manifold edges/vertices, and UV charts.
   - Verifies feature edge retention on cube vs subdivided cube (1.0) and smoothed sphere (< 0.1).
@@ -567,7 +567,7 @@ This section previously duplicated numerical profiles and implied that requested
 - Hunyuan3D-Paint adapter-level imports for `SafeBackgroundRemoverFallback`, `apply_fix`, and `fix_numba_caching` now use `get_backend_torchvision_fix()` instead of generic `utils.torchvision_fix` or bare `torchvision_fix` imports. This avoids a cached module from the Hunyuan Shape/Paint namespace being used for adapter-owned fallback logic.
 - Updated the degraded-background-removal test mock for the canonical loader and added a source contract that rejects generic compatibility-helper imports in the Paint adapter.
 - **Verified:** GitHub Actions at commit `60691f5a13ce6831ec7dea17dcbb4476409df4ea` completed successfully: Python source compilation passed and all 12 backend compatibility-contract tests passed; frontend CI also succeeded. This is CPU/import-contract validation, not a GPU/checkpoint inference smoke test.
-- Requirements .txt files and mesh-generation adapters remain untouched. The third-party source's own generic `from utils.*` import statements and catch-all DINO exception fallback still require authorized write access to `ForMash3D-ThirdParty` for a complete source-level fix.
+- Requirements .txt files and mesh-generation adapters remain untouched. The third-party source's own generic `from utils.*` import statements and catch-all DINO exception fallback still require authorized write access to `ForMesh3D-ThirdParty` for a complete source-level fix.
 
 ## 2026-10-18 — Canonical Compatibility Helper Resolution
 
@@ -603,7 +603,7 @@ This section previously duplicated numerical profiles and implied that requested
 - Missing local Hunyuan/DINO checkpoints now produce explicit remote-fallback warnings. The successful job result continues to expose background-removal degraded mode and its reason.
 - ARDY checks installed distributions against dependencies parsed from its vendored `pyproject.toml` before GPU allocation; mismatches are logged, but no requirements files are changed and model loading is not blocked solely by the diagnostic.
 - `BaseModel.load()` preserves the original exception chain. Added lightweight CPU backend CI for source compilation and dependency-contract tests; GPU/checkpoint inference remains a separate smoke-test requirement.
-- **Repository access limitation:** write access to `Silentzx2/ForMash3D-ThirdParty` was denied by the connected GitHub integration, so no third-party source commit or submodule-pointer update was made. The main-repository mitigation scopes the import path, but the vendored third-party `from utils.*` imports are not yet fully package-qualified. No requirements .txt files or mesh-generation code were changed.
+- **Repository access limitation:** write access to `Silentzx2/ForMesh3D-ThirdParty` was denied by the connected GitHub integration, so no third-party source commit or submodule-pointer update was made. The main-repository mitigation scopes the import path, but the vendored third-party `from utils.*` imports are not yet fully package-qualified. No requirements .txt files or mesh-generation code were changed.
 
 ## 2026-10-18 — Compatibility Shims, Runtime Paths & Degraded-Mode Reporting
 
@@ -713,7 +713,7 @@ This section previously duplicated numerical profiles and implied that requested
 - **Hunyuan Shape v2.1**: The upstream-supported dense grid ceiling is 512 (the architecture decision log explicitly rejects 640 as out-of-contract). Kept this ceiling and aligned the max-fidelity profile with the official 7.5 guidance default while retaining the trained 50-step schedule and untouched raw-mesh export.
 - **Hunyuan Mini Turbo**: The scheduler and adapter forcibly enabled FlashVDM with top-k merge. The fidelity-first profile now avoids that accelerated decoding path and uses the checkpoint's native dense decoder with the official `octree_resolution=380` setting; the former 512 setting exceeded the trained range, while Tencent's distilled 5-step sampling schedule remains unchanged.
 - **TripoSG**: The adapter selected the Flash extraction path from GPU compute capability, contradicting the model manifest's `hierarchical_octree` preference. It now uses dense/hierarchical extraction in the raw-source profile (dense depth 9, hierarchical target depth 10 / 1024-wide grid on GPUs with at least 24 GiB free and 32 GiB total VRAM; otherwise depth 9). The scheduler profile disables Flash extraction and records effective resolution/fallback telemetry.
-- **Contract coverage**: Scheduler and adapter defaults plus frontend parameter construction are locked by regression/source-contract tests. Recursive-clone integrity was repaired in merged PR #32 by updating `backend/thirdparty` from the unreachable SHA `423339899dd8da5a782d89855057aa7d055e3d27` to reachable `ForMash3D-ThirdParty/main` commit `a35a33af4a68228552b785d8e43bbeb1519f66f0`.
+- **Contract coverage**: Scheduler and adapter defaults plus frontend parameter construction are locked by regression/source-contract tests. Recursive-clone integrity was repaired in merged PR #32 by updating `backend/thirdparty` from the unreachable SHA `423339899dd8da5a782d89855057aa7d055e3d27` to reachable `ForMesh3D-ThirdParty/main` commit `a35a33af4a68228552b785d8e43bbeb1519f66f0`.
 - **Expected trade-off**: Native dense decoding is slower and can consume more host/GPU memory. Better extraction can preserve details the fast decoder misses, but cannot invent geometry evidence absent from a single-view model's learned representation. CUDA end-to-end visual comparison is still required on the target workstation.
 
 ## 2026-10-14 — Second-pass extraction root-cause hardening
@@ -1162,7 +1162,7 @@ print('GPUs detected:', len(p.gpu_capacity_snapshot()))
 PY
 ```
 
-Use the normal ForMash3D workspace generation flow for final visual/VRAM validation. Confirm that a model whose declared footprint exceeds one card but fits the supported aggregate placement is assigned multiple GPUs, that no existing model disappears from model selection, and that the generated master remains available separately from the optimized derivative.
+Use the normal ForMesh3D workspace generation flow for final visual/VRAM validation. Confirm that a model whose declared footprint exceeds one card but fits the supported aggregate placement is assigned multiple GPUs, that no existing model disappears from model selection, and that the generated master remains available separately from the optimized derivative.
 
 ## 2026-10-08 — Deep Task Gap Closure
 
@@ -1234,7 +1234,7 @@ Use the normal ForMash3D workspace generation flow for final visual/VRAM validat
   - Local execution is **BLOCKED** by hardware/environment limits: 26 GB weight footprint exceeds available container disk headroom (~11 GB free), strict CUDA 12.1 runtime requirement with no CPU fallback, and >=20–24 GB VRAM required for Stage 1 Level-MoE.
   - Native topology candidate remains safely disabled/unregistered in `backend/config/planner_rules.yaml` and `backend/core/planner.py`, with graceful fallback to dense generation + feature-preserving isotropic retopology.
 - **Task 3F Evaluation (`Docs/quad_topology_evaluation.md`)**:
-  - Evaluated quad-dominant export capabilities in ForMash3D compared to Tripo AI and Deemos Rodin.
+  - Evaluated quad-dominant export capabilities in ForMesh3D compared to Tripo AI and Deemos Rodin.
   - Confirmed existing pipeline architecture correctly handles quad-dominant topology: `_export_quad_obj` generates genuine 4-vertex polygonal faces (`f v1/vt1/vn1 ...`) in OBJ format when `quad_topology` or `topology_mode="quad"` is requested, and `pipeline.py` automatically passes geometry through without destructive QEM decimation.
   - Documented strict Khronos glTF 2.0 specification requirement: GLB assets MUST remain triangulated for web viewer and game engine compatibility.
   - Identified auxiliary adapter gaps (unbundled `meshiki` in FastMesh `tri2quad`, unbundled `quadriflow` binary in AutoRetopo); recommended zero disruptive changes until explicit user approval.
@@ -1250,7 +1250,7 @@ Use the normal ForMash3D workspace generation flow for final visual/VRAM validat
     - PBR asset validation: 100% pass rate.
     - Master immutability: verified (SHA-256 unchanged).
   - Authoritative competitive parity scorecard generated in `parity_scorecard.json`:
-    - Ranks ForMash3D against market competitors (Tripo, Meshy, Hyper3D) across all 6 core dimensions: sharpness, topology cleanliness, UV quality, texture quality, speed, and failure rate.
+    - Ranks ForMesh3D against market competitors (Tripo, Meshy, Hyper3D) across all 6 core dimensions: sharpness, topology cleanliness, UV quality, texture quality, speed, and failure rate.
 - Added comprehensive unit tests in `backend/tests/test_final_parity_benchmark.py` (3/3 passing).
 
 ## 2026-10-20 — Batch 3: Documentation Sync & Release Closure (Task 3E)

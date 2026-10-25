@@ -1,5 +1,5 @@
 
-"""Lightweight mesh quality diagnostics for ForMash3D."""
+"""Lightweight mesh quality diagnostics for ForMesh3D."""
 from __future__ import annotations
 
 import json

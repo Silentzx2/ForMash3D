@@ -1,4 +1,4 @@
-// Client helpers for the ForMash3D FastAPI mesh-tools API (Auto UV / Auto Retopo).
+// Client helpers for the ForMesh3D FastAPI mesh-tools API (Auto UV / Auto Retopo).
 //
 // These call the Node proxy routes (/api/mesh-tools/auto-uv, /api/mesh-tools/auto-retopo),
 // which forward to the configurable Python service. Pass the mesh as a Blob/File

@@ -1,7 +1,7 @@
 """
 Paint3D model adapter for 1K/2K texture generation.
 
-Integrates OpenTexture/Paint3D into the ForMash3D mesh painting framework,
+Integrates OpenTexture/Paint3D into the ForMesh3D mesh painting framework,
 performing coarse texture generation followed by UV texture refinement to
 produce 1024x1024 or 2048x2048 UV-mapped textured meshes.
 """

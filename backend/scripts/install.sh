@@ -155,7 +155,7 @@ ensure_release_wheels() {
     echo "[INFO] Downloading release wheels to $WHEEL_DIR..."
     python3 -c '
 import urllib.request, json, os, sys
-req = urllib.request.Request("https://api.github.com/repos/Silentzx2/ForMash3D/releases/tags/Wheels", headers={"User-Agent": "ForMash3D-Installer"})
+req = urllib.request.Request("https://api.github.com/repos/Silentzx2/ForMesh3D/releases/tags/Wheels", headers={"User-Agent": "ForMash3D-Installer"})
 try:
     for a in json.loads(urllib.request.urlopen(req, timeout=30).read()).get("assets", []):
         if a["name"].endswith(".whl"):
@@ -714,7 +714,7 @@ fi
 
 # Keep datasets on the 3.x line: 4.x expects newer Hub bucket APIs than the shared
 # huggingface_hub==0.25.0 baseline. Match backend/requirements.txt.
-# ForMash3D calls the Unique3D inference components directly; it does not launch
+# ForMesh3D calls the Unique3D inference components directly; it does not launch
 # the upstream Gradio demo. Omit Gradio to avoid conflicting Hub/Pillow constraints.
 echo "[INFO] Installing remaining Unique3D requirements..."
 $UV_PIP install --find-links="$WHEEL_DIR" \
@@ -857,7 +857,7 @@ fi
 # huggingface_hub is managed centrally by backend/requirements.txt.
 
 # Older installer runs installed Gradio only for Unique3D's standalone demo.
-# ForMash3D uses FastAPI/Next.js and does not need these packages in its shared Hub 0.25 env.
+# ForMesh3D uses FastAPI/Next.js and does not need these packages in its shared Hub 0.25 env.
 echo "[INFO] Removing stale Unique3D Gradio UI packages (if present)..."
 $UV_PIP uninstall gradio gradio-client hf-gradio || true
 

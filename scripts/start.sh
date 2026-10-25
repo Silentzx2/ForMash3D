@@ -16,7 +16,7 @@ banner(){
   printf "${CYAN}\n"
   cat <<'ART'
   ╔══════════════════════════════════════════════════════════════╗
-  ║                     FORMASH 3D                             ║
+  ║                     FORMESH 3D                             ║
   ║                 starting services...                       ║
   ╚══════════════════════════════════════════════════════════════╝
 ART
@@ -244,7 +244,7 @@ start_redis
 start_backend
 start_frontend
 
-section "ForMash 3D is Running"
+section "ForMesh 3D is Running"
 printf "  ${WHITE}${BOLD}Frontend${NC}  ${CYAN}%s${NC}\n" "$FRONTEND_URL"
 printf "  ${WHITE}${BOLD}Backend${NC}   ${CYAN}%s${NC}\n" "$BACKEND_URL"
 printf "  ${WHITE}${BOLD}API Docs${NC}  ${CYAN}%s/docs${NC}\n" "$BACKEND_URL"

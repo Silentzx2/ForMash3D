@@ -1,6 +1,6 @@
 """Mesh simplification and LOD generation.
 
-3DGenStudio drives this stage through gltfpack in its Node backend. ForMash3D is
+3DGenStudio drives this stage through gltfpack in its Node backend. ForMesh3D is
 Python/FastAPI, so the adapter uses the already-supported PyMeshLab backend while
 preserving the same option contract and, critically, builds every LOD from the
 ORIGINAL mesh rather than chaining simplification error from one level to the next.

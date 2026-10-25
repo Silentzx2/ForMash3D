@@ -621,7 +621,7 @@ create_directories(){
 # wheels downloading
 download_release_wheels() {
     local WHEELS_DIR="${1:-$PROJECT_ROOT/backend/thirdparty/wheels}"
-    local API="https://api.github.com/repos/Silentzx2/ForMash3D/releases/tags/Wheels"
+    local API="https://api.github.com/repos/Silentzx2/ForMesh3D/releases/tags/Wheels"
 
     mkdir -p "$WHEELS_DIR" || return 1
 
@@ -722,7 +722,7 @@ install_backend(){
 
 summary() {
   section "Setup Complete"
-  printf "${WHITE}${BOLD}  ForMash 3D is prepared.${NC}\n\n"
+  printf "${WHITE}${BOLD}  ForMesh 3D is prepared.${NC}\n\n"
   printf "  ${DIM}Compute mode:${NC} ${COMPUTE_MODE}\n"
   if [[ "${COMPUTE_MODE:-}" == "cpu" ]]; then
     printf "  ${DIM}Skipped:${NC} CUDA toolkit, release wheels, model stacks (GPU-dependent)\n"

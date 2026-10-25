@@ -2,10 +2,10 @@
 
 categories:
   - name: General
-    description: General discussion about ForMash3D
+    description: General discussion about ForMesh3D
     emoji: 💬
   - name: Show & Tell
-    description: Share what you've built with ForMash3D
+    description: Share what you've built with ForMesh3D
     emoji: 🚀
   - name: Questions
     description: Ask questions about setup, usage, and configuration

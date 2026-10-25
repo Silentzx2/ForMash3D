@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════════════
-# ForMash 3D — Cloudflare Tunnel Manager
+# ForMesh 3D — Cloudflare Tunnel Manager
 # ═══════════════════════════════════════════════════════════════════════════
 
 set -euo pipefail
@@ -31,7 +31,7 @@ print_banner() {
     echo "  ║                                                            ║"
     echo -e "  ║           ${WHITE}${BOLD}Cloudflare Tunnel Manager${BLUE}                       ║"
     echo -e "  ║        ${DIM}══════════════════════════════════${BLUE}                   ║"
-    echo -e "  ║   ${GRAY}Secure external access for ForMash 3D${BLUE}                   ║"
+    echo -e "  ║   ${GRAY}Secure external access for ForMesh 3D${BLUE}                   ║"
     echo "  ║                                                            ║"
     echo "  ╚════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"

@@ -1,4 +1,4 @@
-"""CLI benchmark for ForMash3D mesh fidelity diagnostics.
+"""CLI benchmark for ForMesh3D mesh fidelity diagnostics.
 
 Usage:
   python -m scripts.run_mesh_quality_benchmark --reference ref.glb --candidate out.glb --output report.json

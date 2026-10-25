@@ -1,4 +1,4 @@
-# Architecture for Contributors — ForMash3D
+# Architecture for Contributors — ForMesh3D
 
 ## Folder Map
 

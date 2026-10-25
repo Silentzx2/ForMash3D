@@ -7,7 +7,7 @@ from postprocess.pipeline import _normalize_textured_glb_pbr_defaults
 
 def _write_test_glb(path: Path) -> bytes:
     document = {
-        "asset": {"version": "2.0", "generator": "ForMash3D test"},
+        "asset": {"version": "2.0", "generator": "ForMesh3D test"},
         "materials": [
             {
                 "name": "albedo-only",

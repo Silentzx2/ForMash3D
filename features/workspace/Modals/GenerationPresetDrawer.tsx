@@ -192,7 +192,7 @@ export function GenerationPresetDrawer() {
       } else if (isRecord(parsed) && parsed.version === 1 && typeof parsed.id === 'string') {
         values = [parsed];
       } else {
-        throw new Error('Unsupported file. Import a ForMash3D generation preset JSON export.');
+        throw new Error('Unsupported file. Import a ForMesh3D generation preset JSON export.');
       }
       if (values.length < 1 || values.length > 100) throw new Error('Import must contain between 1 and 100 presets.');
       if (presets.length + values.length > 200) throw new Error('Import would exceed the 200-profile library limit.');

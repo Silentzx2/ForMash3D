@@ -1,4 +1,4 @@
-"""Pure trimesh/numpy mesh quality metrics computation for ForMash3D.
+"""Pure trimesh/numpy mesh quality metrics computation for ForMesh3D.
 
 Zero external heavy dependencies; operates directly on trimesh.Trimesh instances.
 """

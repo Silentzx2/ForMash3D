@@ -1,4 +1,4 @@
-"""Controlled A/B benchmark for two completed ForMash3D asset runs.
+"""Controlled A/B benchmark for two completed ForMesh3D asset runs.
 
 Without --reference, generated-vs-generated metrics are diagnostic only.
 """

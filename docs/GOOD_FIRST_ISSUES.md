@@ -1,4 +1,4 @@
-# Good First Issues — ForMash3D
+# Good First Issues — ForMesh3D
 
 Issue drafts derived from real gaps in `Docs/TASKS.md`, `Docs/MEMORY.md`, and `RULES.md`.
 Issues marked `no-gpu` can be completed without an NVIDIA GPU.

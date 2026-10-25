@@ -1,6 +1,6 @@
 /**
  * Reference mapping from legacy lucide-react icon names to @hugeicons/core-free-icons.
- * Used across the ForMash3D UI for standardized icon rendering with HugeiconsIcon.
+ * Used across the ForMesh3D UI for standardized icon rendering with HugeiconsIcon.
  */
 
 export const LUCIDE_TO_HUGEICONS_MAP: Record<string, string> = {

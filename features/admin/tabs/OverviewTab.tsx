@@ -121,7 +121,7 @@ export function OverviewTab() {
               <span className="text-xs text-zinc-400 font-mono">Uptime: {overview?.uptime ?? '—'}</span>
             </div>
             <h1 className="text-2xl font-bold tracking-tight text-white mb-1">
-              Welcome to <span className="text-primary">ForMash 3D</span>
+              Welcome to <span className="text-primary">ForMesh 3D</span>
             </h1>
             <p className="text-xs text-zinc-400">
               Your AI generation engine is running. {overview?.active_jobs ?? 0} active jobs, {overview?.queued_jobs ?? 0} in queue.

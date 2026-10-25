@@ -8,7 +8,7 @@
 
 ## 1. Design Tokens (`app/globals.css`)
 
-All colors and surfaces in ForMash 3D use HSL CSS variable design tokens. Direct hex color literals in UI code are strictly disallowed.
+All colors and surfaces in ForMesh 3D use HSL CSS variable design tokens. Direct hex color literals in UI code are strictly disallowed.
 
 | Token | CSS Variable Value | Hex / Color Equivalent | Purpose / Usage |
 | :--- | :--- | :--- | :--- |
@@ -36,9 +36,9 @@ All colors and surfaces in ForMash 3D use HSL CSS variable design tokens. Direct
 
 ### Color Palette Visual Reference
 
-![ForMash 3D Design Colors](../../assets/colors.jpeg)
+![ForMesh 3D Design Colors](../../assets/colors.jpeg)
 
-> The `assets/colors.jpeg` image shows the complete color palette used across the ForMash 3D UI, including Studio Gold (`#FFCC00`), Matte Black (`#080808`), and all HSL design tokens.
+> The `assets/colors.jpeg` image shows the complete color palette used across the ForMesh 3D UI, including Studio Gold (`#FFCC00`), Matte Black (`#080808`), and all HSL design tokens.
 
 ---
 

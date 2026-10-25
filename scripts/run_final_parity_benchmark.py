@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Final Parity Benchmark & Scorecard Generator for ForMash3D.
+"""Final Parity Benchmark & Scorecard Generator for ForMesh3D.
 
 Supports two modes:
 1. Synthetic Smoke Test (default when no --images provided):
@@ -238,7 +238,7 @@ def run_synthetic_benchmark() -> Dict[str, Any]:
     return {
         "kind": "synthetic_smoke_test",
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "pipeline_version": "ForMash3D Pipeline v2.1",
+        "pipeline_version": "ForMesh3D Pipeline v2.1",
         "summary": summary,
         "results": results,
     }
@@ -302,7 +302,7 @@ def run_real_benchmark(
     tiers: List[str],
     dry_run: bool = False,
 ) -> Dict[str, Any]:
-    """Execute real benchmark on user-provided images against ForMash3D API."""
+    """Execute real benchmark on user-provided images against ForMesh3D API."""
     image_paths = sorted(
         [p for p in images_dir.iterdir() if p.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp")]
     ) if images_dir.is_dir() else []
@@ -424,7 +424,7 @@ def main() -> int:
         "--api",
         type=str,
         default="http://localhost:7842",
-        help="ForMash3D API base URL",
+        help="ForMesh3D API base URL",
     )
     parser.add_argument(
         "--tiers",
@@ -477,7 +477,7 @@ def main() -> int:
         real_out.write_text(json.dumps(real_res, indent=2), encoding="utf-8")
         print(f"[REAL BENCHMARK] Saved real benchmark results to {real_out}")
 
-        # Update ForMash3D column in scorecard with real measured data
+        # Update ForMesh3D column in scorecard with real measured data
         if real_res.get("jobs"):
             avg_ret = float(np.mean([j["feature_edge_retention"] for j in real_res["jobs"]]))
             avg_sec = float(np.mean([j["duration_seconds"] for j in real_res["jobs"]]))

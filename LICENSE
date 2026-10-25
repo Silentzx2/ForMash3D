@@ -1,14 +1,14 @@
-Copyright 2026 ForMash 3D
+Copyright 2026 ForMesh 3D
 
-ForMash 3D's original source code is licensed under the Apache License, Version 2.0.
+ForMesh 3D's original source code is licensed under the Apache License, Version 2.0.
 
 This license applies only to the original source code covered by this repository.
-ForMash 3D does not claim ownership of any third-party software, libraries,
+ForMesh 3D does not claim ownership of any third-party software, libraries,
 models, model weights, datasets, assets, or other external components used
 or referenced by this project.
 
 Third-party components remain subject to their respective licenses and terms.
-Their inclusion, integration, download, or use through ForMash 3D does not
+Their inclusion, integration, download, or use through ForMesh 3D does not
 change or replace their original licensing terms.
 
 For the full license terms, see the Apache License 2.0 below.    
@@ -201,7 +201,7 @@ For the full license terms, see the Apache License 2.0 below.
       same "printed page" as the copyright notice for easier
       identification within third-party archives.
 
-   Copyright [2026] [ForMash 3D]
+   Copyright [2026] [ForMesh 3D]
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.

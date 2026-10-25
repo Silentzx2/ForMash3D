@@ -329,7 +329,7 @@ export default function HomePage() {
               </div>
               <div className="flex flex-col">
                 <span className="font-black tracking-tight text-base text-white group-hover:text-primary transition-colors flex items-center gap-1.5">
-                  ForMash<span className="text-primary">3D</span>
+                  ForMesh<span className="text-primary">3D</span>
                   <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-primary/15 text-primary border border-primary/30">
                     Pro Studio
                   </span>
@@ -681,7 +681,7 @@ export default function HomePage() {
               Smart Intent Presets for Your Exact Engine
             </h2>
             <p className="text-sm text-zinc-400">
-              ForMash3D automatically resolves triangle budgets, UV generation, and collision hulls based
+              ForMesh3D automatically resolves triangle budgets, UV generation, and collision hulls based
               on your selected project intent.
             </p>
           </div>
@@ -1092,7 +1092,7 @@ export default function HomePage() {
           <div className="pt-8 border-t border-white/[0.06] flex flex-col sm:flex-row items-center justify-between gap-4 text-xs font-mono text-zinc-500">
             <div className="flex items-center gap-2">
               <Box className="w-4 h-4 text-primary" />
-              <span>ForMash3D Workstation v2.5 · Powered by Autonomous AI Pipelines</span>
+              <span>ForMesh3D Workstation v2.5 · Powered by Autonomous AI Pipelines</span>
             </div>
             <div>
               <span>Personal Workstation License · Localhost GPU Execution</span>

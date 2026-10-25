@@ -86,7 +86,7 @@ export const SettingsModal: React.FC = () => {
       if (stats.status === 'online') {
         setTestResult({
           success: true,
-          msg: `Connected to ForMash 3D FastAPI backend (${latency}ms).`,
+          msg: `Connected to ForMesh 3D FastAPI backend (${latency}ms).`,
           latency,
         });
         refreshSystemStats();

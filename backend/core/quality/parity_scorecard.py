@@ -1,4 +1,4 @@
-"""Parity scorecard generator comparing ForMash3D against market competitors.
+"""Parity scorecard generator comparing ForMesh3D against market competitors.
 
 Strict truth contract:
 Every cell is either a measured number with a source file or null.
@@ -94,7 +94,7 @@ def generate_parity_scorecard(
 
     payload = {
         "metadata": {
-            "title": "ForMash3D Parity Scorecard",
+            "title": "ForMesh3D Parity Scorecard",
             "columns": SCORECARD_COLUMNS,
             "rows": SCORECARD_ROWS,
             "policy": "Every cell is either a measured number with a source file or null. Qualitative marketing strings are prohibited.",

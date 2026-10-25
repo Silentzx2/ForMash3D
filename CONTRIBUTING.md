@@ -1,8 +1,8 @@
-# Contributing to ForMash3D
+# Contributing to ForMesh3D
 
-Thank you for contributing to ForMash3D.
+Thank you for contributing to ForMesh3D.
 
-ForMash3D is an active beta phase project combining a Next.js 16 frontend, FastAPI backend, GPU model adapters, and production-oriented 3D post-processing. Contributions should preserve the existing architecture and keep changes focused.
+ForMesh3D is an active beta phase project combining a Next.js 16 frontend, FastAPI backend, GPU model adapters, and production-oriented 3D post-processing. Contributions should preserve the existing architecture and keep changes focused.
 
 ## Before changing code
 
@@ -26,8 +26,8 @@ ForMash3D is an active beta phase project combining a Next.js 16 frontend, FastA
 ## Setup
 
 ```bash
-git clone https://github.com/Silentzx2/ForMash3D.git
-cd ForMash3D
+git clone https://github.com/Silentzx2/ForMesh3D.git
+cd ForMesh3D
 bash scripts/setup.sh
 ```
 
@@ -36,8 +36,8 @@ bash scripts/setup.sh
 If you do not have an NVIDIA GPU, run setup in CPU mode. Model/CUDA dependencies are skipped; the studio, API, and post-processing tools remain available.
 
 ```bash
-git clone https://github.com/Silentzx2/ForMash3D.git
-cd ForMash3D
+git clone https://github.com/Silentzx2/ForMesh3D.git
+cd ForMesh3D
 bash scripts/setup.sh --cpu
 ```
 

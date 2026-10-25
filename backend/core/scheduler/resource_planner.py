@@ -1,5 +1,5 @@
 
-"""GPU/CPU resource planning for ForMash3D."""
+"""GPU/CPU resource planning for ForMesh3D."""
 from __future__ import annotations
 
 import logging

@@ -2,7 +2,7 @@
 Hunyuan3D-Shape-v2-1 model adapter for image-to-mesh generation.
 
 This adapter integrates the Hunyuan3D-Shape-v2-1 (3.3B) model into the
-ForMash3D mesh generation framework, supporting high-quality shape generation.
+ForMesh3D mesh generation framework, supporting high-quality shape generation.
 """
 
 import logging

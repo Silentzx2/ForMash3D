@@ -1,15 +1,15 @@
-# GitHub Setup — ForMash3D
+# GitHub Setup — ForMesh3D
 
 Copy-paste values for repository settings. These must be set manually in the GitHub UI
 (GitHub → Settings → repository). The connected integration cannot set these directly.
 
 ## Repository Description
 
-ForMash3D — Open-Source Self-Hosted Image-to-3D AI Generator (Beta)
+ForMesh3D — Open-Source Self-Hosted Image-to-3D AI Generator (Beta)
 
 ## Website URL
 
-https://github.com/Silentzx2/ForMash3D
+https://github.com/Silentzx2/ForMesh3D
 
 ## Topics (15-20)
 
@@ -33,7 +33,7 @@ pbr-textures, auto-rigging
 
 Draft `v0.1.0-beta` release notes in `docs/RELEASE_NOTES_DRAFT.md`.
 
-## Verify ForMash3D-ThirdParty
+## Verify ForMesh3D-ThirdParty
 
 * Rename any "AI Studio" text
 * Fix Git LFS statements if LFS is no longer used

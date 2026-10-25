@@ -1,4 +1,4 @@
-"""High-performance multi-threaded mesh processor for ForMash3D.
+"""High-performance multi-threaded mesh processor for ForMesh3D.
 
 Utilizes all available CPU cores (os.cpu_count()) for postprocessing,
 decimation, smoothing, marching cubes, and LOD generation operations.

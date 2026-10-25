@@ -1,4 +1,4 @@
-# Security Policy — ForMash3D (Root)
+# Security Policy — ForMesh3D (Root)
 
 ## Supported Versions
 
@@ -9,7 +9,7 @@
 
 ## Reporting a Vulnerability
 
-ForMash3D is a self-hosted, personal-use project. There is no paid SaaS, no
+ForMesh3D is a self-hosted, personal-use project. There is no paid SaaS, no
 public-facing service, and no bug bounty program.
 
 If you discover a security issue, please open a GitHub issue or contact the

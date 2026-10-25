@@ -1,1 +1,1 @@
-"""Animation core utilities for ForMash 3D."""
+"""Animation core utilities for ForMesh 3D."""

@@ -1,4 +1,4 @@
-"""ForMash3D production post-processing pipeline.
+"""ForMesh3D production post-processing pipeline.
 
 This module owns only the canonical asset lifecycle. The processing algorithms live
 in the ported services under backend/postprocess/services/.
@@ -1024,7 +1024,7 @@ def _export_bytes(mesh: trimesh.Trimesh, fmt: str) -> bytes:
 
 def _export_quad_obj(mesh: trimesh.Trimesh, quad_faces: Any) -> bytes:
     """Export mesh as OBJ format with quad/polygonal faces."""
-    lines = ["# ForMash3D Quad Mesh Export\n"]
+    lines = ["# ForMesh3D Quad Mesh Export\n"]
     for v in mesh.vertices:
         lines.append(f"v {v[0]:.6f} {v[1]:.6f} {v[2]:.6f}\n")
     has_uv = hasattr(mesh, "visual") and getattr(mesh.visual, "uv", None) is not None and len(mesh.visual.uv) == len(mesh.vertices)

@@ -5,7 +5,7 @@ PASS=0
 FAIL=0
 
 echo "========================================"
-echo " ForMash3D Shell Script Full Static Audit"
+echo " ForMesh3D Shell Script Full Static Audit"
 echo " Excluding: backend/thirdparty"
 echo "========================================"
 echo
