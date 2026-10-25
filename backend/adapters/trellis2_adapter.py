@@ -33,19 +33,19 @@ _LOCKED_INFERENCE_PROFILE = {
     "max_num_tokens": 524288,
     "texture_size": 4096,
     "sparse_structure_sampler_params": {
-        "steps": 100,
+        "steps": 50,
         "guidance_strength": 10.0,
         "guidance_rescale": 0.9,
         "rescale_t": 8.0,
     },
     "shape_slat_sampler_params": {
-        "steps": 100,
+        "steps": 50,
         "guidance_strength": 10.0,
         "guidance_rescale": 0.8,
         "rescale_t": 8.0,
     },
     "tex_slat_sampler_params": {
-        "steps": 100,
+        "steps": 50,
         "guidance_strength": 3.5,
         "guidance_rescale": 0.5,
         "rescale_t": 8.0,
@@ -56,13 +56,13 @@ _LOCKED_INFERENCE_PROFILE = {
 }
 
 # LOCKED / ACTIVE: values used by inference (painting path only).
-# BASELINE: previous effective runtime values (tex_slat_sampler_params: steps=100, guidance_strength=3.5, guidance_rescale=0.5, rescale_t=8.0, texture_size=4096)
+# BASELINE: previous effective runtime values (tex_slat_sampler_params: steps=50, guidance_strength=3.5, guidance_rescale=0.5, rescale_t=8.0, texture_size=4096)
 # EXPERIMENTAL: selected experimental values, snapshot (2026-10-20) for stress-test; use only for benchmarking.
 # SUPPORTED BY: TRELLIS.2 painting adapter, EXPERIMENTAL-MODEL-SETTINGS.md section "TRELLIS.2 (raw/image geometry aliases)".
 # ROLLBACK: previous effective values; scheduler strips frontend overrides before adapter applies lock.
 _LOCKED_PAINTING_INFERENCE_PROFILE = {
     "tex_slat_sampler_params": {
-        "steps": 100,
+        "steps": 50,
         "guidance_strength": 3.5,
         "guidance_rescale": 0.5,
         "rescale_t": 8.0,
@@ -257,7 +257,7 @@ class Trellis2ImageToRawMeshAdapter(ImageToMeshModel):
             
             logger.info(
                 "Generating high-fidelity untextured TRELLIS.2 mesh (pipeline=%s, max_num_tokens=%s, steps=%s)",
-                pipeline_type, max_num_tokens, sparse_structure_sampler_params.get("steps", 100),
+                pipeline_type, max_num_tokens, sparse_structure_sampler_params.get("steps", 50),
             )
             
             # Generate untextured raw 3D mesh

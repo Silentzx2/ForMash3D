@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 # ROLLBACK: previous effective values; scheduler strips frontend overrides before adapter applies lock.
 _LOCKED_INFERENCE_PROFILE = {
     "source_quality": "max", "octree_resolution": 768,
-    "num_inference_steps": 100, "guidance_scale": 7.0,
+    "num_inference_steps": 50, "guidance_scale": 7.0,
     "num_chunks": 80000, "mc_algo": "mc",
 }
 

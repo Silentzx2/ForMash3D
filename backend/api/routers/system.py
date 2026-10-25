@@ -20,7 +20,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel
 
 import psutil
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, Response
 from starlette.background import BackgroundTask
 
@@ -655,7 +655,7 @@ async def stream_logs(
     last_event_id = request.headers.get("last-event-id")
 
     async def event_generator():
-        log_file = log_path.open("rb")
+        log_file = log_path.open("rb", buffering=0)
         try:
             path_stat = log_path.stat()
             file_stat = os.fstat(log_file.fileno())
@@ -729,7 +729,7 @@ async def stream_logs(
                     )
                     truncated = path_stat.st_size < log_file.tell()
                     if replaced or truncated:
-                        replacement_file = log_path.open("rb")
+                        replacement_file = log_path.open("rb", buffering=0)
                         log_file.close()
                         log_file = replacement_file
                         file_stat = os.fstat(log_file.fileno())
@@ -740,13 +740,13 @@ async def stream_logs(
                         last_heartbeat = loop.time()
                         continue
                 except FileNotFoundError:
-                    await asyncio.sleep(0.1)
+                    await asyncio.sleep(0.02)
                     continue
 
                 if loop.time() - last_heartbeat >= 15:
                     yield ": heartbeat\n\n"
                     last_heartbeat = loop.time()
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(0.02)
         finally:
             log_file.close()
 
@@ -759,6 +759,61 @@ async def stream_logs(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.websocket("/logs/ws")
+async def websocket_logs(websocket: WebSocket):
+    """Direct real-time WebSocket stream of master.log with zero buffering."""
+    await websocket.accept()
+    project_root = Path(__file__).resolve().parents[3]
+    log_path = project_root / "logs" / "master.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.touch(exist_ok=True)
+
+    try:
+        log_file = log_path.open("rb", buffering=0)
+        try:
+            file_stat = os.fstat(log_file.fileno())
+            size = file_stat.st_size
+            # Send initial tail (last 64KB) if file is large
+            initial_seek = max(0, size - 65536)
+            log_file.seek(initial_seek)
+            if initial_seek > 0:
+                log_file.readline()  # skip partial first line
+            initial_data = log_file.read(65536)
+            if initial_data:
+                await websocket.send_text(json.dumps({
+                    "type": "initial",
+                    "chunk": initial_data.decode("utf-8", errors="replace"),
+                }))
+
+            pending = b""
+            while True:
+                chunk = log_file.read(16384)
+                if chunk:
+                    complete, pending = _complete_utf8_prefix(pending + chunk)
+                    if complete:
+                        await websocket.send_text(json.dumps({
+                            "type": "chunk",
+                            "chunk": complete.decode("utf-8", errors="replace"),
+                        }))
+                    continue
+
+                path_stat = log_path.stat()
+                file_stat = os.fstat(log_file.fileno())
+                if path_stat.st_ino != file_stat.st_ino or path_stat.st_size < log_file.tell():
+                    log_file.close()
+                    log_file = log_path.open("rb", buffering=0)
+                    await websocket.send_text(json.dumps({"type": "reset"}))
+                    pending = b""
+                    continue
+                await asyncio.sleep(0.02)
+        finally:
+            log_file.close()
+    except (WebSocketDisconnect, ConnectionResetError, asyncio.CancelledError):
+        pass
+    except Exception as e:
+        logger.debug(f"Logs WebSocket disconnected: {e}")
 
 
 def _tail_file_lines(file_path: Path, max_lines: int) -> list:

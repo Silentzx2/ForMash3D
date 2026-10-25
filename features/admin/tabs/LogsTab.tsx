@@ -86,71 +86,114 @@ export function LogsTab() {
     };
 
     setStatus("CONNECTING");
-    let streamUrl =
-      "/api/v1/system/logs/stream?offset=" + String(streamOffsetRef.current);
-    if (streamIdentityRef.current) {
-      streamUrl += "&identity=" + encodeURIComponent(streamIdentityRef.current);
+    let ws: WebSocket | null = null;
+    let source: EventSource | null = null;
+
+    const startSSE = () => {
+      if (disposed || source) return;
+      let streamUrl =
+        "/api/v1/system/logs/stream?offset=" + String(streamOffsetRef.current);
+      if (streamIdentityRef.current) {
+        streamUrl += "&identity=" + encodeURIComponent(streamIdentityRef.current);
+      }
+      source = new EventSource(streamUrl);
+
+      source.onopen = () => {
+        if (!disposed) setStatus("CONNECTED");
+      };
+
+      source.onmessage = (event) => {
+        if (disposed) return;
+        let payload: { offset?: unknown; identity?: unknown; chunk?: unknown };
+        try {
+          payload = JSON.parse(event.data) as {
+            offset?: unknown;
+            identity?: unknown;
+            chunk?: unknown;
+          };
+        } catch {
+          setStatus("ERROR");
+          return;
+        }
+
+        const nextOffset = Number(payload.offset);
+        if (
+          typeof payload.chunk !== "string" ||
+          !Number.isSafeInteger(nextOffset) ||
+          nextOffset < 0
+        ) {
+          setStatus("ERROR");
+          return;
+        }
+
+        streamOffsetRef.current = nextOffset;
+        if (typeof payload.identity === "string") streamIdentityRef.current = payload.identity;
+        enqueueText(payload.chunk);
+      };
+
+      source.addEventListener("reset", (event) => {
+        if (disposed) return;
+        pendingText.length = 0;
+        if (flushFrame !== null) window.cancelAnimationFrame(flushFrame);
+        flushFrame = null;
+        if (outputRef.current) outputRef.current.textContent = "";
+        outputTextRef.current = null;
+        hasReceivedContentRef.current = false;
+        const resetEventId = (event as MessageEvent).lastEventId || "";
+        const resetParts = resetEventId.split(":");
+        streamIdentityRef.current =
+          resetParts.length === 3 && resetParts.every((part) => /^-?\d+$/.test(part))
+            ? resetParts.slice(0, 2).join(":")
+            : null;
+        streamOffsetRef.current = 0;
+        setHasReceivedContent(false);
+        const terminal = terminalRef.current;
+        if (terminal) terminal.scrollTop = 0;
+      });
+
+      source.onerror = () => {
+        if (!disposed) setStatus("ERROR");
+      };
+    };
+
+    try {
+      const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const wsHost = window.location.host;
+      ws = new WebSocket(`${wsProtocol}//${wsHost}/api/v1/system/logs/ws`);
+
+      ws.onopen = () => {
+        if (!disposed) setStatus("CONNECTED");
+      };
+
+      ws.onmessage = (event) => {
+        if (disposed) return;
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === "reset") {
+            if (outputRef.current) outputRef.current.textContent = "";
+            outputTextRef.current = null;
+            hasReceivedContentRef.current = false;
+            setHasReceivedContent(false);
+          } else if (data.chunk) {
+            enqueueText(data.chunk);
+          }
+        } catch {
+          if (typeof event.data === "string") enqueueText(event.data);
+        }
+      };
+
+      ws.onerror = () => {
+        if (ws && ws.readyState === WebSocket.OPEN) ws.close();
+      };
+
+      ws.onclose = () => {
+        if (!disposed && !source) {
+          startSSE();
+        }
+      };
+    } catch {
+      startSSE();
     }
-    const source = new EventSource(streamUrl);
-
-    source.onopen = () => {
-      if (!disposed) setStatus("CONNECTED");
-    };
-
-    source.onmessage = (event) => {
-      if (disposed) return;
-      let payload: { offset?: unknown; identity?: unknown; chunk?: unknown };
-      try {
-        payload = JSON.parse(event.data) as {
-          offset?: unknown;
-          identity?: unknown;
-          chunk?: unknown;
-        };
-      } catch {
-        setStatus("ERROR");
-        return;
-      }
-
-      const nextOffset = Number(payload.offset);
-      if (
-        typeof payload.chunk !== "string" ||
-        typeof payload.identity !== "string" ||
-        !/^-?\d+:-?\d+$/.test(payload.identity) ||
-        !Number.isSafeInteger(nextOffset) ||
-        nextOffset < 0
-      ) {
-        setStatus("ERROR");
-        return;
-      }
-
-      streamOffsetRef.current = nextOffset;
-      streamIdentityRef.current = payload.identity;
-      enqueueText(payload.chunk);
-    };
-
-    source.addEventListener("reset", (event) => {
-      if (disposed) return;
-      pendingText.length = 0;
-      if (flushFrame !== null) window.cancelAnimationFrame(flushFrame);
-      flushFrame = null;
-      if (outputRef.current) outputRef.current.textContent = "";
-      outputTextRef.current = null;
-      hasReceivedContentRef.current = false;
-      const resetEventId = (event as MessageEvent).lastEventId || "";
-      const resetParts = resetEventId.split(":");
-      streamIdentityRef.current =
-        resetParts.length === 3 && resetParts.every((part) => /^-?\d+$/.test(part))
-          ? resetParts.slice(0, 2).join(":")
-          : null;
-      streamOffsetRef.current = 0;
-      setHasReceivedContent(false);
-      const terminal = terminalRef.current;
-      if (terminal) terminal.scrollTop = 0;
-    });
-
-    source.onerror = () => {
-      if (!disposed) setStatus("ERROR");
-    };
 
     return () => {
       if (flushFrame !== null) window.cancelAnimationFrame(flushFrame);
@@ -161,7 +204,14 @@ export function LogsTab() {
         flushPending();
       }
       disposed = true;
-      source.close();
+      if (ws) {
+        try { ws.close(); } catch {}
+        ws = null;
+      }
+      if (source) {
+        source.close();
+        source = null;
+      }
     };
   }, [live, streamEpoch]);
 
@@ -188,13 +238,14 @@ export function LogsTab() {
     }
   }, []);
 
-  // Poll every 3 seconds so logs auto-refresh continuously
+  // Poll fallback only when disconnected or initial load
   useEffect(() => {
     if (!live) return;
+    if (status === "CONNECTED" && hasReceivedContent) return;
     fetchLatestLogs();
-    const interval = setInterval(fetchLatestLogs, 3000);
+    const interval = setInterval(fetchLatestLogs, 4000);
     return () => clearInterval(interval);
-  }, [live, fetchLatestLogs]);
+  }, [live, status, hasReceivedContent, fetchLatestLogs]);
 
   const handleScroll = useCallback(() => {
     const terminal = terminalRef.current;
@@ -241,7 +292,7 @@ export function LogsTab() {
             </span>
             <span className="text-[#555555] truncate">logs/master.log</span>
             <span className="text-[#888888] whitespace-nowrap">
-              raw text stream (auto-refresh 3s)
+              real-time stream (zero delay)
             </span>
             {status === "ERROR" && (
               <span className="text-[#F44336] text-[11px]">
