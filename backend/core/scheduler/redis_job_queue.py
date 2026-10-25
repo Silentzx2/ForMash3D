@@ -97,7 +97,17 @@ class RedisJobQueue:
             max_connections=self.max_connections,
         )
         await self.redis.ping()
+        await self._ensure_writable()
         logger.info(f"Connected to Redis at {self.redis_url} (max_connections={self.max_connections})")
+
+    async def _ensure_writable(self):
+        """Ensure Redis allows writes even if disk RDB snapshotting failed in cloud/container environment."""
+        if self.redis:
+            try:
+                await self.redis.config_set("stop-writes-on-bgsave-error", "no")
+                logger.info("Configured Redis stop-writes-on-bgsave-error=no to prevent snapshot write lockouts.")
+            except Exception as e:
+                logger.debug("Redis config_set stop-writes-on-bgsave-error: %s", e)
 
     async def disconnect(self):
         """Disconnect from Redis cleanly"""

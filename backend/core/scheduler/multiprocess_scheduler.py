@@ -1749,6 +1749,17 @@ class MultiprocessModelScheduler:
                 await self._process_job_with_queue_integration(job_request)
 
             except Exception as e:
+                if "MISCONF" in str(e):
+                    logger.warning("Detected Redis MISCONF (bgsave failure). Disabling stop-writes-on-bgsave-error...")
+                    try:
+                        if hasattr(self.job_queue, "_ensure_writable"):
+                            await self.job_queue._ensure_writable()
+                        elif hasattr(self.job_queue, "redis") and self.job_queue.redis:
+                            await self.job_queue.redis.config_set("stop-writes-on-bgsave-error", "no")
+                    except Exception as cfg_err:
+                        logger.error("Failed to recover Redis from MISCONF: %s", cfg_err)
+                    await asyncio.sleep(1.0)
+                    continue
                 logger.error(f"Error in job processing loop: {e}")
                 await asyncio.sleep(1.0)
 
