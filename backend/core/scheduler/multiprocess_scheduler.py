@@ -100,9 +100,34 @@ def _may_fallback_after_model_load_failure(
     return not model_preference
 
 
+def get_model_cache_ttl_seconds() -> float:
+    """Read the model cache TTL in seconds.
+    Controls how long an idle model remains loaded on GPU after job completion.
+    Priority:
+      1. If AUTO_UNLOAD_AFTER_JOB=true, returns 0.0 (immediate unload)
+      2. P3D_MODEL_CACHE_TTL_SECONDS / MODEL_CACHE_TTL_SECONDS / MODEL_CACHE_TTL
+      3. Default: 300.0 seconds (5 minutes)
+    """
+    if parse_bool_env("AUTO_UNLOAD_AFTER_JOB", False):
+        return 0.0
+
+    raw = (
+        os.environ.get("P3D_MODEL_CACHE_TTL_SECONDS")
+        or os.environ.get("MODEL_CACHE_TTL_SECONDS")
+        or os.environ.get("MODEL_CACHE_TTL")
+    )
+    if raw is not None:
+        try:
+            return max(0.0, float(raw))
+        except ValueError:
+            pass
+
+    return 300.0
+
+
 def auto_unload_after_job_enabled() -> bool:
     """Read the VRAM unload switch at decision time."""
-    return parse_bool_env("AUTO_UNLOAD_AFTER_JOB", False)
+    return get_model_cache_ttl_seconds() == 0.0
 
 # Production budgets belong to post-processing. Never let them reach model inference.
 _POSTPROCESS_ONLY_INPUTS = frozenset({
@@ -2715,12 +2740,11 @@ class MultiprocessModelScheduler:
             model_config,
             active_workers=self.resource_planner.cpu_worker_limit(len(self.workers)),
         )
-        if resource_plan is None:
-            for gpu_info in self.gpu_monitor.get_gpu_status():
-                await self._ensure_vram_available(
-                    int(model_config.get("vram_requirement", 1024)),
-                    int(gpu_info["id"]),
-                )
+        if resource_plan is None and not cpu_only:
+            # Multi-GPU LRU eviction: if no GPU has enough free VRAM, evict idle workers
+            # starting with the oldest idle (LRU) on the GPU where the new model will fit.
+            required_vram = int(model_config.get("vram_requirement", 1024))
+            await self._evict_lru_workers_to_free_vram(required_vram, model_config)
             resource_plan = self.resource_planner.plan(
                 model_config,
                 active_workers=self.resource_planner.cpu_worker_limit(len(self.workers)),
@@ -2985,6 +3009,88 @@ class MultiprocessModelScheduler:
         logger.info(f"No GPU can be made to have {required_vram}MB VRAM available")
         return None
 
+    async def _evict_lru_workers_to_free_vram(
+        self, required_vram: int, model_config: Dict[str, Any]
+    ) -> bool:
+        """Smart multi-GPU LRU eviction:
+        Finds the best GPU to accommodate the requested VRAM by evicting idle cached workers.
+        If a secondary GPU already has free VRAM, no workers are evicted.
+        If eviction is necessary, evicts workers in Least Recently Used (oldest idle) order.
+        """
+        gpu_status = self.gpu_monitor.get_gpu_status()
+        if not gpu_status:
+            return False
+
+        current_time = time.time()
+        gpu_candidates = []
+
+        for gpu_info in gpu_status:
+            gpu_id = int(gpu_info["id"])
+            current_available = self.gpu_monitor.get_gpu_available_vram(gpu_id)
+
+            if current_available >= required_vram:
+                return True
+
+            needed = required_vram - current_available
+
+            idle_on_gpu = []
+            for worker_id, is_busy in self.worker_status.items():
+                if not is_busy:
+                    cfg = self.worker_configs.get(worker_id)
+                    if cfg and cfg.gpu_id == gpu_id:
+                        last_used = self.worker_last_used.get(worker_id, current_time)
+                        worker_vram = int(cfg.model_config.get("vram_requirement", 1024))
+                        idle_on_gpu.append((worker_id, last_used, worker_vram))
+
+            # Oldest idle first (LRU)
+            idle_on_gpu.sort(key=lambda x: x[1])
+            reclaimable = sum(w[2] for w in idle_on_gpu)
+
+            if current_available + reclaimable >= required_vram:
+                oldest_use = idle_on_gpu[0][1] if idle_on_gpu else current_time
+                gpu_candidates.append({
+                    "gpu_id": gpu_id,
+                    "available": current_available,
+                    "needed": needed,
+                    "idle_workers": idle_on_gpu,
+                    "oldest_use": oldest_use,
+                })
+
+        if not gpu_candidates:
+            logger.info(
+                f"[LRU EVICTION] No GPU can satisfy {required_vram}MB VRAM even after evicting all idle models"
+            )
+            return False
+
+        # Pick the GPU with oldest idle model or needing least memory
+        gpu_candidates.sort(key=lambda c: (c["oldest_use"], c["needed"]))
+        target_candidate = gpu_candidates[0]
+        target_gpu_id = target_candidate["gpu_id"]
+
+        logger.info(
+            f"[LRU EVICTION] Selected GPU {target_gpu_id} for eviction (needs {target_candidate['needed']}MB freed) "
+            f"to place '{model_config.get('model_id')}'"
+        )
+
+        for worker_id, last_used, worker_vram in target_candidate["idle_workers"]:
+            cur_available = self.gpu_monitor.get_gpu_available_vram(target_gpu_id)
+            if cur_available >= required_vram:
+                break
+
+            idle_secs = current_time - last_used
+            w_cfg = self.worker_configs.get(worker_id)
+            w_model = w_cfg.model_config.get("model_id") if w_cfg else "unknown"
+            logger.info(
+                f"[LRU EVICTION] Evicting idle model '{w_model}' (worker={worker_id}, GPU={target_gpu_id}) "
+                f"idle for {idle_secs:.1f}s to free {worker_vram}MB VRAM"
+            )
+            try:
+                await self._destroy_worker(worker_id)
+            except Exception as e:
+                logger.error(f"Error evicting worker {worker_id}: {e}")
+
+        return self.gpu_monitor.get_gpu_available_vram(target_gpu_id) >= required_vram
+
     async def _ensure_vram_available(
         self, required_vram: int, target_gpu_id: Optional[int] = None
     ):
@@ -3006,17 +3112,16 @@ class MultiprocessModelScheduler:
 
             for worker_id, is_busy in self.worker_status.items():
                 if not is_busy:
-                    worker_config = self.worker_configs[worker_id]
+                    worker_config = self.worker_configs.get(worker_id)
+                    if not worker_config:
+                        continue
                     worker_gpu_id = worker_config.gpu_id
 
                     # Only consider workers on the target GPU
                     if worker_gpu_id == target_gpu_id:
                         last_used = self.worker_last_used.get(worker_id, current_time)
                         idle_time = current_time - last_used
-
-                        # Only consider workers that have been idle for a reasonable time
-                        if idle_time > 10:  # 10 seconds
-                            idle_workers.append((worker_id, idle_time))
+                        idle_workers.append((worker_id, idle_time))
 
             # Sort by idle time (longest idle first)
             idle_workers.sort(key=lambda x: x[1], reverse=True)
@@ -3212,47 +3317,42 @@ class MultiprocessModelScheduler:
         raise TimeoutError(f"Timeout waiting for response from worker {worker_id}")
 
     async def _cleanup_idle_workers(self):
-        """Cleanup idle workers periodically"""
+        """Cleanup idle workers periodically when their idle time exceeds model cache TTL"""
         while self.running:
             try:
+                ttl = get_model_cache_ttl_seconds()
                 current_time = time.time()
 
-                # Find workers that have been idle for a long time
                 workers_to_destroy = []
 
-                for worker_id, is_busy in self.worker_status.items():
+                for worker_id, is_busy in list(self.worker_status.items()):
                     if not is_busy:
                         last_used = self.worker_last_used.get(worker_id, current_time)
                         idle_time = current_time - last_used
 
-                        # Only destroy workers that have been idle for a significant time
-                        # and only if we have more than one worker for the model
-                        if idle_time > self.idle_cleanup_interval:
-                            worker_config = self.worker_configs[worker_id]
-                            model_id = worker_config.model_config["model_id"]
+                        # If idle time exceeds TTL, evict worker to free GPU VRAM
+                        if ttl > 0 and idle_time >= ttl:
+                            workers_to_destroy.append((worker_id, idle_time))
+                        elif ttl <= 0 and idle_time > 1:
+                            workers_to_destroy.append((worker_id, idle_time))
 
-                            # Keep at least one worker per model if possible
-                            model_workers = self.worker_assignments.get(model_id, [])
-                            idle_workers_for_model = [
-                                w
-                                for w in model_workers
-                                if w in self.worker_status and not self.worker_status[w]
-                            ]
-
-                            # Only destroy if there are multiple idle workers for this model
-                            if len(idle_workers_for_model) > 1:
-                                workers_to_destroy.append(worker_id)
-
-                # Destroy excess idle workers
-                for worker_id in workers_to_destroy:
+                # Destroy expired idle workers
+                for worker_id, idle_time in workers_to_destroy:
                     try:
+                        worker_config = self.worker_configs.get(worker_id)
+                        m_id = worker_config.model_config.get("model_id") if worker_config else "unknown"
+                        gpu_label = f"GPU {worker_config.gpu_id}" if worker_config and worker_config.gpu_id is not None else "CPU"
+                        logger.info(
+                            f"[MODEL TTL EXPIRED] Evicting idle worker {worker_id} (model={m_id}, {gpu_label}) "
+                            f"after {idle_time:.1f}s idle (TTL={ttl:.1f}s)"
+                        )
                         await self._destroy_worker(worker_id)
-                        logger.info(f"Cleaned up idle worker {worker_id}")
                     except Exception as e:
-                        logger.error(f"Error cleaning up worker {worker_id}: {e}")
+                        logger.error(f"Error cleaning up expired worker {worker_id}: {e}")
 
                 # Wait between cleanup cycles
-                await asyncio.sleep(self.idle_cleanup_interval)
+                sleep_time = min(max(5.0, ttl / 2.0), 30.0) if ttl > 0 else 5.0
+                await asyncio.sleep(sleep_time)
 
             except Exception as e:
                 logger.error(f"Error in idle worker cleanup: {e}")
