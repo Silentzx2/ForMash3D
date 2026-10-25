@@ -606,18 +606,21 @@ def resolve_seed_plan(
     seeds_cfg = dict(seeds_cfg or {})
     apply_cfg = dict(apply_cfg if apply_cfg is not None else get_planner_apply_config())
 
-    user_candidate_count = max(1, int(request_inputs.get("candidate_count") or 1))
+    raw_candidate_count = request_inputs.get("candidate_count")
     plan_num_seeds = max(1, int((request_inputs.get("plan") or {}).get("num_seeds") or 1))
     auto_seeds = bool(apply_cfg.get("auto_seeds", False))
 
-    if user_candidate_count > 1:
-        candidate_count = user_candidate_count
+    if raw_candidate_count is not None:
+        candidate_count = max(1, int(raw_candidate_count))
+        user_candidate_count = candidate_count
         auto_candidates = False
     elif auto_seeds and plan_num_seeds > 1:
         candidate_count = plan_num_seeds
+        user_candidate_count = 1
         auto_candidates = True
     else:
         candidate_count = 1
+        user_candidate_count = 1
         auto_candidates = False
 
     max_candidates = int(seeds_cfg.get("max_candidates") or 4)

@@ -237,6 +237,19 @@ def test_auto_seeds_enabled_executes_planned_candidate_count():
     assert seed_plan["seed_schedule"] == [10, 15, 20]
 
 
+def test_explicit_single_candidate_count_wins_over_auto_seeds():
+    seed_plan = resolve_seed_plan(
+        {"candidate_count": 1, "plan": {"num_seeds": 3}},
+        {"seed": 10},
+        seeds_cfg={"base_seed": 41, "seed_step": 5, "max_candidates": 4},
+        apply_cfg={"auto_seeds": True},
+    )
+
+    assert seed_plan["candidate_count"] == 1
+    assert seed_plan["auto_candidates"] is False
+    assert seed_plan["seed_schedule"] == [10]
+
+
 def test_rate_limit_disabled_allows_arbitrary_requests():
     import asyncio
     from unittest.mock import MagicMock
