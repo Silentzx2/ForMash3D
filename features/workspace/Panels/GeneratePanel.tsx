@@ -320,7 +320,8 @@ function formatGenerateModel(
   else if (id === 'triposg_image_to_raw_mesh') cleanLabel = 'TripoSG (Fast Feed-Forward Geometry)';
   else if (id === 'hunyuan3d_shape_v21_image_to_raw_mesh') cleanLabel = 'Hunyuan3D-Shape-v2-1 (Raw Geometry)';
   else if (id === 'hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh') cleanLabel = 'Hunyuan3D-DiT-v2-mini-Turbo (Low-VRAM Geometry)';
-  else if (id === 'trellis2_image_to_textured_mesh') cleanLabel = 'TRELLIS 2 (Next-Gen 4B)';
+  else if (id === 'trellis2_image_to_raw_mesh' || id === 'trellis2_image_to_textured_mesh') cleanLabel = 'TRELLIS 2 (Next-Gen 4B)';
+  else if (id === 'trellis_image_to_raw_mesh') cleanLabel = 'TRELLIS (Raw Geometry)';
   else if (id === 'unique3d_image_to_raw_mesh') cleanLabel = 'Unique3D (High-Fidelity Diffusion)';
 
   return {
@@ -487,11 +488,11 @@ export const GeneratePanel: React.FC = () => {
     const raw = (modelRegistry?.['image_to_raw_mesh'] || []).filter(isMeshGenerationModel);
     const combined = Array.from(new Set([...textured, ...raw]));
     const defaults = [
+      'trellis2_image_to_raw_mesh',
       'trellis_image_to_textured_mesh',
       'triposg_image_to_raw_mesh',
       'hunyuan3d_shape_v21_image_to_raw_mesh',
       'hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh',
-      'trellis2_image_to_textured_mesh',
       'unique3d_image_to_raw_mesh',
     ];
     ids = combined.length > 0 ? combined : defaults;

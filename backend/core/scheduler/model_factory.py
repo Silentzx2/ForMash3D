@@ -75,7 +75,11 @@ class ModelFactory:
             "class": "Trellis2ImageToRawMeshAdapter",
         },
         "trellis2_image_mesh_painting": {
-            "module": "adapters.trellis2_adapter",
+            "module": "adapters.trellis2_paint_adapter",
+            "class": "Trellis2ImageMeshPaintingAdapter",
+        },
+        "trellis2_paint": {
+            "module": "adapters.trellis2_paint_adapter",
             "class": "Trellis2ImageMeshPaintingAdapter",
         },
         # Hunyuan3D adapters

@@ -32,8 +32,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/mesh-generation", tags=["mesh_generation"])
 
 _LEGACY_TEXTURED_MODEL_ALIASES = {
-    "trellis_image_to_textured_mesh": "trellis_image_to_3d",
-    "trellis2_image_to_textured_mesh": "trellis2_image_to_3d",
+    "trellis_image_to_textured_mesh": "trellis_image_to_raw_mesh",
+    "trellis2_image_to_textured_mesh": "trellis2_image_to_raw_mesh",
+    "trellis2_image_to_3d": "trellis2_image_to_raw_mesh",
 }
 
 _TEXTURE_RESOLUTION_PRESETS = {"1K": 1024, "2K": 2048, "4K": 4096, "8K": 8192}
@@ -1051,6 +1052,8 @@ async def image_to_raw_mesh(
         user_id = None
 
         # A concrete user model choice takes precedence over automatic selection.
+        if mesh_request.model_preference in _LEGACY_TEXTURED_MODEL_ALIASES:
+            mesh_request.model_preference = _LEGACY_TEXTURED_MODEL_ALIASES[mesh_request.model_preference]
         from core.planner import plan_generation, get_planner_apply_config
         apply_cfg = get_planner_apply_config()
         has_explicit_model = _is_explicit_model_preference(mesh_request.model_preference)
@@ -1423,6 +1426,8 @@ async def image_to_textured_mesh(
     try:
         user_id = None
         # A concrete user model choice takes precedence over automatic selection.
+        if mesh_request.model_preference in _LEGACY_TEXTURED_MODEL_ALIASES:
+            mesh_request.model_preference = _LEGACY_TEXTURED_MODEL_ALIASES[mesh_request.model_preference]
         from core.planner import plan_generation, get_planner_apply_config
         apply_cfg = get_planner_apply_config()
         has_explicit_model = _is_explicit_model_preference(mesh_request.model_preference)

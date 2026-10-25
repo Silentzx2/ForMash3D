@@ -467,10 +467,12 @@ image_to_textured_mesh:
       quality_priority: 100
       multi_gpu: true
       multi_gpu_strategy: accelerate_component_dispatch
+      low_vram_supported: true
       max_images: 1
       deprecated: true
       alias_of: "trellis2_image_to_3d"
     vram_requirement: 23552  # MB (23GB, TRELLIS.2)
+    low_vram_requirement: 10240
     supported_inputs: ["image"]
     supported_outputs: ["glb", "obj"]
     model_path: "backend/pretrained/TRELLIS.2"

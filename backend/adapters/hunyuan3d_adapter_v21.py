@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 _LOCKED_INFERENCE_PROFILE = {
     "source_quality": "max",
     "octree_resolution": 512,
-    "num_inference_steps": 100,
+    "num_inference_steps": 50,
     "guidance_scale": 5.0,
 }
 

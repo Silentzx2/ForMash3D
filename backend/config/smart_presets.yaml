@@ -22,8 +22,8 @@ intents:
     slicer_handoff: false
     preferred_features: [image_to_textured_mesh, image_to_raw_mesh]
     model_priority:
-      - trellis2_image_to_textured_mesh
-      - trellis_image_to_textured_mesh
+      - trellis2_image_to_raw_mesh
+      - trellis_image_to_raw_mesh
       - unique3d_image_to_raw_mesh
       - hunyuan3d_shape_v21_image_to_raw_mesh
       - hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh
@@ -50,8 +50,8 @@ intents:
     slicer_handoff: false
     preferred_features: [image_to_textured_mesh, image_to_raw_mesh]
     model_priority:
-      - trellis2_image_to_textured_mesh
-      - trellis_image_to_textured_mesh
+      - trellis2_image_to_raw_mesh
+      - trellis_image_to_raw_mesh
       - unique3d_image_to_raw_mesh
       - hunyuan3d_shape_v21_image_to_raw_mesh
       - triposg_image_to_raw_mesh
@@ -79,8 +79,8 @@ intents:
     model_priority:
       - unique3d_image_to_raw_mesh
       - hunyuan3d_shape_v21_image_to_raw_mesh
-      - trellis2_image_to_textured_mesh
-      - trellis_image_to_textured_mesh
+      - trellis2_image_to_raw_mesh
+      - trellis_image_to_raw_mesh
       - triposg_image_to_raw_mesh
   3d_print:
     label: 3D Print
@@ -157,8 +157,8 @@ intents:
     model_priority:
       - unique3d_image_to_raw_mesh
       - hunyuan3d_shape_v21_image_to_raw_mesh
-      - trellis2_image_to_textured_mesh
-      - trellis_image_to_textured_mesh
+      - trellis2_image_to_raw_mesh
+      - trellis_image_to_raw_mesh
       - triposg_image_to_raw_mesh
   multi_variant:
     label: Multi-Variant Generation
@@ -182,8 +182,8 @@ intents:
     slicer_handoff: false
     preferred_features: [image_to_raw_mesh, image_to_textured_mesh]
     model_priority:
-      - trellis2_image_to_textured_mesh
-      - trellis_image_to_textured_mesh
+      - trellis2_image_to_raw_mesh
+      - trellis_image_to_raw_mesh
       - unique3d_image_to_raw_mesh
       - hunyuan3d_shape_v21_image_to_raw_mesh
       - hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh
@@ -214,5 +214,5 @@ intents:
       - unique3d_image_to_raw_mesh
       - hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh
       - triposg_image_to_raw_mesh
-      - trellis2_image_to_textured_mesh
-      - trellis_image_to_textured_mesh
+      - trellis2_image_to_raw_mesh
+      - trellis_image_to_raw_mesh

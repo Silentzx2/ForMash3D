@@ -16,6 +16,7 @@ PROFILE_MODULES = {
     "taoflowforge_adapter.py",
     "trellis_adapter.py",
     "trellis2_adapter.py",
+    "trellis2_paint_adapter.py",
     "triposg_adapter.py",
     "unique3d_adapter.py",
 }
@@ -192,7 +193,7 @@ def test_adapter_profiles_reach_model_library_kwargs():
     assert ast.unparse(shape_kwargs["octree_resolution"]) == "octree_res"
     assert ast.unparse(shape_kwargs["num_inference_steps"]) == "num_steps"
     assert ast.unparse(shape_kwargs["guidance_scale"]) == "guidance_scale"
-    assert (shape_profile["octree_resolution"], shape_profile["num_inference_steps"], shape_profile["guidance_scale"]) == (1300, 150, 5.0)
+    assert (shape_profile["octree_resolution"], shape_profile["num_inference_steps"], shape_profile["guidance_scale"]) == (512, 50, 7.0)
 
     pixal_tree = _tree(ADAPTERS / "pixal3d_adapter.py")
     pixal_profile = _assignment(pixal_tree, "_LOCKED_INFERENCE_PROFILE")
@@ -267,7 +268,7 @@ def test_trellis2_raw_pipeline_receives_adapter_locked_kwargs():
         assert argument in kwargs
     assert profile["pipeline_type"] == "1536_cascade"
     assert profile["max_num_tokens"] == 524288
-    assert profile["sparse_structure_sampler_params"]["steps"] == 100
+    assert profile["sparse_structure_sampler_params"]["steps"] == 50
     assert profile["shape_slat_sampler_params"]["guidance_rescale"] == 0.8
     assert profile["tex_slat_sampler_params"]["guidance_strength"] == 3.5
 
@@ -312,6 +313,6 @@ def test_trellis_effective_cap_is_preserved_as_an_approval_conflict():
     profile = _assignment(tree, "_LOCKED_INFERENCE_PROFILE")
     method = _find_method(_find_class(tree, "TrellisImageToMeshAdapterCommon"), "_process_request")
     source = ast.unparse(method)
-    assert profile["ss_sampling_steps"] == profile["slat_sampling_steps"] == 100
+    assert profile["ss_sampling_steps"] == profile["slat_sampling_steps"] == 50
     assert "min(50, ss_steps)" in source
     assert "min(50, slat_steps)" in source

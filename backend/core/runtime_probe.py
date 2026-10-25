@@ -115,6 +115,10 @@ def probe_runtime(
     cuda_device_name: Optional[str] = None
     total_vram_gb: Optional[float] = None
     free_vram_gb: Optional[float] = None
+    aggregate_free_vram_gb: Optional[float] = None
+    max_free_vram_gb: Optional[float] = None
+    gpu_count: int = 0
+    gpu_devices: List[Dict[str, Any]] = []
     peak_vram_gb_last_run: Optional[float] = None
     cuda_version: Optional[str] = None
     torch_version = "not_installed"
@@ -125,15 +129,50 @@ def probe_runtime(
             has_cuda = True
             cuda_version = getattr(torch.version, "cuda", None)
             try:
-                cuda_device_name = torch.cuda.get_device_name(0)
+                gpu_count = torch.cuda.device_count()
             except Exception:
-                cuda_device_name = None
-            try:
-                free_bytes, total_bytes = torch.cuda.mem_get_info(0)
-                free_vram_gb = round(free_bytes / (1024 ** 3), 2)
-                total_vram_gb = round(total_bytes / (1024 ** 3), 2)
-            except Exception:
-                pass
+                gpu_count = 1
+
+            agg_free = 0
+            agg_total = 0
+            max_free = 0
+
+            for i in range(gpu_count):
+                try:
+                    dev_name = torch.cuda.get_device_name(i)
+                    if cuda_device_name is None:
+                        cuda_device_name = dev_name
+                    free_b, total_b = torch.cuda.mem_get_info(i)
+                    free_gb = round(free_b / (1024 ** 3), 2)
+                    total_gb = round(total_b / (1024 ** 3), 2)
+                    gpu_devices.append({
+                        "id": i,
+                        "name": dev_name,
+                        "free_vram_gb": free_gb,
+                        "total_vram_gb": total_gb,
+                    })
+                    agg_free += free_b
+                    agg_total += total_b
+                    if free_b > max_free:
+                        max_free = free_b
+                except Exception:
+                    pass
+
+            if agg_total > 0:
+                total_vram_gb = round(agg_total / (1024 ** 3), 2)
+                aggregate_free_vram_gb = round(agg_free / (1024 ** 3), 2)
+                max_free_vram_gb = round(max_free / (1024 ** 3), 2)
+                free_vram_gb = max_free_vram_gb
+            else:
+                try:
+                    free_bytes, total_bytes = torch.cuda.mem_get_info(0)
+                    free_vram_gb = round(free_bytes / (1024 ** 3), 2)
+                    total_vram_gb = round(total_bytes / (1024 ** 3), 2)
+                    aggregate_free_vram_gb = free_vram_gb
+                    max_free_vram_gb = free_vram_gb
+                except Exception:
+                    pass
+
             try:
                 peak_bytes = torch.cuda.max_memory_allocated(0)
                 peak_vram_gb_last_run = round(peak_bytes / (1024 ** 3), 2)
@@ -164,8 +203,12 @@ def probe_runtime(
     return {
         "has_cuda": has_cuda,
         "cuda_device_name": cuda_device_name,
+        "gpu_count": gpu_count,
+        "gpu_devices": gpu_devices,
         "total_vram_gb": total_vram_gb,
         "free_vram_gb": free_vram_gb,
+        "aggregate_free_vram_gb": aggregate_free_vram_gb,
+        "max_free_vram_gb": max_free_vram_gb,
         "total_ram_gb": total_ram_gb,
         "free_ram_gb": free_ram_gb,
         "peak_vram_gb_last_run": peak_vram_gb_last_run,

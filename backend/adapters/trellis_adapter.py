@@ -31,9 +31,9 @@ logger = logging.getLogger(__name__)
 # ROLLBACK: previous effective values; scheduler strips frontend overrides before adapter applies lock.
 _LOCKED_INFERENCE_PROFILE = {
     "source_quality": "max",
-    "num_inference_steps": 100,
-    "ss_sampling_steps": 100,
-    "slat_sampling_steps": 100,
+    "num_inference_steps": 50,
+    "ss_sampling_steps": 50,
+    "slat_sampling_steps": 50,
     "guidance_scale": 7.5,
     "slat_cfg_strength": 3.0,
     "simplify": 0.0,
@@ -194,9 +194,9 @@ class TrellisTextConditionedMeshAdapterCommon(TextToMeshModel):
             texture_text_prompt = inputs.get("texture_text_prompt", "")
             seed = inputs.get("seed", 42)
             texture_resolution = inputs.get("texture_resolution", 2048)
-            num_steps = inputs.get("num_inference_steps", 100)
+            num_steps = inputs.get("num_inference_steps", 50)
             if num_steps is None:
-                num_steps = 100
+                num_steps = 50
             target_polycount = inputs.get("target_polycount", None)
             simplify = inputs.get("simplify", None)
             auto_optimize = bool(inputs.get("auto_optimize", False))

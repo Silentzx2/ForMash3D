@@ -211,7 +211,7 @@ const DEFAULT_STATE: AppStateData = {
     textureQuality: 'high',
     quadTopology: false,
     topologyMode: 'triangle',
-    seed: 42891,
+    seed: Math.floor(Math.random() * 900000) + 100000,
     removeBackground: true,
     autoOptimizeSettings: { targetPolycount: 0 },
     generateTexture: true,

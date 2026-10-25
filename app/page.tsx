@@ -204,7 +204,7 @@ export default function HomePage() {
   // Interactive Quick Launch State
   const [promptInput, setPromptInput] = useState('');
   const [selectedIntent, setSelectedIntent] = useState('game_ready');
-  const [selectedModel, setSelectedModel] = useState('trellis2_image_to_textured_mesh');
+  const [selectedModel, setSelectedModel] = useState('trellis2_image_to_raw_mesh');
   const [activeTab, setActiveTab] = useState<'generate' | 'retopo' | 'texture' | 'rigging'>('generate');
 
   // Live Hardware Telemetry State
@@ -562,7 +562,7 @@ export default function HomePage() {
                       onChange={(e) => setSelectedModel(e.target.value)}
                       className="bg-black/80 border border-white/[0.1] rounded-md px-2 py-1 text-xs text-zinc-300 font-mono focus:border-primary outline-none cursor-pointer"
                     >
-                      <option value="trellis2_image_to_textured_mesh">Trellis 2 (1536 Cascade)</option>
+                      <option value="trellis2_image_to_raw_mesh">Trellis 2 (1536 Cascade)</option>
                       <option value="hunyuan3d_shape_v21_image_to_raw_mesh">Hunyuan3D 2.1 (Sharp Solids)</option>
                       <option value="unique3d_image_to_raw_mesh">Unique3D (Clean Geometry)</option>
                       <option value="triposg_image_to_raw_mesh">TripoSG (Fast Mesh)</option>
