@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 # ROLLBACK: previous effective values; scheduler strips frontend overrides before adapter applies lock.
 _LOCKED_INFERENCE_PROFILE = {
     "max_num_view": 9,
-    "resolution": 768,
+    "resolution": 1536,
 }
 
 
