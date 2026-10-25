@@ -193,7 +193,7 @@ def test_adapter_profiles_reach_model_library_kwargs():
     assert ast.unparse(shape_kwargs["octree_resolution"]) == "octree_res"
     assert ast.unparse(shape_kwargs["num_inference_steps"]) == "num_steps"
     assert ast.unparse(shape_kwargs["guidance_scale"]) == "guidance_scale"
-    assert (shape_profile["octree_resolution"], shape_profile["num_inference_steps"], shape_profile["guidance_scale"]) == (512, 50, 7.0)
+    assert (shape_profile["octree_resolution"], shape_profile["num_inference_steps"], shape_profile["guidance_scale"]) == (512, 50, 7.5)
 
     pixal_tree = _tree(ADAPTERS / "pixal3d_adapter.py")
     pixal_profile = _assignment(pixal_tree, "_LOCKED_INFERENCE_PROFILE")

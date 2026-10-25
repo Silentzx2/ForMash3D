@@ -164,7 +164,10 @@ class PartUVRunner:
         """
         try:
             import partuv
-            from thirdparty.PartUV.pack.pack import pack_mesh
+            try:
+                from thirdparty.PartUV.pack.pack import pack_mesh
+            except ImportError:
+                from backend.thirdparty.PartUV.pack.pack import pack_mesh
             from partuv.preprocess import save_results
 
             threshold = self.distortion_threshold if distortion_threshold is None else float(distortion_threshold)

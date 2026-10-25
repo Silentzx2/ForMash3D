@@ -112,7 +112,10 @@ class FastMeshRunner:
             logger.info(f"Loading FastMesh {self.variant} model from {self.model_path}")
 
             # Import FastMesh modules
-            from thirdparty.FastMesh.models import MODELS
+            try:
+                from thirdparty.FastMesh.models import MODELS
+            except ImportError:
+                from backend.thirdparty.FastMesh.models import MODELS
 
             # Setup accelerator
             kwargs = DistributedDataParallelKwargs(find_unused_parameters=False)

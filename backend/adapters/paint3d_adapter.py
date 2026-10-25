@@ -99,25 +99,20 @@ class Paint3DAdapter(ImageToMeshModel):
 
     def _resolve_checkpoints(self) -> Dict[str, str]:
         """Resolve paths to required ControlNet and base model checkpoints."""
+        repo_model_path = Path(__file__).resolve().parents[2] / "pretrained" / "Paint3D"
+        env_model_path = Path(os.environ["PRETRAINED_DIR"]) / "Paint3D" if os.environ.get("PRETRAINED_DIR") else None
+        roots = [self.model_path]
+        if repo_model_path.exists() and repo_model_path != self.model_path:
+            roots.append(repo_model_path)
+        if env_model_path and env_model_path.exists() and env_model_path not in roots:
+            roots.append(env_model_path)
+
         candidates = {
-            "uv_pos": [
-                self.model_path / "UVPos_Control",
-                self.model_path / "Paint3d_UVPos_Control",
-                self.model_path,
-            ],
-            "sd15": [
-                self.model_path / "stable-diffusion-v1-5",
-                self.model_path / "v1-5-pruned-emaonly",
-            ],
-            "depth": [
-                self.model_path / "control_v11f1p_sd15_depth",
-            ],
-            "inpaint": [
-                self.model_path / "control_v11p_sd15_inpaint",
-            ],
-            "tile": [
-                self.model_path / "control_v11f1e_sd15_tile",
-            ],
+            "uv_pos": ["UVPos_Control", "Paint3d_UVPos_Control", ""],
+            "sd15": ["stable-diffusion-v1-5", "v1-5-pruned-emaonly"],
+            "depth": ["control_v11f1p_sd15_depth"],
+            "inpaint": ["control_v11p_sd15_inpaint"],
+            "tile": ["control_v11f1e_sd15_tile"],
         }
 
         resolved = {
@@ -128,10 +123,16 @@ class Paint3DAdapter(ImageToMeshModel):
             "tile": "lllyasviel/control_v11f1e_sd15_tile",
         }
 
-        for key, paths in candidates.items():
-            for p in paths:
-                if p.exists() and (any(p.glob("*.bin")) or any(p.glob("*.safetensors"))):
-                    resolved[key] = str(p)
+        for key, subpaths in candidates.items():
+            found = False
+            for root in roots:
+                for sub in subpaths:
+                    p = root / sub if sub else root
+                    if p.exists() and (any(p.glob("*.bin")) or any(p.glob("*.safetensors"))):
+                        resolved[key] = str(p)
+                        found = True
+                        break
+                if found:
                     break
 
         return resolved

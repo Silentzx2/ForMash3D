@@ -47,15 +47,26 @@ except ImportError:
                 raise AttributeError(f"'Box' object has no attribute '{name}'")
 
 try:
-    from thirdparty.UniRig.src.data.datapath import Datapath
-    from thirdparty.UniRig.src.data.dataset import DatasetConfig, UniRigDatasetModule
-    from thirdparty.UniRig.src.data.extract import extract_builtin
-    from thirdparty.UniRig.src.data.transform import TransformConfig
-    from thirdparty.UniRig.src.inference.download import download
-    from thirdparty.UniRig.src.model.parse import get_model
-    from thirdparty.UniRig.src.system.parse import get_system, get_writer
-    from thirdparty.UniRig.src.tokenizer.parse import get_tokenizer
-    from thirdparty.UniRig.src.tokenizer.spec import TokenizerConfig
+    try:
+        from thirdparty.UniRig.src.data.datapath import Datapath
+        from thirdparty.UniRig.src.data.dataset import DatasetConfig, UniRigDatasetModule
+        from thirdparty.UniRig.src.data.extract import extract_builtin
+        from thirdparty.UniRig.src.data.transform import TransformConfig
+        from thirdparty.UniRig.src.inference.download import download
+        from thirdparty.UniRig.src.model.parse import get_model
+        from thirdparty.UniRig.src.system.parse import get_system, get_writer
+        from thirdparty.UniRig.src.tokenizer.parse import get_tokenizer
+        from thirdparty.UniRig.src.tokenizer.spec import TokenizerConfig
+    except ImportError:
+        from backend.thirdparty.UniRig.src.data.datapath import Datapath
+        from backend.thirdparty.UniRig.src.data.dataset import DatasetConfig, UniRigDatasetModule
+        from backend.thirdparty.UniRig.src.data.extract import extract_builtin
+        from backend.thirdparty.UniRig.src.data.transform import TransformConfig
+        from backend.thirdparty.UniRig.src.inference.download import download
+        from backend.thirdparty.UniRig.src.model.parse import get_model
+        from backend.thirdparty.UniRig.src.system.parse import get_system, get_writer
+        from backend.thirdparty.UniRig.src.tokenizer.parse import get_tokenizer
+        from backend.thirdparty.UniRig.src.tokenizer.spec import TokenizerConfig
     _unirig_import_error = None
 except ImportError as e:
     _unirig_import_error = e

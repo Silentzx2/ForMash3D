@@ -155,9 +155,6 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
             Path(__file__).resolve().parents[1] / "pretrained" / "Unique3D" / clean_rel,
             Path(__file__).resolve().parents[2] / "pretrained" / "Unique3D" / "ckpt" / clean_rel,
             Path(__file__).resolve().parents[2] / "pretrained" / "Unique3D" / clean_rel,
-            Path("/kaggle/working/ForMash3D/pretrained/Unique3D/ckpt") / clean_rel,
-            Path("/kaggle/working/ForMash3D/backend/pretrained/Unique3D/ckpt") / clean_rel,
-            Path("/kaggle/working/pretrained/Unique3D/ckpt") / clean_rel,
         ]
         if os.environ.get("PRETRAINED_DIR"):
             p_dir = Path(os.environ["PRETRAINED_DIR"])
@@ -188,9 +185,6 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
             Path(__file__).resolve().parents[1] / "pretrained" / "Unique3D" / "img2mvimg",
             Path(__file__).resolve().parents[2] / "pretrained" / "Unique3D" / "ckpt" / "img2mvimg",
             Path(__file__).resolve().parents[2] / "pretrained" / "Unique3D" / "img2mvimg",
-            Path("/kaggle/working/ForMash3D/pretrained/Unique3D/ckpt/img2mvimg"),
-            Path("/kaggle/working/ForMash3D/backend/pretrained/Unique3D/ckpt/img2mvimg"),
-            Path("/kaggle/working/pretrained/Unique3D/ckpt/img2mvimg"),
         ]
         if os.environ.get("PRETRAINED_DIR"):
             p_dir = Path(os.environ["PRETRAINED_DIR"])
@@ -386,9 +380,6 @@ trainers:
             Path(__file__).resolve().parents[1] / "pretrained" / "Unique3D",
             Path(__file__).resolve().parents[2] / "pretrained" / "Unique3D" / "ckpt",
             Path(__file__).resolve().parents[2] / "pretrained" / "Unique3D",
-            Path("/kaggle/working/ForMash3D/pretrained/Unique3D/ckpt"),
-            Path("/kaggle/working/ForMash3D/backend/pretrained/Unique3D/ckpt"),
-            Path("/kaggle/working/pretrained/Unique3D/ckpt"),
             self.unique3d_root / "ckpt",
             Path("ckpt"),
             Path("backend/ckpt"),
