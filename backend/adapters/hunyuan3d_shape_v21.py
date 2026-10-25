@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 # ROLLBACK: previous effective values; scheduler strips frontend overrides before adapter applies lock.
 _LOCKED_INFERENCE_PROFILE = {
     "source_quality": "max", "octree_resolution": 512,
-    "num_inference_steps": 50, "guidance_scale": 7.0,
+    "num_inference_steps": 50, "guidance_scale": 7.5,
     "num_chunks": 160000, "mc_algo": "mc",
 }
 
@@ -104,6 +104,14 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
                 fix_numba_caching()
             except (ImportError, Exception) as e:
                 logger.warning(f"torchvision_fix / numba_fix not applied: {e}")
+
+            if not self.model_path.exists():
+                repo_fallback = Path(__file__).resolve().parents[2] / "pretrained" / "tencent" / "Hunyuan3D-2.1"
+                env_fallback = Path(os.environ["PRETRAINED_DIR"]) / "tencent" / "Hunyuan3D-2.1" if os.environ.get("PRETRAINED_DIR") else None
+                if repo_fallback.exists():
+                    self.model_path = repo_fallback
+                elif env_fallback and env_fallback.exists():
+                    self.model_path = env_fallback
 
             if not self.model_path.exists():
                 raise FileNotFoundError(
@@ -350,9 +358,9 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
             else:
                 num_steps = int(num_steps)
 
-            guidance_scale = inputs.get("guidance_scale", 5.0)
+            guidance_scale = inputs.get("guidance_scale", 7.5)
             if guidance_scale is None:
-                guidance_scale = 5.0
+                guidance_scale = 7.5
             else:
                 guidance_scale = float(guidance_scale)
 
@@ -372,7 +380,7 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
 
             base_name = f"{self.model_id}_{image_path.stem}"
             output_path = self._generate_output_path(base_name, output_format)
-            self.mesh_processor.save_mesh(mesh_result, output_path, do_normalise=False)
+            self.mesh_processor.save_mesh(mesh_result, output_path, do_normalise=False, crease_angle_deg=20.0)
 
             final_mesh = self.mesh_processor.load_mesh(output_path)
             mesh_stats = self.mesh_processor.get_mesh_stats(final_mesh)

@@ -1,3 +1,19 @@
+## 2026-10-25 — Candidate Count Override Fix, Sharpness Tuning, Unique3D Path Resolution & Import Cleanups
+
+- **Explicit Candidate Count Priority**:
+  - Root cause: In `backend/core/planner.py`, `plan_execution` checked `if raw_candidate_count:` which was falsely superseded when `raw_candidate_count = 1` and `apply.auto_seeds: true`, defaulting candidate count back to `num_seeds: 3`.
+  - Fix: Fixed condition to `if raw_candidate_count is not None:`. Added regression test `test_explicit_single_candidate_count_wins_over_auto_seeds` in `test_seed_request_contract.py`.
+- **Hunyuan3D-Shape-v2.1 Sharpness Tuning**:
+  - Root cause: Default shape output appeared overly smoothed rather than sharp and micro-detailed.
+  - Fix: In `backend/adapters/hunyuan3d_shape_v21.py`, set `guidance_scale` to `7.5` and configured `crease_angle_deg=20.0` in `save_mesh` to preserve crisp features and sharp geometry.
+- **Dynamic Checkpoint & Model Path Resolution (Unique3D & Paint3D)**:
+  - Root cause: Unique3D's `image2mvimage.yaml` declares `./ckpt/img2mvimg`. When launched from custom directories or Kaggle, relative lookups threw `OSError: Error no file named diffusion_pytorch_model.bin found in directory ./ckpt/img2mvimg`.
+  - Fix: Implemented dynamic checkpoint resolution in `unique3d_adapter.py` without hardcoded machine paths, checking `self.model_path`, `parents[1] / "pretrained" / "Unique3D"`, `parents[2] / "pretrained" / "Unique3D"`, and `PRETRAINED_DIR` environment variables. Dynamically rewritten `pretrained_model_name_or_path` with resolved absolute path and ensured working directory symlinks. Also added multi-root fallback resolution for ControlNet weights in `paint3d_adapter.py`.
+- **Dynamic Fallback Imports for Thirdparty Modules**:
+  - Root cause: When scripts or tests execute from project root vs `backend/`, direct `import thirdparty.<Module>` caused `ModuleNotFoundError: No module named 'thirdparty'`.
+  - Fix: Added try/except fallback imports (`from thirdparty... except ImportError: from backend.thirdparty...`) in `fastmesh_utils.py`, `partuv_utils.py`, and `unirig_utils.py`.
+- **Verification**: 60 passed backend tests (0 failed), all SSOT and contract regression tests green.
+
 ## 2026-10-24 — Dynamic Random Seed Assignment & Unique3D Refinement Safeguards
 
 - **Dynamic Random Seed Assignment**:

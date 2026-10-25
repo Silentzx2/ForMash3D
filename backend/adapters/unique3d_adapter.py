@@ -143,16 +143,56 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
                     logger.info(f"Removing invalid/unauthorized {token_key} from environment")
                     os.environ.pop(token_key, None)
 
+    def _find_checkpoint_file(self, rel_path: str) -> str:
+        """Find checkpoint file across all possible pretrained/ckpt directories."""
+        clean_rel = str(rel_path).lstrip("/")
+        candidates = [
+            Path(self.model_path) / "ckpt" / clean_rel,
+            Path(self.model_path) / clean_rel,
+            self.unique3d_root / "ckpt" / clean_rel,
+            Path("ckpt") / clean_rel,
+            Path(__file__).resolve().parents[1] / "pretrained" / "Unique3D" / "ckpt" / clean_rel,
+            Path(__file__).resolve().parents[1] / "pretrained" / "Unique3D" / clean_rel,
+            Path(__file__).resolve().parents[2] / "pretrained" / "Unique3D" / "ckpt" / clean_rel,
+            Path(__file__).resolve().parents[2] / "pretrained" / "Unique3D" / clean_rel,
+        ]
+        if os.environ.get("PRETRAINED_DIR"):
+            p_dir = Path(os.environ["PRETRAINED_DIR"])
+            candidates.extend([p_dir / "Unique3D" / "ckpt" / clean_rel, p_dir / "Unique3D" / clean_rel])
+        if os.environ.get("P3D_PRETRAINED_DIR"):
+            p_dir = Path(os.environ["P3D_PRETRAINED_DIR"])
+            candidates.extend([p_dir / "Unique3D" / "ckpt" / clean_rel, p_dir / "Unique3D" / clean_rel])
+
+        for c in candidates:
+            try:
+                res = c.resolve()
+                if res.is_file():
+                    return str(res)
+            except Exception:
+                continue
+        return str(Path(self.model_path) / "ckpt" / clean_rel)
+
     def _find_local_img2mvimg(self) -> Optional[Path]:
         """Find local img2mvimg directory containing base SD weights."""
         candidates = [
             Path(self.model_path) / "ckpt" / "img2mvimg",
+            Path(self.model_path) / "img2mvimg",
             self.unique3d_root / "ckpt" / "img2mvimg",
             Path("ckpt") / "img2mvimg",
             Path("./ckpt/img2mvimg"),
             Path("backend/ckpt") / "img2mvimg",
             Path(__file__).resolve().parents[1] / "pretrained" / "Unique3D" / "ckpt" / "img2mvimg",
+            Path(__file__).resolve().parents[1] / "pretrained" / "Unique3D" / "img2mvimg",
+            Path(__file__).resolve().parents[2] / "pretrained" / "Unique3D" / "ckpt" / "img2mvimg",
+            Path(__file__).resolve().parents[2] / "pretrained" / "Unique3D" / "img2mvimg",
         ]
+        if os.environ.get("PRETRAINED_DIR"):
+            p_dir = Path(os.environ["PRETRAINED_DIR"])
+            candidates.extend([p_dir / "Unique3D" / "ckpt" / "img2mvimg", p_dir / "Unique3D" / "img2mvimg"])
+        if os.environ.get("P3D_PRETRAINED_DIR"):
+            p_dir = Path(os.environ["P3D_PRETRAINED_DIR"])
+            candidates.extend([p_dir / "Unique3D" / "ckpt" / "img2mvimg", p_dir / "Unique3D" / "img2mvimg"])
+
         for candidate in candidates:
             try:
                 resolved = candidate.resolve()
@@ -161,6 +201,49 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
             except Exception:
                 continue
         return None
+
+    def _resolve_mvimg_config(self) -> str:
+        """Resolve image2mvimage config to point to the actual local img2mvimg directory."""
+        local_dir = self._find_local_img2mvimg()
+        if not local_dir:
+            return self.mvimg_config
+
+        src_path = Path(self.mvimg_config)
+        content = ""
+        if src_path.exists():
+            try:
+                content = src_path.read_text(encoding="utf-8")
+            except Exception:
+                pass
+
+        if not content:
+            return self.mvimg_config
+
+        # Substitute pretrained_model_name_or_path with the absolute resolved path
+        abs_path_str = str(local_dir.resolve()).replace("\\", "/")
+        content = re.sub(
+            r'^(pretrained_model_name_or_path:\s*).*$',
+            f'\\1"{abs_path_str}"',
+            content,
+            flags=re.MULTILINE,
+        )
+
+        candidate_paths = [
+            self.unique3d_root / "app" / "custom_models" / "image2mvimage_runtime.yaml",
+            Path("ckpt") / "image2mvimage_runtime.yaml",
+            Path(tempfile.gettempdir()) / "image2mvimage_runtime.yaml",
+        ]
+        for dest in candidate_paths:
+            try:
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_text(content, encoding="utf-8")
+                return str(dest)
+            except Exception as e:
+                logger.debug(f"Could not write runtime config to {dest}: {e}")
+
+        with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False, encoding="utf-8") as tf:
+            tf.write(content)
+            return tf.name
 
     def _create_normal_config_override(self, base_model: str) -> str:
         """Create a runtime image2normal YAML config overriding the base model path."""
@@ -291,32 +374,63 @@ trainers:
     def _ensure_ckpt_symlinks(self):
         """Ensure ckpt symlinks exist so Unique3D relative './ckpt/...' paths resolve to pretrained weights."""
         ckpt_sources = [
-            (Path(self.model_path) / "ckpt").resolve(),
-            (self.unique3d_root / "ckpt").resolve(),
-            Path("ckpt").resolve(),
-            Path("backend/ckpt").resolve(),
-            (Path(__file__).resolve().parents[1] / "pretrained" / "Unique3D" / "ckpt").resolve(),
+            Path(self.model_path) / "ckpt",
+            Path(self.model_path),
+            Path(__file__).resolve().parents[1] / "pretrained" / "Unique3D" / "ckpt",
+            Path(__file__).resolve().parents[1] / "pretrained" / "Unique3D",
+            Path(__file__).resolve().parents[2] / "pretrained" / "Unique3D" / "ckpt",
+            Path(__file__).resolve().parents[2] / "pretrained" / "Unique3D",
+            self.unique3d_root / "ckpt",
+            Path("ckpt"),
+            Path("backend/ckpt"),
         ]
-        ckpt_src = next((p for p in ckpt_sources if p.exists() and not p.is_symlink()), None)
+        if os.environ.get("PRETRAINED_DIR"):
+            p_dir = Path(os.environ["PRETRAINED_DIR"])
+            ckpt_sources.extend([p_dir / "Unique3D" / "ckpt", p_dir / "Unique3D"])
+        if os.environ.get("P3D_PRETRAINED_DIR"):
+            p_dir = Path(os.environ["P3D_PRETRAINED_DIR"])
+            ckpt_sources.extend([p_dir / "Unique3D" / "ckpt", p_dir / "Unique3D"])
+
+        ckpt_src = None
+        for p in ckpt_sources:
+            try:
+                resolved = p.resolve()
+                if resolved.exists() and (resolved / "img2mvimg").exists():
+                    ckpt_src = resolved
+                    break
+            except Exception:
+                continue
+
         if not ckpt_src:
-            ckpt_src = next((p for p in ckpt_sources if p.exists()), None)
+            for p in ckpt_sources:
+                try:
+                    resolved = p.resolve()
+                    if resolved.exists() and not resolved.is_symlink():
+                        ckpt_src = resolved
+                        break
+                except Exception:
+                    continue
 
         if ckpt_src and ckpt_src.exists():
-            targets = [self.unique3d_root / "ckpt"]
-            # Only add backend/ckpt if inside backend directory or backend exists
-            if Path("backend").is_dir() and not Path("package.json").exists():
-                targets.append(Path("backend") / "ckpt")
-            elif Path("core").is_dir() and Path("adapters").is_dir():
-                targets.append(Path("ckpt"))
+            targets = [
+                self.unique3d_root / "ckpt",
+                Path.cwd() / "ckpt",
+                Path("ckpt"),
+                Path("backend/ckpt"),
+                Path(__file__).resolve().parents[1] / "ckpt",
+                Path(__file__).resolve().parents[2] / "ckpt",
+            ]
 
             for target in targets:
                 try:
+                    resolved_target = target.resolve() if (target.exists() or target.is_symlink()) else None
                     if target.is_symlink():
-                        if target.resolve() != ckpt_src:
+                        if resolved_target != ckpt_src:
                             target.unlink()
                             target.symlink_to(ckpt_src)
                             logger.info(f"Updated ckpt symlink: {target} -> {ckpt_src}")
                     elif not target.exists():
+                        target.parent.mkdir(parents=True, exist_ok=True)
                         target.symlink_to(ckpt_src)
                         logger.info(f"Created ckpt symlink: {target} -> {ckpt_src}")
                 except Exception as e:
@@ -405,10 +519,10 @@ trainers:
             self._ensure_unique3d_in_path()
             from app.custom_models.utils import load_pipeline
                 
-            # Use official load_pipeline which expects .pth format
-            # The checkpoints are safetensors from HF - load_pipeline handles conversion via strict=False
+            resolved_mvimg_config = self._resolve_mvimg_config()
+            mvimg_ckpt = self._find_checkpoint_file("img2mvimg/unet/diffusion_pytorch_model.safetensors")
             self.mvimg_trainer, self.mvimg_pipeline = load_pipeline(
-                self.mvimg_config, self.mvimg_checkpoint
+                resolved_mvimg_config, mvimg_ckpt
             )
             # self.mvimg_pipeline.enable_model_cpu_offload()
             loaded_models["mvimg_pipeline"] = self.mvimg_pipeline
@@ -423,9 +537,10 @@ trainers:
             # Load normal prediction pipeline (image2normal)
             logger.info("Loading normal prediction pipeline (image2normal)...")
             resolved_normal_config = self._resolve_normal_config()
+            normal_ckpt = self._find_checkpoint_file("image2normal/unet/diffusion_pytorch_model.safetensors")
             try:
                 self.normal_trainer, self.normal_pipeline = load_pipeline(
-                    resolved_normal_config, self.normal_checkpoint
+                    resolved_normal_config, normal_ckpt
                 )
             except Exception as e:
                 logger.warning(
@@ -441,7 +556,7 @@ trainers:
                             f"Retrying load_pipeline for normal prediction using compatible base: {hf_repo}"
                         )
                         self.normal_trainer, self.normal_pipeline = load_pipeline(
-                            fallback_cfg, self.normal_checkpoint
+                            fallback_cfg, normal_ckpt
                         )
                         loaded = True
                         break
@@ -464,8 +579,9 @@ trainers:
             logger.info("Loading super-resolution model...")
             try:
                 import onnxruntime as ort
+                sr_model_path = self._find_checkpoint_file("realesrgan-x4.onnx")
                 self.sr_model = ort.InferenceSession(
-                    self.sr_model_path,
+                    sr_model_path,
                     providers=["CUDAExecutionProvider", "CPUExecutionProvider"]
                 )
                 loaded_models["sr_model"] = self.sr_model

@@ -578,6 +578,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       rigType: 'none',
       exportFormats: ['glb'],
       slicerHandoff: false,
+      low_vram: true,
       physics: { ...DEFAULT_PHYSICS_SETTINGS },
     });
  

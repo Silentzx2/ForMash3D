@@ -177,7 +177,7 @@ _ADAPTER_OWNED_INFERENCE_INPUTS = frozenset({
     "num_inference_steps", "num_steps", "steps", "guidance_scale",
     "octree_resolution", "octree_res", "grid_resolution", "num_chunks", "mc_algo",
     "flash_octree_depth", "octree_depth", "dense_octree_depth",
-    "hierarchical_octree_depth", "use_flash_decoder", "low_vram", "low_vram_mode",
+    "hierarchical_octree_depth", "use_flash_decoder",
     "pipeline_type", "max_num_tokens", "sparse_structure_sampler_params",
     "shape_slat_sampler_params", "tex_slat_sampler_params", "sampler_overrides",
     "resolution", "texture_size", "max_num_view", "ss_sampling_steps", "slat_sampling_steps",

@@ -1,4 +1,5 @@
 import ast
+import pytest
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, Optional
@@ -237,6 +238,19 @@ def test_auto_seeds_enabled_executes_planned_candidate_count():
     assert seed_plan["seed_schedule"] == [10, 15, 20]
 
 
+def test_explicit_single_candidate_count_wins_over_auto_seeds():
+    seed_plan = resolve_seed_plan(
+        {"candidate_count": 1, "plan": {"num_seeds": 3}},
+        {"seed": 10},
+        seeds_cfg={"base_seed": 41, "seed_step": 5, "max_candidates": 4},
+        apply_cfg={"auto_seeds": True},
+    )
+
+    assert seed_plan["candidate_count"] == 1
+    assert seed_plan["auto_candidates"] is False
+    assert seed_plan["seed_schedule"] == [10]
+
+
 def test_rate_limit_disabled_allows_arbitrary_requests():
     import asyncio
     from unittest.mock import MagicMock
@@ -285,6 +299,40 @@ def test_low_vram_mode_accepts_trellis2_when_free_vram_meets_low_threshold():
     }
     plan = plan_generation(
         {"model_preference": "trellis2_image_to_raw_mesh", "auto_mode": False},
+        runtime,
+    )
+    assert plan["adapter"] == "trellis2_image_to_raw_mesh"
+
+
+def test_low_vram_false_rejects_trellis2_when_free_vram_is_below_full_24gb():
+    runtime = {
+        "has_cuda": True,
+        "gpu_count": 1,
+        "installed_adapters": ["trellis2_image_to_raw_mesh"],
+        "enabled_adapters": ["trellis2_image_to_raw_mesh"],
+        "free_vram_gb": 14.36,
+        "max_free_vram_gb": 14.36,
+        "aggregate_free_vram_gb": 14.36,
+    }
+    with pytest.raises(ValueError, match="requires 23.0 GB VRAM, but only 14.36 GB is free"):
+        plan_generation(
+            {"model_preference": "trellis2_image_to_raw_mesh", "auto_mode": False, "low_vram": False},
+            runtime,
+        )
+
+
+def test_low_vram_false_accepts_trellis2_when_free_vram_meets_full_24gb():
+    runtime = {
+        "has_cuda": True,
+        "gpu_count": 1,
+        "installed_adapters": ["trellis2_image_to_raw_mesh"],
+        "enabled_adapters": ["trellis2_image_to_raw_mesh"],
+        "free_vram_gb": 24.0,
+        "max_free_vram_gb": 24.0,
+        "aggregate_free_vram_gb": 24.0,
+    }
+    plan = plan_generation(
+        {"model_preference": "trellis2_image_to_raw_mesh", "auto_mode": False, "low_vram": False},
         runtime,
     )
     assert plan["adapter"] == "trellis2_image_to_raw_mesh"

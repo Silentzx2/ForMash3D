@@ -510,6 +510,8 @@ export interface GenerationSettings {
   rigType?: 'none' | 'generic' | 'humanoid' | 'quadruped' | 'bird' | 'insect' | 'custom';
   exportFormats?: string[];
   slicerHandoff?: boolean;
+  low_vram?: boolean;
+  lowVram?: boolean;
 }
 
 

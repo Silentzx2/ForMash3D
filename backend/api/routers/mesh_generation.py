@@ -278,6 +278,7 @@ class ImageToRawMeshRequest(BaseModel):
     bake_normal_maps: bool = Field(True, description="Bake high-to-low detail maps when supported")
     texture_enabled: Optional[bool] = None
     generate_texture: Optional[bool] = None
+    low_vram: Optional[bool] = Field(None, description="Enable low-VRAM execution mode (<= 15GB VRAM via sequential offload). Set False to run full 24GB in-memory pipeline.")
     output_format: str = Field("glb", description="Output mesh format")
     quality_mode: Optional[str] = Field("high", description="Target quality budget")
     target_polycount: Optional[int] = Field(None, description="Target triangle budget")
@@ -481,6 +482,7 @@ class ImageToTexturedMeshRequest(BaseModel):
     bake_normal_maps: bool = Field(True, description="Bake high-to-low detail maps when supported")
     texture_enabled: Optional[bool] = None
     generate_texture: Optional[bool] = None
+    low_vram: Optional[bool] = Field(None, description="Enable low-VRAM execution mode (<= 15GB VRAM via sequential offload). Set False to run full 24GB in-memory pipeline.")
     output_format: str = Field("glb", description="Output mesh format")
     quality_mode: Optional[str] = Field("high", description="Target quality budget")
     target_polycount: Optional[int] = Field(None, description="Target triangle budget")
@@ -1074,6 +1076,7 @@ async def image_to_raw_mesh(
             "input_type": "image",
             "model_preference": mesh_request.model_preference,
             "auto_mode": is_auto,
+            "low_vram": mesh_request.low_vram,
             "input_prep": mesh_request.input_prep,
         }
         from core.runtime_probe import probe_runtime
@@ -1332,6 +1335,7 @@ async def image_to_raw_mesh(
                 "rig_type": rig_type,
                 "export_formats": export_formats,
                 "slicer_handoff": slicer_handoff,
+                "low_vram": mesh_request.low_vram if mesh_request.low_vram is not None else params.get("low_vram"),
                 **params,
             },
             model_preference=model_id,
@@ -1448,6 +1452,7 @@ async def image_to_textured_mesh(
             "input_type": "image",
             "model_preference": mesh_request.model_preference,
             "auto_mode": is_auto,
+            "low_vram": mesh_request.low_vram,
             "input_prep": mesh_request.input_prep,
         }
         from core.runtime_probe import probe_runtime
@@ -1731,6 +1736,7 @@ async def image_to_textured_mesh(
                 "rig_type": rig_type,
                 "export_formats": export_formats,
                 "slicer_handoff": slicer_handoff,
+                "low_vram": mesh_request.low_vram if mesh_request.low_vram is not None else params.get("low_vram"),
                 **params,
             },
             model_preference=model_id,

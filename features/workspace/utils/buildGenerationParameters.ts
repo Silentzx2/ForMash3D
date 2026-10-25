@@ -107,11 +107,15 @@ export function buildGenerationParameters(
 
   const isTextured = textureEnabled;
 
-  // Runtime model parameters: only supported adapter inputs (such as seed) are passed.
+  // Runtime model parameters: only supported adapter inputs (such as seed, low_vram) are passed.
   // Numeric inference profiles (steps, guidance, octree resolution, samplers) live in adapters.
   const modelParameters: Record<string, unknown> = {};
   if (typeof settings.seed === 'number' && Number.isSafeInteger(settings.seed) && settings.seed >= 0) {
     modelParameters.seed = settings.seed;
+  }
+  const lowVramSetting = settings.low_vram ?? settings.lowVram;
+  if (typeof lowVramSetting === 'boolean') {
+    modelParameters.low_vram = lowVramSetting;
   }
 
   // Determine endpoint and body
@@ -190,6 +194,7 @@ export function buildGenerationParameters(
     export_formats: enablePostprocess ? settings.exportFormats : undefined,
     slicer_handoff: enablePostprocess ? Boolean(settings.slicerHandoff) : undefined,
     bake_normal_maps: enablePostprocess && (settings.highResolutionNormalBaking ?? true),
+    ...(typeof lowVramSetting === 'boolean' ? { low_vram: lowVramSetting } : {}),
     texture_enabled: textureEnabled,
     generate_texture: textureEnabled,
     ...(textureEnabled ? {

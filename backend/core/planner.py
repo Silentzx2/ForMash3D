@@ -434,6 +434,10 @@ def plan_generation(
             aggregate_free_gb = runtime.get("aggregate_free_vram_gb") or free_vram_gb
             max_free_gb = runtime.get("max_free_vram_gb") or free_vram_gb
 
+            req_low_vram = request.get("low_vram")
+            if req_low_vram is None and isinstance(request.get("model_parameters"), dict):
+                req_low_vram = request["model_parameters"].get("low_vram")
+
             # 1. Fits on single GPU
             if max_free_gb is not None and max_free_gb >= vram_budget_gb:
                 pass
@@ -442,8 +446,8 @@ def plan_generation(
                 reasons.append(
                     f"Candidate '{cand_id}' requires {vram_budget_gb} GB VRAM; scheduled for multi-GPU load sharing across {gpu_count} GPUs ({aggregate_free_gb} GB aggregate free)."
                 )
-            # 3. Fits low-VRAM sequential offload mode
-            elif low_vram_supported and (
+            # 3. Fits low-VRAM sequential offload mode (used when low_vram is not explicitly False)
+            elif req_low_vram is not False and low_vram_supported and (
                 (max_free_gb is not None and max_free_gb >= low_vram_gb)
                 or (gpu_count > 1 and aggregate_free_gb is not None and aggregate_free_gb >= low_vram_gb)
             ):
@@ -606,18 +610,21 @@ def resolve_seed_plan(
     seeds_cfg = dict(seeds_cfg or {})
     apply_cfg = dict(apply_cfg if apply_cfg is not None else get_planner_apply_config())
 
-    user_candidate_count = max(1, int(request_inputs.get("candidate_count") or 1))
+    raw_candidate_count = request_inputs.get("candidate_count")
     plan_num_seeds = max(1, int((request_inputs.get("plan") or {}).get("num_seeds") or 1))
     auto_seeds = bool(apply_cfg.get("auto_seeds", False))
 
-    if user_candidate_count > 1:
-        candidate_count = user_candidate_count
+    if raw_candidate_count is not None:
+        candidate_count = max(1, int(raw_candidate_count))
+        user_candidate_count = candidate_count
         auto_candidates = False
     elif auto_seeds and plan_num_seeds > 1:
         candidate_count = plan_num_seeds
+        user_candidate_count = 1
         auto_candidates = True
     else:
         candidate_count = 1
+        user_candidate_count = 1
         auto_candidates = False
 
     max_candidates = int(seeds_cfg.get("max_candidates") or 4)
