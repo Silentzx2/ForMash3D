@@ -150,13 +150,15 @@ class Trellis2ImageMeshPaintingAdapter(ImageToMeshModel):
                 raise ValueError("mesh_path is required for mesh painting")
             
             logger.info(f"Texturing mesh with TRELLIS.2: mesh={mesh_path}, image={image_path}")
+            low_vram = inputs.get("low_vram") if inputs.get("low_vram") is not None else inputs.get("low_vram_mode")
             
             # Apply texture to mesh
             textured_mesh = self.runner.texture_mesh(
                 mesh_path=mesh_path,
                 image_path=image_path,
                 output_format=output_format,
-                extension_webp=extension_webp
+                extension_webp=extension_webp,
+                low_vram=low_vram,
             )
             
             # Save mesh in requested format
@@ -181,6 +183,7 @@ class Trellis2ImageMeshPaintingAdapter(ImageToMeshModel):
                     "vertex_count": len(textured_mesh.vertices),
                     "face_count": len(textured_mesh.faces),
                     "extension_webp": extension_webp,
+                    "low_vram": getattr(getattr(self.runner, "texturing_pipeline", None), "low_vram", low_vram),
                     "thumbnail_generated": thumbnail_generated,
                 }
             })

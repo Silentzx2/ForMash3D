@@ -327,8 +327,7 @@ image_to_raw_mesh:
       recommended_postprocess_profile: high_fidelity
       latency_class: quality
       quality_priority: 100
-      multi_gpu: true
-      multi_gpu_strategy: accelerate_component_dispatch
+      multi_gpu: false
       low_vram_supported: true
       max_images: 1
     vram_requirement: 23552  # MB (23GB, TRELLIS.2)
@@ -365,8 +364,7 @@ image_to_raw_mesh:
       recommended_postprocess_profile: high_fidelity
       latency_class: quality
       quality_priority: 100
-      multi_gpu: true
-      multi_gpu_strategy: accelerate_component_dispatch
+      multi_gpu: false
       low_vram_supported: true
       max_images: 1
     vram_requirement: 23552  # MB (23GB, TRELLIS.2)
@@ -465,8 +463,7 @@ image_to_textured_mesh:
       recommended_postprocess_profile: high_fidelity
       latency_class: quality
       quality_priority: 100
-      multi_gpu: true
-      multi_gpu_strategy: accelerate_component_dispatch
+      multi_gpu: false
       low_vram_supported: true
       max_images: 1
       deprecated: true
@@ -515,9 +512,10 @@ image_mesh_painting:
       texture_generation: true
       texture_refine: true
       multiview: false
-      multi_gpu: true
-      multi_gpu_strategy: accelerate_component_dispatch
+      multi_gpu: false
+      low_vram_supported: true
     vram_requirement: 23552   # MB (23GB, TRELLIS.2)
+    low_vram_requirement: 10240
     supported_inputs: ["mesh", "image"]
     supported_outputs: ["glb", "obj"]
     model_path: "backend/pretrained/TRELLIS.2"

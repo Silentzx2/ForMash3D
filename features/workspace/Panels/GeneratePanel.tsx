@@ -1622,6 +1622,59 @@ export const GeneratePanel: React.FC = () => {
                 </div>
               )}
 
+              {/* TRELLIS 2 Low VRAM Mode Toggle */}
+              {activeModelId.includes('trellis2') && (
+                <div className="pt-2 border-t border-white/[0.06]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGenerationSettings(prev => ({
+                        ...prev,
+                        low_vram: !(prev.low_vram ?? prev.lowVram ?? true),
+                        lowVram: !(prev.low_vram ?? prev.lowVram ?? true),
+                      }));
+                    }}
+                    className={`w-full p-2 rounded-lg border text-left flex items-center justify-between transition-all cursor-pointer ${
+                      (generationSettings.low_vram ?? generationSettings.lowVram ?? true)
+                        ? 'bg-emerald-500/10 border-emerald-500/30 text-white hover:border-emerald-500/50'
+                        : 'bg-amber-500/10 border-amber-500/30 text-white hover:border-amber-500/50'
+                    }`}
+                  >
+                    <div className="flex flex-col min-w-0 pr-1">
+                      <div className="flex items-center gap-1.5">
+                        <HugeiconsIcon icon={ZapIcon} size={13} className={(generationSettings.low_vram ?? generationSettings.lowVram ?? true) ? 'text-emerald-400' : 'text-amber-400'} />
+                        <span className="text-[11px] font-bold text-white leading-tight">
+                          Low VRAM Mode (≤ 15GB)
+                        </span>
+                        <span className={`text-[7.5px] font-mono px-1 py-0.2 rounded border font-bold ${
+                          (generationSettings.low_vram ?? generationSettings.lowVram ?? true)
+                            ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300'
+                            : 'border-amber-500/30 bg-amber-500/15 text-amber-300'
+                        }`}>
+                          {(generationSettings.low_vram ?? generationSettings.lowVram ?? true) ? 'ON · ≤15GB' : 'OFF · 24GB'}
+                        </span>
+                      </div>
+                      <span className="text-[9px] text-zinc-400 mt-0.5">
+                        {(generationSettings.low_vram ?? generationSettings.lowVram ?? true)
+                          ? 'Sequential offload · Fits Tesla T4 / RTX 3060/4060'
+                          : 'Full 24GB in VRAM · Max speed for A100 / RTX 3090/4090'}
+                      </span>
+                    </div>
+                    <div className={`w-8 h-4.5 rounded-full transition-colors relative flex-shrink-0 ${
+                      (generationSettings.low_vram ?? generationSettings.lowVram ?? true)
+                        ? 'bg-emerald-500'
+                        : 'bg-zinc-700'
+                    }`}>
+                      <span className={`absolute top-0.5 w-3.5 h-3.5 rounded-full transition-transform ${
+                        (generationSettings.low_vram ?? generationSettings.lowVram ?? true)
+                          ? 'left-4 bg-black'
+                          : 'left-0.5 bg-zinc-300'
+                      }`} />
+                    </div>
+                  </button>
+                </div>
+              )}
+
               {/* Textured Generation Toggle */}
               {showTextureToggle && (
                 <div className="pt-2 border-t border-white/[0.06]">
@@ -2014,6 +2067,55 @@ export const GeneratePanel: React.FC = () => {
                     </button>
                   );
                 })}
+              </div>
+            </div>
+
+            {/* GPU Memory & Offload Strategy */}
+            <div className="rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-[11px] font-bold text-white flex items-center gap-1.5">
+                    <HugeiconsIcon icon={ZapIcon} size={14} className="w-3.5 h-3.5 text-primary" />
+                    <span>Memory &amp; Offload Strategy</span>
+                  </div>
+                  <div className="text-[9px] text-zinc-400">
+                    Control sequential CPU-GPU offload for TRELLIS.2
+                  </div>
+                </div>
+                <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border ${
+                  (generationSettings.low_vram ?? generationSettings.lowVram ?? true)
+                    ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300'
+                    : 'border-amber-500/30 bg-amber-500/15 text-amber-300'
+                }`}>
+                  {(generationSettings.low_vram ?? generationSettings.lowVram ?? true) ? 'Low VRAM (≤15GB)' : 'Full 24GB Pipeline'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between p-2 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.06]">
+                <div>
+                  <span className="text-xs font-semibold text-zinc-200 block">Low VRAM Mode (≤ 15GB)</span>
+                  <span className="text-[9.5px] text-zinc-500 block">
+                    {(generationSettings.low_vram ?? generationSettings.lowVram ?? true)
+                      ? 'Sequentially offloads models. Fits Tesla T4 / RTX 3060.'
+                      : 'Loads all models directly into VRAM (requires 24GB GPU).'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGenerationSettings(prev => ({
+                      ...prev,
+                      low_vram: !(prev.low_vram ?? prev.lowVram ?? true),
+                      lowVram: !(prev.low_vram ?? prev.lowVram ?? true),
+                    }));
+                  }}
+                  className={`w-8 h-4.5 rounded-full transition-colors relative cursor-pointer ${
+                    (generationSettings.low_vram ?? generationSettings.lowVram ?? true) ? 'bg-emerald-500' : 'bg-zinc-700'
+                  }`}
+                >
+                  <div className={`absolute top-0.5 w-3.5 h-3.5 rounded-full bg-black transition-transform ${
+                    (generationSettings.low_vram ?? generationSettings.lowVram ?? true) ? 'translate-x-4' : 'translate-x-0.5'
+                  }`} />
+                </button>
               </div>
             </div>
 

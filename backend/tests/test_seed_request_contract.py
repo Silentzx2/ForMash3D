@@ -1,4 +1,5 @@
 import ast
+import pytest
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, Optional
@@ -298,6 +299,40 @@ def test_low_vram_mode_accepts_trellis2_when_free_vram_meets_low_threshold():
     }
     plan = plan_generation(
         {"model_preference": "trellis2_image_to_raw_mesh", "auto_mode": False},
+        runtime,
+    )
+    assert plan["adapter"] == "trellis2_image_to_raw_mesh"
+
+
+def test_low_vram_false_rejects_trellis2_when_free_vram_is_below_full_24gb():
+    runtime = {
+        "has_cuda": True,
+        "gpu_count": 1,
+        "installed_adapters": ["trellis2_image_to_raw_mesh"],
+        "enabled_adapters": ["trellis2_image_to_raw_mesh"],
+        "free_vram_gb": 14.36,
+        "max_free_vram_gb": 14.36,
+        "aggregate_free_vram_gb": 14.36,
+    }
+    with pytest.raises(ValueError, match="requires 23.0 GB VRAM, but only 14.36 GB is free"):
+        plan_generation(
+            {"model_preference": "trellis2_image_to_raw_mesh", "auto_mode": False, "low_vram": False},
+            runtime,
+        )
+
+
+def test_low_vram_false_accepts_trellis2_when_free_vram_meets_full_24gb():
+    runtime = {
+        "has_cuda": True,
+        "gpu_count": 1,
+        "installed_adapters": ["trellis2_image_to_raw_mesh"],
+        "enabled_adapters": ["trellis2_image_to_raw_mesh"],
+        "free_vram_gb": 24.0,
+        "max_free_vram_gb": 24.0,
+        "aggregate_free_vram_gb": 24.0,
+    }
+    plan = plan_generation(
+        {"model_preference": "trellis2_image_to_raw_mesh", "auto_mode": False, "low_vram": False},
         runtime,
     )
     assert plan["adapter"] == "trellis2_image_to_raw_mesh"

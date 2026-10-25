@@ -434,6 +434,10 @@ def plan_generation(
             aggregate_free_gb = runtime.get("aggregate_free_vram_gb") or free_vram_gb
             max_free_gb = runtime.get("max_free_vram_gb") or free_vram_gb
 
+            req_low_vram = request.get("low_vram")
+            if req_low_vram is None and isinstance(request.get("model_parameters"), dict):
+                req_low_vram = request["model_parameters"].get("low_vram")
+
             # 1. Fits on single GPU
             if max_free_gb is not None and max_free_gb >= vram_budget_gb:
                 pass
@@ -442,8 +446,8 @@ def plan_generation(
                 reasons.append(
                     f"Candidate '{cand_id}' requires {vram_budget_gb} GB VRAM; scheduled for multi-GPU load sharing across {gpu_count} GPUs ({aggregate_free_gb} GB aggregate free)."
                 )
-            # 3. Fits low-VRAM sequential offload mode
-            elif low_vram_supported and (
+            # 3. Fits low-VRAM sequential offload mode (used when low_vram is not explicitly False)
+            elif req_low_vram is not False and low_vram_supported and (
                 (max_free_gb is not None and max_free_gb >= low_vram_gb)
                 or (gpu_count > 1 and aggregate_free_gb is not None and aggregate_free_gb >= low_vram_gb)
             ):

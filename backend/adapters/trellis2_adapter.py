@@ -52,7 +52,6 @@ _LOCKED_INFERENCE_PROFILE = {
     },
     "decimation_target": -1,
     "remesh": False,
-    "low_vram": False,
 }
 
 # LOCKED / ACTIVE: values used by inference (painting path only).
@@ -260,6 +259,8 @@ class Trellis2ImageToRawMeshAdapter(ImageToMeshModel):
                 pipeline_type, max_num_tokens, sparse_structure_sampler_params.get("steps", 50),
             )
             
+            low_vram = inputs.get("low_vram") if inputs.get("low_vram") is not None else inputs.get("low_vram_mode")
+
             # Generate untextured raw 3D mesh
             mesh = self.runner.image_to_mesh(
                 image_path=image_path,
@@ -276,6 +277,7 @@ class Trellis2ImageToRawMeshAdapter(ImageToMeshModel):
                 sparse_structure_sampler_params=sparse_structure_sampler_params,
                 shape_slat_sampler_params=shape_slat_sampler_params,
                 tex_slat_sampler_params=tex_slat_sampler_params,
+                low_vram=low_vram,
             )
             
             mesh_metadata = dict(getattr(mesh, "metadata", {}) or {})
@@ -321,6 +323,7 @@ class Trellis2ImageToRawMeshAdapter(ImageToMeshModel):
                     "max_num_tokens": max_num_tokens,
                     "sparse_structure_steps": sparse_structure_sampler_params.get("steps", "pipeline_default"),
                     "shape_slat_steps": shape_slat_sampler_params.get("steps", "pipeline_default"),
+                    "low_vram": getattr(getattr(self.runner, "image_to_3d_pipeline", None), "low_vram", low_vram),
                     "thumbnail_generated": thumbnail_generated,
                 }
             })

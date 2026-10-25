@@ -400,3 +400,21 @@ test('production part/rig/export/slicer options are dropped when post-processing
   assert.equal(result.body.export_formats, undefined);
   assert.equal(result.body.slicer_handoff, undefined);
 });
+
+test('low_vram setting forwards to both body and model_parameters for Trellis 2', () => {
+  const lowVramOn = buildGenerationParameters({
+    imageFileId: 'file-trellis2-low-vram-on',
+    aiModel: 'trellis2_image_to_raw_mesh',
+    low_vram: true,
+  });
+  assert.equal(lowVramOn.body.low_vram, true);
+  assert.equal(lowVramOn.modelParameters.low_vram, true);
+
+  const lowVramOff = buildGenerationParameters({
+    imageFileId: 'file-trellis2-low-vram-off',
+    aiModel: 'trellis2_image_to_raw_mesh',
+    low_vram: false,
+  });
+  assert.equal(lowVramOff.body.low_vram, false);
+  assert.equal(lowVramOff.modelParameters.low_vram, false);
+});
