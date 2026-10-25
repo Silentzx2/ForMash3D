@@ -4,6 +4,7 @@
 ### Migrated from thirdparty/Hunyuan3D-2.1/torchvision_fix.py
 
 import logging
+import os
 import sys
 
 logger = logging.getLogger(__name__)
@@ -215,6 +216,51 @@ def fix_torch_load_weights_only():
     except Exception as e:
         print(f"Failed to apply torch.load compatibility fix: {e}")
         return False
+
+
+def load_dotenv_into_environ():
+    """
+    Ensure variables from .env (such as HF_TOKEN, HUGGINGFACE_TOKEN, etc.)
+    are available in os.environ across all scheduler workers and sub-processes.
+    """
+    try:
+        from pathlib import Path
+        search_paths = [
+            Path(".env"),
+            Path("../.env"),
+            Path(__file__).resolve().parents[2] / ".env",
+            Path(__file__).resolve().parents[1] / ".env",
+        ]
+        # Also check Kaggle standard locations
+        if Path("/kaggle/working/ForMash3D/.env").exists():
+            search_paths.insert(0, Path("/kaggle/working/ForMash3D/.env"))
+        if Path("/kaggle/working/.env").exists():
+            search_paths.insert(0, Path("/kaggle/working/.env"))
+
+        for env_file in search_paths:
+            if env_file.is_file():
+                with open(env_file, "r", encoding="utf-8", errors="ignore") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            k, v = line.split("=", 1)
+                            k = k.strip()
+                            v = v.strip().strip('"').strip("'")
+                            if k and k not in os.environ and v:
+                                os.environ[k] = v
+                break
+    except Exception:
+        pass
+
+    # Ensure HF_TOKEN and HUGGINGFACE_TOKEN aliases stay in sync
+    hf_tok = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_TOKEN")
+    if hf_tok:
+        os.environ.setdefault("HF_TOKEN", hf_tok)
+        os.environ.setdefault("HUGGINGFACE_TOKEN", hf_tok)
+    return True
+
+
+load_dotenv_into_environ()
 
 
 def fix_huggingface_repo_redirects():
@@ -679,6 +725,7 @@ def fix_torch_cluster():
 
 def apply_fix():
     """Apply compatibility fixes (torchvision, transformers, torch.load, hf redirects, numba, dinov3, flex_gemm, flash_attn, and torch_cluster)."""
+    load_dotenv_into_environ()
     if torchvision is not None:
         try:
             print(f"Torchvision version: {torchvision.__version__}")

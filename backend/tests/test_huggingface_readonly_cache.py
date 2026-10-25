@@ -97,3 +97,26 @@ def test_redirected_hf_hub_download_readonly_cache_miss_fallback(monkeypatch):
         assert len(calls) == 2
         assert calls[0][2] is None
         assert calls[1][2] is not None
+
+
+def test_load_dotenv_into_environ_syncs_tokens(monkeypatch, tmp_path):
+    """Verify that .env loading populates HF_TOKEN and HUGGINGFACE_TOKEN."""
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.delenv("HUGGINGFACE_TOKEN", raising=False)
+
+    fake_env = tmp_path / ".env"
+    fake_env.write_text("HF_TOKEN=hf_mock_token_12345\n")
+
+    monkeypatch.chdir(tmp_path)
+
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "backend.utils.torchvision_fix",
+        str(backend_dir / "utils" / "torchvision_fix.py")
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    mod.load_dotenv_into_environ()
+
+    assert os.environ.get("HF_TOKEN") == "hf_mock_token_12345"
+    assert os.environ.get("HUGGINGFACE_TOKEN") == "hf_mock_token_12345"
