@@ -219,17 +219,82 @@ def fix_torch_load_weights_only():
 
 def fix_huggingface_repo_redirects():
     """
-    Redirect renamed Hugging Face repositories (e.g., lambdalabs -> lambda).
-    Lambda Labs renamed their org on Hugging Face, causing legacy checkpoints to 404.
+    1. Redirect renamed Hugging Face repositories (e.g., lambdalabs -> lambda).
+    2. Gracefully handle Read-Only file systems (e.g. Kaggle datasets /root/.cache):
+       - If lock acquisition fails with EROFS (Errno 30), locate the target in existing snapshot caches.
+       - If not present in cache, download into a writable fallback cache directory (/kaggle/working/.cache or /tmp).
     """
     try:
         import huggingface_hub.file_download as fd
         _orig_download = getattr(fd, "hf_hub_download", None)
         if _orig_download is not None and not getattr(_orig_download, "_repo_redirect_patched", False):
+            def _find_in_readonly_cache(repo_id: str, filename: str):
+                import os
+                from pathlib import Path
+                repo_folder = f"models--{repo_id.replace('/', '--')}"
+                search_roots = []
+                for p in [
+                    os.environ.get("HUGGINGFACE_HUB_CACHE"),
+                    os.environ.get("HF_HOME") and os.path.join(os.environ["HF_HOME"], "hub"),
+                    str(Path.home() / ".cache" / "huggingface" / "hub"),
+                    "/root/.cache/huggingface/hub",
+                    "/kaggle/working/.cache/huggingface/hub",
+                ]:
+                    if p and p not in search_roots:
+                        search_roots.append(p)
+
+                if os.path.isdir("/kaggle/input"):
+                    try:
+                        for entry in os.listdir("/kaggle/input"):
+                            candidate_hub = os.path.join("/kaggle/input", entry, "hub")
+                            if os.path.isdir(candidate_hub) and candidate_hub not in search_roots:
+                                search_roots.append(candidate_hub)
+                            candidate_direct = os.path.join("/kaggle/input", entry)
+                            if candidate_direct not in search_roots:
+                                search_roots.append(candidate_direct)
+                    except Exception:
+                        pass
+
+                for root in search_roots:
+                    candidate_repo = os.path.join(root, repo_folder)
+                    snapshots_dir = os.path.join(candidate_repo, "snapshots")
+                    if os.path.isdir(snapshots_dir):
+                        try:
+                            for snap in os.listdir(snapshots_dir):
+                                file_path = os.path.join(snapshots_dir, snap, filename)
+                                if os.path.isfile(file_path):
+                                    return file_path
+                        except Exception:
+                            pass
+                    direct_file = os.path.join(candidate_repo, filename)
+                    if os.path.isfile(direct_file):
+                        return direct_file
+                return None
+
             def _redirected_hf_hub_download(repo_id, *args, **kwargs):
                 if isinstance(repo_id, str) and repo_id.startswith("lambdalabs/"):
                     repo_id = "lambda/" + repo_id[len("lambdalabs/"):]
-                return _orig_download(repo_id, *args, **kwargs)
+
+                filename = args[0] if args else kwargs.get("filename")
+
+                try:
+                    return _orig_download(repo_id, *args, **kwargs)
+                except OSError as e:
+                    # Errno 30: Read-only file system (e.g. Kaggle /root/.cache lock acquisition failure)
+                    is_rofs = getattr(e, "errno", None) == 30 or "Read-only file system" in str(e)
+                    if is_rofs and filename:
+                        # 1. Search read-only snapshots first to avoid unnecessary redownloads
+                        cached = _find_in_readonly_cache(repo_id, filename)
+                        if cached:
+                            return cached
+
+                        # 2. Retry download to a writable cache directory
+                        from pathlib import Path
+                        fallback = "/kaggle/working/.cache/huggingface/hub" if Path("/kaggle/working").is_dir() else "/tmp/huggingface/hub"
+                        kwargs_copy = dict(kwargs)
+                        kwargs_copy["cache_dir"] = fallback
+                        return _orig_download(repo_id, *args, **kwargs_copy)
+                    raise
 
             _redirected_hf_hub_download._repo_redirect_patched = True
             fd.hf_hub_download = _redirected_hf_hub_download

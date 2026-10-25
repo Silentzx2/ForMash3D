@@ -7,6 +7,9 @@ from importlib.machinery import ModuleSpec
 from PIL import Image
 import pytest
 torch = pytest.importorskip("torch", reason="torch is required for Unique3D tests")
+pymeshlab = pytest.importorskip("pymeshlab", reason="pymeshlab is required for Unique3D tests")
+if not hasattr(torch, "float16"):
+    pytest.skip("torch does not have float16", allow_module_level=True)
 
 # Ensure repo root and Unique3D paths are accessible
 REPO_ROOT = Path(__file__).resolve().parents[2]
