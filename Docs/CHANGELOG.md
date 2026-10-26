@@ -1,9 +1,12 @@
-## 2026-10-26 — Unique3D raw mesh fidelity fix and untextured output
+## 2026-10-26 — Unique3D max geometric detail push and untextured raw output
 
+- **Unique3D maximum geometry resolution & detail preservation**:
+  - Pushed raw geometry polycount from 60k to max model capacity (~250k–450k polygons) by reducing `end_edge_len` from 0.005 to 0.0022 in `run_mesh_refine` and `0.01` in stage 1, allowing the gradient optimizer to capture intricate cloth folds, limbs, weapons, and facial curves.
+  - Upgraded `fast_geo` coarse reconstruction to preserve full 512x512 normal map resolution (up from 192x192) and Poisson surface depth to 8 (256³ grid) without decimation (`simplification=0`), eliminating potato/blob artifacts.
 - **Unique3D geometry stabilization and untextured raw output**:
   - `unique3d_adapter.py`: Bypassed multiview color projection for raw mesh generation (`apply_texture=False`), outputting clean untextured raw geometry (`has_texture: false`, `has_vertex_color: false`). Fixed coordinate transformation to prevent double axis negation (`[0, 2] = -[0, 2]`). Added trimesh component filtering to automatically prune isolated flying debris and shards.
   - Submodule `backend/thirdparty/Unique3D`:
-    - `mesh_init.py`: Clamped depth aspect ratio `calc_w_over_h` to `[0.25, 0.85]` to prevent thin-profile meshes from collapsing into a 3cm wafer. Normalized depth heights safely in `build_mesh`. Increased Poisson surface depth in `fix_border_with_pymeshlab_fast` to 7 to preserve limbs and head silhouettes.
+    - `mesh_init.py`: Clamped depth aspect ratio `calc_w_over_h` to `[0.25, 0.85]` to prevent thin-profile meshes from collapsing into a 3cm wafer. Normalized depth heights safely in `build_mesh`.
     - `utils.py`: Re-enabled non-manifold vertex/edge repairs, added component diameter filtering to eliminate detached fragments, and restored 1-step Laplacian smoothing to remove high-frequency gradient optimization spikes. Supported exporting clean untextured raw GLB without vertex colors when `include_vertex_color=False`.
     - `multiview_inference.py`: Made multiview color projection optional so raw mesh inference skips texture baking and returns clean geometry.
 
