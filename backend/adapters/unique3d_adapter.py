@@ -202,13 +202,48 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
                 continue
         return None
 
+    def _find_local_image2normal(self) -> Optional[Path]:
+        """Find local image2normal directory containing 4-channel normal pipeline weights."""
+        candidates = [
+            Path(self.model_path) / "ckpt" / "image2normal",
+            Path(self.model_path) / "image2normal",
+            self.unique3d_root / "ckpt" / "image2normal",
+            Path("ckpt") / "image2normal",
+            Path("./ckpt/image2normal"),
+            Path("backend/ckpt") / "image2normal",
+            Path(__file__).resolve().parents[1] / "pretrained" / "Unique3D" / "ckpt" / "image2normal",
+            Path(__file__).resolve().parents[1] / "pretrained" / "Unique3D" / "image2normal",
+            Path(__file__).resolve().parents[2] / "pretrained" / "Unique3D" / "ckpt" / "image2normal",
+            Path(__file__).resolve().parents[2] / "pretrained" / "Unique3D" / "image2normal",
+        ]
+        if os.environ.get("PRETRAINED_DIR"):
+            p_dir = Path(os.environ["PRETRAINED_DIR"])
+            candidates.extend([p_dir / "Unique3D" / "ckpt" / "image2normal", p_dir / "Unique3D" / "image2normal"])
+        if os.environ.get("P3D_PRETRAINED_DIR"):
+            p_dir = Path(os.environ["P3D_PRETRAINED_DIR"])
+            candidates.extend([p_dir / "Unique3D" / "ckpt" / "image2normal", p_dir / "Unique3D" / "image2normal"])
+
+        for candidate in candidates:
+            try:
+                resolved = candidate.resolve()
+                if resolved.exists() and resolved.is_dir():
+                    if (resolved / "unet").exists() or (resolved / "model_index.json").exists() or (resolved / "image_encoder").exists():
+                        return resolved
+            except Exception:
+                continue
+        return None
+
     def _ensure_checkpoints_downloaded(self):
         """Auto-download Unique3D checkpoints if required UNet weights are missing."""
         mvimg_unet = Path(self._find_checkpoint_file("img2mvimg/unet/diffusion_pytorch_model.safetensors"))
-        if mvimg_unet.is_file():
+        normal_unet = Path(self._find_checkpoint_file("image2normal/unet/diffusion_pytorch_model.safetensors"))
+        if mvimg_unet.is_file() and normal_unet.is_file():
             return
 
-        logger.info(f"Unique3D UNet weights not found at {mvimg_unet}. Attempting automatic download from Wuvin/Unique3D...")
+        logger.info(
+            f"Unique3D UNet weights missing (mvimg: {mvimg_unet.is_file()}, normal: {normal_unet.is_file()}). "
+            "Attempting automatic download from Wuvin/Unique3D..."
+        )
         try:
             self._sanitize_hf_tokens()
             from huggingface_hub import snapshot_download
@@ -385,7 +420,14 @@ trainers:
         The trained img2mvimg UNet has 8 input channels; image2normal checkpoint
         weights have 4-channel conv_in tensors and must not use that model as a base.
         """
-        base_model = "lambdalabs/sd-image-variations-diffusers"
+        local_dir = self._find_local_image2normal()
+        if local_dir:
+            abs_path_str = str(local_dir.resolve()).replace("\\", "/")
+            logger.info(f"Resolving image2normal using local directory: {abs_path_str}")
+            return self._create_normal_config_override(base_model=abs_path_str)
+
+        # Fallback to public compatible 4-channel repo if local weights not present
+        base_model = "lambda/sd-image-variations-diffusers"
         normal_cfg_path = Path(self.normal_config)
         cfg_content = ""
         if normal_cfg_path.is_file():
@@ -402,8 +444,7 @@ trainers:
             return str(normal_cfg_path)
 
         logger.info(
-            "Resolving image2normal with the compatible 4-channel image-variation base; "
-            "the 8-channel img2mvimg base is incompatible."
+            f"Resolving image2normal with remote 4-channel image-variation base: {base_model}"
         )
         self._sanitize_hf_tokens()
         return self._create_normal_config_override(base_model=base_model)
@@ -625,6 +666,17 @@ trainers:
                 loaded_models["sr_model"] = self.sr_model
             except Exception as e:
                 logger.warning(f"Could not load super-resolution model: {e}")
+
+            # Check if ControlNet tile refinement pipeline can be initialized
+            try:
+                ckpt_tile = self._find_checkpoint_file("controlnet-tile")
+                if ckpt_tile and not getattr(self, "low_vram_mode", False):
+                    from app.all_models import model_zoo
+                    logger.info("Initializing Unique3D ControlNet-tile refinement pipeline...")
+                    model_zoo.init_models()
+                    loaded_models["refine_pipeline"] = getattr(model_zoo, "pipe_disney_controlnet_tile_ipadapter_i2i", None)
+            except Exception as e:
+                logger.warning(f"ControlNet tile refinement pipeline not initialized during load: {e}")
 
             # Enable attention & VAE slicing if available to reduce peak activation memory with ZERO quality loss
             for pipe in [self.mvimg_pipeline, self.normal_pipeline]:
@@ -867,6 +919,14 @@ trainers:
         effective_do_refine = do_refine
         try:
             from app.all_models import model_zoo
+            if getattr(model_zoo, "pipe_disney_controlnet_tile_ipadapter_i2i", None) is None:
+                ckpt_tile = self._find_checkpoint_file("controlnet-tile")
+                if ckpt_tile and not getattr(self, "low_vram_mode", False):
+                    try:
+                        logger.info("Initializing Unique3D ControlNet-tile refinement pipeline...")
+                        model_zoo.init_models()
+                    except Exception as init_err:
+                        logger.warning(f"Could not initialize ControlNet tile pipeline: {init_err}")
             if getattr(model_zoo, "pipe_disney_controlnet_tile_ipadapter_i2i", None) is None:
                 effective_do_refine = False
         except Exception:

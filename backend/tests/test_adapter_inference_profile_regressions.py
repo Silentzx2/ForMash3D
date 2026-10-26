@@ -316,3 +316,28 @@ def test_trellis_effective_cap_is_preserved_as_an_approval_conflict():
     assert profile["ss_sampling_steps"] == profile["slat_sampling_steps"] == 50
     assert "min(50, ss_steps)" in source
     assert "min(50, slat_steps)" in source
+
+
+def test_triposg_locked_profile_and_resolution_clamps():
+    tree = _tree(ADAPTERS / "triposg_adapter.py")
+    profile = _assignment(tree, "_LOCKED_INFERENCE_PROFILE")
+    assert profile["dense_octree_depth"] == 8
+    assert profile["hierarchical_octree_depth"] == 10
+    assert profile["flash_octree_depth"] == 9
+    assert profile["num_inference_steps"] == 100
+    assert profile["guidance_scale"] == 9.0
+    assert profile["use_flash_decoder"] is False
+
+    resolve_func = next(
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "_resolve_hierarchical_octree_depth"
+    )
+    resolve_src = ast.unparse(resolve_func)
+    assert "min(TRIPOSG_MAX_HIERARCHICAL_DEPTH, max(int(dense_depth), int(requested_depth)))" in resolve_src or "min(10," in resolve_src
+
+    method = _find_method(_find_class(tree, "TripoSGImageToRawMeshAdapter"), "_process_request")
+    source = ast.unparse(method)
+    assert "max(8, min(8, int(inputs.get('dense_octree_depth', 8))))" in source
+    assert "min(10, max(dense_octree_depth, int(inputs.get('hierarchical_octree_depth', 10))))" in source
+    assert "outputs[0] is None or len(outputs[0]) == 0" in source
+

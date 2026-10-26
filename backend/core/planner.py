@@ -365,6 +365,22 @@ def plan_generation(
 
     models_catalog = _load_models_yaml()
 
+    raw_loaded = (
+        runtime.get("loaded_models")
+        or runtime.get("active_models")
+        or runtime.get("worker_models")
+        or []
+    )
+    loaded_models = set(raw_loaded)
+    for m in list(loaded_models):
+        canon = LEGACY_RAW_MODEL_ALIASES.get(m, m)
+        if canon:
+            loaded_models.add(canon)
+        meta = models_catalog.get(m, {})
+        alias_target = meta.get("alias_of")
+        if alias_target:
+            loaded_models.add(alias_target)
+
     for idx, cand in enumerate(candidates):
         cand_id = cand["adapter"]
         # Normalize legacy aliases to canonical models
@@ -380,6 +396,13 @@ def plan_generation(
             for k, v in models_catalog[alias_target].items():
                 model_meta.setdefault(k, v)
 
+        # Check if candidate is already resident in worker/GPU memory
+        is_already_loaded = (
+            cand_id in loaded_models
+            or canonical_cand_id in loaded_models
+            or (alias_target and alias_target in loaded_models)
+        )
+
         adapter_class = cand_meta.get("adapter_class", DEFAULT_ADAPTER_CLASS_MAP.get(cand_id))
         vram_mb = model_meta.get("vram_requirement")
         vram_budget_gb = round(float(vram_mb) / 1024.0, 2) if vram_mb is not None else float(cand_meta.get("vram_budget_gb", 0.0))
@@ -388,7 +411,7 @@ def plan_generation(
         requires_license = cand_meta.get("requires_license_optin", False)
 
         # Check A: Registered
-        if not _is_adapter_registered(cand_id, adapter_class, installed_adapters):
+        if not is_already_loaded and not _is_adapter_registered(cand_id, adapter_class, installed_adapters):
             msg = f"Candidate '{cand_id}' is not installed/registered."
             reasons.append(f"Candidate {cand_id} skipped: {msg}")
             if idx == 0:
@@ -396,7 +419,7 @@ def plan_generation(
             continue
 
         # Check B: Enabled
-        if not _is_adapter_enabled(cand_id, adapter_class, enabled_adapters):
+        if not is_already_loaded and not _is_adapter_enabled(cand_id, adapter_class, enabled_adapters):
             msg = f"Candidate '{cand_id}' is disabled in configuration."
             reasons.append(f"Candidate {cand_id} skipped: {msg}")
             if idx == 0:
@@ -438,8 +461,11 @@ def plan_generation(
             if req_low_vram is None and isinstance(request.get("model_parameters"), dict):
                 req_low_vram = request["model_parameters"].get("low_vram")
 
+            # 0. Already loaded in worker memory (already resident on GPU)
+            if is_already_loaded:
+                reasons.append(f"Candidate '{cand_id}' is already loaded in worker memory.")
             # 1. Fits on single GPU
-            if max_free_gb is not None and max_free_gb >= vram_budget_gb:
+            elif max_free_gb is not None and max_free_gb >= vram_budget_gb:
                 pass
             # 2. Fits across multiple GPUs (load sharing)
             elif multi_gpu and gpu_count > 1 and aggregate_free_gb is not None and aggregate_free_gb >= vram_budget_gb:

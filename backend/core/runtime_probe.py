@@ -104,6 +104,7 @@ def _get_enabled_adapters(
 def probe_runtime(
     models_yaml_path: Optional[str] = None,
     license_optins: Optional[Dict[str, bool]] = None,
+    loaded_models: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """Probe system resources, GPU/VRAM state, installed and enabled adapters.
 
@@ -214,6 +215,7 @@ def probe_runtime(
         "peak_vram_gb_last_run": peak_vram_gb_last_run,
         "installed_adapters": installed_adapters,
         "enabled_adapters": enabled_adapters,
+        "loaded_models": list(loaded_models or []),
         "license_optins": optins,
         "torch_version": torch_version,
         "cuda_version": cuda_version,

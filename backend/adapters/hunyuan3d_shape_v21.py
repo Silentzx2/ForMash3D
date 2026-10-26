@@ -380,7 +380,7 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
 
             base_name = f"{self.model_id}_{image_path.stem}"
             output_path = self._generate_output_path(base_name, output_format)
-            self.mesh_processor.save_mesh(mesh_result, output_path, do_normalise=False, crease_angle_deg=20.0)
+            self.mesh_processor.save_mesh(mesh_result, output_path, do_normalise=False, crease_angle_deg=45.0)
 
             final_mesh = self.mesh_processor.load_mesh(output_path)
             mesh_stats = self.mesh_processor.get_mesh_stats(final_mesh)

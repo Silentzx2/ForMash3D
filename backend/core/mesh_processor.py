@@ -220,26 +220,48 @@ def compute_angle_weighted_normals(
     has_vc = vc is not None and len(vc) == num_verts
     new_vc = list(vc) if has_vc else None
 
+    existing_normals: Optional[np.ndarray] = None
+    if hasattr(mesh, "_cache") and "vertex_normals" in mesh._cache:
+        try:
+            vn = np.asarray(mesh.vertex_normals, dtype=np.float64)
+            if len(vn) == num_verts and not np.allclose(vn, 0.0):
+                existing_normals = vn
+        except Exception:
+            existing_normals = None
+    elif hasattr(mesh, "vertex_normals"):
+        try:
+            vn = np.asarray(mesh.vertex_normals, dtype=np.float64)
+            if len(vn) == num_verts and not np.allclose(vn, 0.0):
+                existing_normals = vn
+        except Exception:
+            existing_normals = None
+
     for vi in range(num_verts):
         fc_list = vert_to_fc[vi]
         if not fc_list:
             continue
         if len(fc_list) == 1:
             fi, c_idx = fc_list[0]
-            vertex_normals_list[vi] = face_normals[fi].copy()
+            if existing_normals is not None:
+                vertex_normals_list[vi] = existing_normals[vi].copy()
+            else:
+                vertex_normals_list[vi] = face_normals[fi].copy()
             continue
 
         if not do_crease_split or not sharp_edges:
-            cluster_norm = np.zeros(3, dtype=np.float64)
-            for fi, corner in fc_list:
-                w = alphas[corner][fi]
-                cluster_norm += w * face_normals[fi]
-            norm_len = np.linalg.norm(cluster_norm)
-            if norm_len > 1e-12:
-                cluster_norm /= norm_len
+            if existing_normals is not None:
+                vertex_normals_list[vi] = existing_normals[vi].copy()
             else:
-                cluster_norm = face_normals[fc_list[0][0]]
-            vertex_normals_list[vi] = cluster_norm
+                cluster_norm = np.zeros(3, dtype=np.float64)
+                for fi, corner in fc_list:
+                    w = alphas[corner][fi]
+                    cluster_norm += w * face_normals[fi]
+                norm_len = np.linalg.norm(cluster_norm)
+                if norm_len > 1e-12:
+                    cluster_norm /= norm_len
+                else:
+                    cluster_norm = face_normals[fc_list[0][0]]
+                vertex_normals_list[vi] = cluster_norm
             continue
 
         local_edge_map: Dict[Tuple[int, int], List[int]] = {}
@@ -277,6 +299,10 @@ def compute_angle_weighted_normals(
                         cluster.append(nbr)
                         queue.append(nbr)
             clusters.append(cluster)
+
+        if len(clusters) == 1 and existing_normals is not None:
+            vertex_normals_list[vi] = existing_normals[vi].copy()
+            continue
 
         for c_idx, cluster in enumerate(clusters):
             target_v = vi if c_idx == 0 else len(new_vertices)
@@ -613,7 +639,7 @@ class MeshProcessor:
         output_path: Union[str, Path],
         format: str = "glb",
         do_normalise: bool = True,
-        crease_angle_deg: Optional[float] = 35.0,
+        crease_angle_deg: Optional[float] = 45.0,
     ) -> Path:
         """Save a mesh to file with optimal angle-weighted normals and sharp edge preservation."""
         output_path = Path(output_path)
