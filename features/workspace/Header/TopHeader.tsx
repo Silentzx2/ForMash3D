@@ -65,7 +65,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ onMobileMenuToggle, isMobi
   return (
     <header
       id="persistent-top-header"
-      className="h-[44px] px-2.5 md:px-4 bg-[#0d0d0d]/95 backdrop-blur-xl flex items-center justify-between border-b border-white/[0.10] select-none z-50 text-xs w-full flex-shrink-0 min-w-0 shadow-[0_2px_12px_rgba(0,0,0,0.5)]"
+      className="h-12 px-2.5 md:px-4 bg-[#121316] backdrop-blur-xl flex items-center justify-between border-b border-white/[0.06] select-none z-50 text-xs w-full flex-shrink-0 min-w-0 shadow-[0_2px_12px_rgba(0,0,0,0.5)]"
     >
       {/* Left Branding & Mode Dropdown */}
       <div className="flex items-center gap-2.5 md:gap-3.5 min-w-0 overflow-hidden">
@@ -99,7 +99,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ onMobileMenuToggle, isMobi
           <button
             id="btn-workspace-switcher"
             onClick={() => setWorkspaceMenuOpen(!workspaceMenuOpen)}
-            className="group h-7 px-2.5 rounded-lg bg-gradient-to-b from-[#1b1b1b] to-[#121212] border border-white/[0.12] flex items-center gap-1.5 hover:border-primary/40 hover:bg-[#202020] transition-all active:scale-95 cursor-pointer shadow-sm"
+            className="group h-7 px-2.5 rounded-lg bg-[#16171B] border border-white/[0.06] flex items-center gap-1.5 hover:border-primary/40 hover:bg-[#1D1F26] transition-all active:scale-95 cursor-pointer shadow-sm"
           >
             <span className="text-primary text-[11px] font-bold flex gap-1.5 items-center">
               <span>3D Workspace</span>
@@ -108,7 +108,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ onMobileMenuToggle, isMobi
           </button>
 
           {workspaceMenuOpen && (
-            <div className="absolute top-full left-0 mt-1.5 w-52 py-1.5 rounded-xl bg-[hsl(var(--surface-1))]/95 backdrop-blur-xl border border-white/[0.12] shadow-2xl z-50 animate-in fade-in zoom-in-95 duration-100">
+            <div className="absolute top-full left-0 mt-1.5 w-52 py-1.5 rounded-xl bg-[#16171B]/95 backdrop-blur-xl border border-white/[0.06] shadow-2xl z-50 animate-in fade-in zoom-in-95 duration-100">
               <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
                 Workspace Modes
               </div>
@@ -176,7 +176,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ onMobileMenuToggle, isMobi
         <div className="h-3.5 w-px bg-white/[0.1] mx-0.5 hidden md:block" />
 
         {/* Center/Left Top Navigation Links in Segmented Pill Bar - hidden on mobile */}
-        <nav className="relative flex items-center gap-0.5 bg-[#141414] p-0.5 rounded-lg border border-white/[0.10] text-[11px] font-medium hidden md:flex shadow-inner">
+        <nav className="relative flex items-center gap-0.5 bg-[#16171B] p-0.5 rounded-lg border border-white/[0.06] text-[11px] font-medium hidden md:flex shadow-inner">
           {[
             {
               id: 'home',
@@ -247,7 +247,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ onMobileMenuToggle, isMobi
             onClick={() => navigateToMain('system')}
             className="cursor-pointer transition-transform active:scale-95"
           >
-            <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold border ${
+            <span className={`px-2 py-0.5 rounded-full text-[11px] font-mono font-bold border ${
               systemStats.status === 'online'
                 ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
                 : 'bg-rose-500/15 text-rose-300 border-rose-500/30'
@@ -261,7 +261,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ onMobileMenuToggle, isMobi
         <ResourceMonitor />
 
         <SimpleTooltip label="Command palette • Ctrl K" side="bottom">
-          <button id="btn-header-command-palette" type="button" onClick={() => useUIStore.getState().setCommandPaletteOpen(true)} className="hidden sm:flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-[hsl(var(--surface-1))] border border-white/[0.08] hover:bg-[hsl(var(--surface-2))] hover:border-primary/30 text-[11px] text-zinc-300 transition-all shadow-sm cursor-pointer" aria-label="Open command palette">
+          <button id="btn-header-command-palette" type="button" onClick={() => useUIStore.getState().setCommandPaletteOpen(true)} className="hidden sm:flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-[#16171B] border border-white/[0.06] hover:bg-[#1D1F26] hover:border-primary/30 text-[11px] text-zinc-300 transition-all shadow-sm cursor-pointer" aria-label="Open command palette">
             <HugeiconsIcon icon={Search01Icon} size={16} className="w-3 h-3 text-primary" />
             <span className="font-semibold hidden md:inline">Search</span>
             <kbd className="hidden lg:inline-flex items-center px-1 py-0.5 rounded border border-white/[0.1] bg-black/20 text-[9px] text-zinc-500 font-mono">Ctrl K</kbd>
@@ -273,7 +273,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ onMobileMenuToggle, isMobi
           <button
             id="btn-header-models"
             onClick={() => router.push('/admin?tab=models')}
-            className="hidden sm:flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-[hsl(var(--surface-1))] border border-white/[0.08] hover:bg-[hsl(var(--surface-2))] hover:border-white/[0.15] text-[11px] text-zinc-300 transition-all shadow-sm cursor-pointer"
+            className="hidden sm:flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-[#16171B] border border-white/[0.06] hover:bg-[#1D1F26] hover:border-white/[0.15] text-[11px] text-zinc-300 transition-all shadow-sm cursor-pointer"
           >
             <HugeiconsIcon icon={PackageIcon} size={16} className="w-3 h-3 text-primary" />
             <span className="font-semibold hidden md:inline">AI Models</span>
@@ -285,7 +285,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ onMobileMenuToggle, isMobi
           <button
             id="btn-dcc-bridge"
             onClick={() => setIsDccBridgeOpen(true)}
-            className="hidden md:flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-[hsl(var(--surface-1))] border border-white/[0.08] hover:bg-[hsl(var(--surface-2))] hover:border-white/[0.15] text-[11px] text-zinc-300 transition-all shadow-sm cursor-pointer"
+            className="hidden md:flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-[#16171B] border border-white/[0.06] hover:bg-[#1D1F26] hover:border-white/[0.15] text-[11px] text-zinc-300 transition-all shadow-sm cursor-pointer"
           >
             <HugeiconsIcon icon={CableIcon} size={16} className="w-3 h-3 text-primary" />
             <span className="font-semibold">DCC Bridge</span>

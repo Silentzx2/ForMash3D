@@ -126,7 +126,7 @@ export const ResourceMonitor: React.FC = () => {
   if (!stats) {
     return (
       <SimpleTooltip label="System Resources" side="bottom">
-        <div className="flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-[hsl(var(--surface-1))] border border-white/[0.08] text-zinc-400">
+        <div className="flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-[#16171B] border border-white/[0.06] text-zinc-400">
           <HugeiconsIcon icon={GaugeIcon} size={16} className="w-3 h-3" />
           <span className="font-mono text-[10px]">Loading...</span>
         </div>
@@ -149,8 +149,8 @@ export const ResourceMonitor: React.FC = () => {
       <SimpleTooltip label="System Telemetry (GPU / RAM / CPU) • Click to open details" side="bottom">
         <button
           onClick={() => setIsExpanded(!isExpanded)}
-          className={`group flex items-center gap-2 h-7 px-2.5 rounded-full bg-[hsl(var(--surface-1))] border transition-all cursor-pointer select-none active:scale-95 ${
-            isExpanded ? 'border-primary/50 bg-[hsl(var(--surface-2))] shadow-sm' : 'border-white/[0.08] hover:border-white/[0.18] hover:bg-[hsl(var(--surface-2))]'
+          className={`group flex items-center gap-2 h-7 px-2.5 rounded-full bg-[#16171B] border transition-all cursor-pointer select-none active:scale-95 ${
+            isExpanded ? 'border-[#F5C542]/50 bg-[#1D1F26] shadow-sm' : 'border-white/[0.06] hover:border-white/[0.15] hover:bg-[#1D1F26]'
           }`}
           aria-label={isExpanded ? 'Collapse resource monitor' : 'Expand resource monitor'}
           aria-expanded={isExpanded}
@@ -204,17 +204,17 @@ export const ResourceMonitor: React.FC = () => {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -8, scale: 0.98 }}
             transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-            className="fixed right-2 md:right-4 top-[48px] z-50 w-[280px] bg-[hsl(var(--surface-1))]/95 backdrop-blur-xl border border-white/[0.12] rounded-xl shadow-2xl overflow-hidden"
+            className="fixed right-2 md:right-4 top-[52px] z-50 w-[280px] bg-[#16171B]/95 backdrop-blur-xl border border-white/[0.06] rounded-xl shadow-2xl overflow-hidden"
             role="region"
             aria-label="System resource details"
           >
             {/* Header */}
-            <div className="flex items-center justify-between px-3 py-2.5 bg-[hsl(var(--surface-0))] border-b border-white/[0.08]">
+            <div className="flex items-center justify-between px-3 py-2.5 bg-[#121316] border-b border-white/[0.06]">
               <div className="flex items-center gap-2">
                 <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5 text-primary" />
                 <span className="font-bold text-xs text-white">System Resources</span>
                 {isLoading && (
-                  <span className="text-[9px] text-zinc-400 animate-pulse">Updating...</span>
+                  <span className="text-[9px] text-zinc-400 font-mono animate-pulse">Updating...</span>
                 )}
               </div>
               <button
@@ -264,7 +264,7 @@ export const ResourceMonitor: React.FC = () => {
                               className={`h-full rounded-full transition-all duration-300 ${status.bg}`}
                             />
                           </div>
-                          <div className="flex items-center justify-between text-[9px] text-zinc-400">
+                          <div className="flex items-center justify-between text-[9px] text-zinc-400 font-mono">
                             <span>{formatGB(gpu.memory_used_mb / 1024, gpu.memory_total_mb / 1024)}</span>
                             {gpu.temperature !== undefined && (
                               <span>Temp: {gpu.temperature}°C</span>
@@ -289,7 +289,7 @@ export const ResourceMonitor: React.FC = () => {
                             className={`h-full rounded-full transition-all duration-300 ${getStatusColor(stats.avg_vram_percent ?? 0).bg}`}
                           />
                         </div>
-                        <div className="flex items-center justify-between text-[9px] text-zinc-400">
+                        <div className="flex items-center justify-between text-[9px] text-zinc-400 font-mono">
                           <span>{formatGB(stats.total_vram_used_gb ?? 0, stats.total_vram_total_gb ?? 0)}</span>
                         </div>
                       </div>
@@ -306,12 +306,12 @@ export const ResourceMonitor: React.FC = () => {
                         className={`h-full rounded-full transition-all duration-300 ${getStatusColor(stats.vram_percent).bg}`}
                       />
                     </div>
-                    <div className="flex items-center justify-between text-[9px] text-zinc-400">
+                    <div className="flex items-center justify-between text-[9px] text-zinc-400 font-mono">
                       <span>{formatGB(stats.vram_used_gb, stats.vram_total_gb)}</span>
-                      {stats.gpu_name && <span className="truncate max-w-[140px]">{stats.gpu_name}</span>}
+                      {stats.gpu_name && <span className="truncate max-w-[140px] font-sans">{stats.gpu_name}</span>}
                     </div>
                     {stats.gpu_temp_c && (
-                      <div className="text-[9px] text-zinc-500">
+                      <div className="text-[9px] text-zinc-500 font-mono">
                         GPU Temp: {stats.gpu_temp_c}°C
                       </div>
                     )}
@@ -354,7 +354,7 @@ export const ResourceMonitor: React.FC = () => {
                     className={`h-full rounded-full transition-all duration-300 ${getStatusColor(stats.ram_percent).bg}`}
                   />
                 </div>
-                <div className="flex items-center justify-between text-[9px] text-zinc-400">
+                <div className="flex items-center justify-between text-[9px] text-zinc-400 font-mono">
                   <span>{formatGB(stats.ram_used_gb, stats.ram_total_gb)}</span>
                 </div>
               </div>

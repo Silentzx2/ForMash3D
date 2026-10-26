@@ -80,9 +80,9 @@ export const RiggingLeftPanel: React.FC = () => {
   const displaySize = currentAsset?.fileSize || '—';
 
   return (
-    <div id="rigging-left-panel" className="flex flex-col h-full overflow-y-auto p-3 space-y-3.5 text-xs select-none bg-[hsl(var(--surface-1))] custom-scrollbar">
+    <div id="rigging-left-panel" className="flex flex-col h-full overflow-y-auto p-3 space-y-3.5 text-xs select-none bg-[#16171B] custom-scrollbar">
       {/* Panel Header */}
-      <div className="flex items-center justify-between pb-2 border-b border-white/[0.08] flex-shrink-0">
+      <div className="flex items-center justify-between pb-2 border-b border-white/[0.06] flex-shrink-0">
         <span className="font-bold text-xs text-white flex items-center gap-1.5">
           <HugeiconsIcon icon={BoneIcon} size={16} className="w-3.5 h-3.5 text-primary" />
           <span>Auto Rigging</span>
@@ -93,9 +93,9 @@ export const RiggingLeftPanel: React.FC = () => {
       {/* Target Character Card */}
       <div className="space-y-1.5">
         <label className="text-[11px] font-bold text-zinc-300 uppercase tracking-wide">Target Character</label>
-        <div className="p-2.5 rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] space-y-2">
+        <div className="p-2.5 studio-card space-y-2">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-lg bg-[hsl(var(--surface-2))] border border-white/[0.08] flex items-center justify-center text-primary flex-shrink-0">
+            <div className="w-9 h-9 rounded-lg bg-[#16171B] border border-white/[0.06] flex items-center justify-center text-primary flex-shrink-0">
               <HugeiconsIcon icon={UserIcon} size={16} className="w-5 h-5" />
             </div>
             <div className="min-w-0 flex-1">
@@ -108,7 +108,7 @@ export const RiggingLeftPanel: React.FC = () => {
 
           <button
             onClick={() => navigateToTool('model')}
-            className="w-full flex items-center justify-center gap-1.5 py-1.5 bg-[hsl(var(--surface-2))] hover:bg-[hsl(var(--surface-3))] border border-white/[0.08] rounded-lg text-[11px] font-semibold text-zinc-300 hover:text-white transition-colors cursor-pointer"
+            className="w-full flex items-center justify-center gap-1.5 py-1.5 bg-[#242732] hover:bg-[#2c303f] border border-white/[0.06] rounded-lg text-[11px] font-semibold text-zinc-300 hover:text-white transition-colors cursor-pointer"
           >
             <HugeiconsIcon icon={FolderOpenIcon} size={14} className="w-3.5 h-3.5 text-zinc-400" />
             <span>Select Different Model</span>
@@ -125,7 +125,7 @@ export const RiggingLeftPanel: React.FC = () => {
             className={`p-2 rounded-xl border text-left transition-all cursor-pointer ${
               riggingMethod === 'auto_rig'
                 ? 'border-primary bg-primary/10 text-primary font-bold shadow-xs'
-                : 'border-white/[0.08] bg-[hsl(var(--surface-0))] text-zinc-400 hover:text-white'
+                : 'border-white/[0.06] bg-[#1D1F26] text-zinc-400 hover:text-white'
             }`}
           >
             <div className="flex items-center gap-1.5 mb-1">
@@ -140,7 +140,7 @@ export const RiggingLeftPanel: React.FC = () => {
             className={`p-2 rounded-xl border text-left transition-all cursor-pointer ${
               riggingMethod === 'manual_rig'
                 ? 'border-primary bg-primary/10 text-primary font-bold shadow-xs'
-                : 'border-white/[0.08] bg-[hsl(var(--surface-0))] text-zinc-400 hover:text-white'
+                : 'border-white/[0.06] bg-[#1D1F26] text-zinc-400 hover:text-white'
             }`}
           >
             <div className="flex items-center gap-1.5 mb-1">
@@ -152,12 +152,12 @@ export const RiggingLeftPanel: React.FC = () => {
         </div>
       </div>
 
-      <div className="p-2.5 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08] text-[10px] text-zinc-400 leading-relaxed">
+      <div className="p-2.5 studio-card text-[10px] text-zinc-400 leading-relaxed">
         UniRig uses its native biped topology and model-default weights. Custom skeleton presets, IK generation, and weight overrides are not supported by this adapter.
       </div>
 
       {/* Advanced Options Accordion */}
-      <div className="border border-white/[0.08] rounded-xl bg-[hsl(var(--surface-0))] overflow-hidden">
+      <div className="border border-white/[0.06] rounded-xl bg-[#1D1F26] overflow-hidden">
         <button
           onClick={() => setAdvancedOptionsOpen(!advancedOptionsOpen)}
           className="w-full px-3 py-2 flex items-center justify-between text-[11px] font-bold text-zinc-300 hover:text-white cursor-pointer"
@@ -167,7 +167,7 @@ export const RiggingLeftPanel: React.FC = () => {
         </button>
 
         {advancedOptionsOpen && (
-          <div className="p-3 border-t border-white/[0.08] space-y-2 text-[11px]">
+          <div className="p-3 border-t border-white/[0.06] space-y-2 text-[11px]">
             <label className="flex items-center justify-between text-zinc-300 cursor-pointer">
               <span>Bilateral Symmetry (-X Mirror)</span>
               <input
@@ -177,7 +177,7 @@ export const RiggingLeftPanel: React.FC = () => {
                   setSymmetry(e.target.checked);
                   setXMirrorEnabled(e.target.checked);
                 }}
-                className="rounded border-white/[0.1] bg-[hsl(var(--surface-1))] text-primary focus:ring-0 cursor-pointer"
+                className="rounded border-white/[0.1] bg-[#16171B] text-primary focus:ring-0 cursor-pointer"
               />
             </label>
           </div>
@@ -188,7 +188,7 @@ export const RiggingLeftPanel: React.FC = () => {
       <button
         onClick={handleGenerate}
         disabled={isGenerating || !meshFileId || riggingMethod === 'manual_rig'}
-        className="w-full py-2.5 rounded-xl bg-gradient-to-r from-[#FFE066] via-[#FFCC00] to-[#E09800] hover:brightness-105 text-[#080808] font-black text-xs flex items-center justify-center gap-2 shadow-[0_4px_16px_rgba(255,204,0,0.35)] transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+        className="w-full py-2.5 rounded-xl bg-[#F5C542] hover:bg-[#FFE066] text-black font-bold text-xs flex items-center justify-center gap-2 shadow-[0_4px_16px_rgba(245,197,66,0.25)] hover:shadow-[0_6px_20px_rgba(245,197,66,0.35)] transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
       >
         {isGenerating ? (
           <>

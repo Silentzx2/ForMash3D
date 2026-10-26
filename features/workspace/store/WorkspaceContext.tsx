@@ -614,7 +614,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   });
 
   const [paintBrushSettings, setPaintBrushSettings] = useState<PaintBrushSettings>({
-    color: '#FFCC00',
+    color: '#F5C542',
     size: 24,
     opacity: 1.0,
     flow: 0.8,

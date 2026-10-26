@@ -1,10 +1,9 @@
 import React, { useEffect } from 'react';
 import { useWorkspace } from '../store/WorkspaceContext';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
-
-
 import { HugeiconsIcon } from '@hugeicons/react';
 import { FolderOpenIcon, PanelRightClose, SlidersHorizontalIcon } from '@hugeicons/core-free-icons';
+
 // Import panels
 import { RightPropertyPanel } from './RightPropertyPanel';
 import { RightAssetsPanel } from './RightAssetsPanel';
@@ -52,47 +51,47 @@ export const RightWorkspacePanel: React.FC = () => {
       : 'properties';
 
   return (
-    <div id="right-workspace-panel" className="flex flex-col h-full w-full bg-[hsl(var(--surface-1))] text-xs select-none overflow-hidden">
+    <div id="right-workspace-panel" className="flex flex-col h-full w-full bg-[#16171B] text-xs select-none overflow-hidden">
       {/* Top Segmented Header (Clean Technical Inspector Navigation) */}
-      <div className="h-10 px-2.5 flex items-center justify-between border-b border-white/[0.08] bg-[hsl(var(--surface-1))] flex-shrink-0">
+      <div className="h-10 px-2.5 flex items-center justify-between border-b border-white/[0.06] bg-[#16171B] flex-shrink-0">
         <div className="flex-1 min-w-0 mr-2">
-          <div className="flex gap-1 p-0.5 bg-[hsl(var(--surface-0))] border border-white/[0.06] rounded-lg">
+          <div className="flex items-center gap-1 p-1 bg-[#1C1D22] border border-white/[0.06] rounded-full studio-pill-track">
             {([
               { id: 'assets', label: 'Assets', icon: (props: any) => <HugeiconsIcon icon={FolderOpenIcon} size={16} {...props} /> },
-                { id: 'properties', label: 'Properties', icon: (props: any) => <HugeiconsIcon icon={SlidersHorizontalIcon} size={16} {...props} /> },
-              ] as Array<{ id: string; label: string; icon: any }>).map((tab) => {
-                const Icon = tab.icon;
-                const isActive = currentActiveTab === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() => setRightPanelMode(tab.id as any)}
-                    className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors cursor-pointer ${
-                      isActive ? 'bg-[hsl(var(--surface-2))] text-white font-bold' : 'text-zinc-400 hover:text-white hover:bg-[hsl(var(--surface-2))]'
-                    }`}
-                  >
-                    <Icon className="w-3.5 h-3.5" />
-                    <span>{tab.label}</span>
-                  </button>
-                );
-              })}
-              {isRunning && (
+              { id: 'properties', label: 'Properties', icon: (props: any) => <HugeiconsIcon icon={SlidersHorizontalIcon} size={16} {...props} /> },
+            ] as Array<{ id: string; label: string; icon: any }>).map((tab) => {
+              const Icon = tab.icon;
+              const isActive = currentActiveTab === tab.id;
+              return (
                 <button
+                  key={tab.id}
                   type="button"
-                  onClick={() => setRightPanelMode('prompt')}
-                  className={`relative flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold transition-colors cursor-pointer ${
-                    rightPanelMode === 'prompt'
-                      ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/40'
-                      : 'text-zinc-400 hover:text-emerald-300'
+                  onClick={() => setRightPanelMode(tab.id as any)}
+                  className={`relative flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-all cursor-pointer ${
+                    isActive ? 'bg-[#272930] text-white font-bold shadow-xs' : 'text-zinc-400 hover:text-white hover:bg-white/[0.04]'
                   }`}
                 >
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>Running</span>
+                  <Icon className="w-3.5 h-3.5" />
+                  <span>{tab.label}</span>
                 </button>
-              )}
-            </div>
+              );
+            })}
+            {isRunning && (
+              <button
+                type="button"
+                onClick={() => setRightPanelMode('prompt')}
+                className={`relative flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold transition-all cursor-pointer ${
+                  rightPanelMode === 'prompt'
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                    : 'text-zinc-400 hover:text-emerald-300'
+                }`}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span>Running</span>
+              </button>
+            )}
           </div>
+        </div>
 
         {/* Collapse Panel Button */}
         <SimpleTooltip label="Collapse panel (maximize 3D viewer)" side="left">
@@ -100,7 +99,7 @@ export const RightWorkspacePanel: React.FC = () => {
             type="button"
             id="btn-collapse-right-panel"
             onClick={() => setIsRightPanelOpen(false)}
-            className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-[hsl(var(--surface-2))] transition-colors cursor-pointer flex-shrink-0"
+            className="p-1.5 rounded-lg text-zinc-400 hover:text-[#F5C542] hover:bg-white/[0.06] transition-colors cursor-pointer flex-shrink-0"
           >
             <HugeiconsIcon icon={PanelRightClose} size={16} className="w-3.5 h-3.5" />
           </button>
@@ -108,7 +107,7 @@ export const RightWorkspacePanel: React.FC = () => {
       </div>
 
       {/* Main Panel Content */}
-      <div className="flex-1 overflow-hidden bg-[hsl(var(--surface-1))]">
+      <div className="flex-1 overflow-hidden bg-[#16171B]">
         {rightPanelMode === 'prompt' ? (
           <LiveExecutionPanel />
         ) : rightPanelMode === 'assets' ? (

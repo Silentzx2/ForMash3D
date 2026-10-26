@@ -444,6 +444,7 @@ export interface TextureSettings {
   maxNumView?: number;
   generatePBR?: boolean;
   quadCompatibleUv?: boolean;
+  targetPolycount?: number;
 }
 
 export interface AutoOptimizeSettings {

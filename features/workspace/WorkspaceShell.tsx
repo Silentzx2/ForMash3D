@@ -7,10 +7,11 @@ import dynamic from 'next/dynamic';
 import { useWorkspace } from './store/WorkspaceContext';
 import { TopHeader } from './Header/TopHeader';
 import { LeftNavigation } from './Navigation/LeftNavigation';
+import { ViewportHUD } from './Viewport/ViewportHUD';
 
 
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Cancel, FolderOpenIcon, PanelLeftClose, PanelLeftOpen, PanelRightOpen, SlidersHorizontalIcon } from '@hugeicons/core-free-icons';
+import { Box, Cancel, FolderOpenIcon, PanelLeftClose, PanelLeftOpen, PanelRightOpen, SlidersHorizontalIcon } from '@hugeicons/core-free-icons';
 import { settingsPersistence } from '@/services/settingsPersistence';
 import { useUIStore } from '@/stores/useUIStore';
 // Dynamic imports for heavy 3D components and panels
@@ -29,6 +30,10 @@ const GeneratePanel = dynamic(() => import('./Panels/GeneratePanel').then(mod =>
 const TexturePanel = dynamic(() => import('./Panels/TexturePanel').then(mod => mod.TexturePanel), {
   ssr: false,
   loading: () => <div className="w-full h-full animate-pulse bg-[hsl(var(--surface-0))]" />,
+});
+const ActiveJobFloatingCard = dynamic(() => import('./Panels/ActiveJobFloatingCard').then(mod => mod.ActiveJobFloatingCard), {
+  ssr: false,
+  loading: () => null,
 });
 const RemeshPanel = dynamic(() => import('./Panels/RemeshPanel').then(mod => mod.RemeshPanel), {
   ssr: false,
@@ -124,6 +129,7 @@ export const WorkspaceShell: React.FC = () => {
     isLeftPanelOpen, isRightPanelOpen,
     setIsLeftPanelOpen, setIsRightPanelOpen,
     navigateToTool, navigateToMainNav,
+    currentAsset, isExecuting,
   } = useWorkspace();
 
   // Mobile menu state: left navigation drawer
@@ -462,9 +468,27 @@ export const WorkspaceShell: React.FC = () => {
         <div className="flex-1 h-full relative overflow-hidden min-w-0">
           {/* Continuous Full-Bleed 3D Viewport in Background */}
           {mainNav === 'workspace' && (
-            <main id="center-viewport-stage" className="absolute inset-0 z-0 overflow-hidden bg-[#111317]">
+            <main id="center-viewport-stage" className="absolute inset-0 z-0 overflow-hidden studio-canvas-vignette">
               <MeshViewer />
               <ViewportToolOverlay />
+              <ViewportHUD rightOffset={isRightPanelOpen ? 300 : 32} />
+
+              {/* Clean studio empty-state watermark */}
+              {!currentAsset && !isExecuting && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none select-none z-10 text-center px-4">
+                  <div className="max-w-md space-y-2.5 opacity-40 transition-opacity duration-300">
+                    <div className="w-12 h-12 rounded-2xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-center mx-auto mb-3 text-[#F5C542]">
+                      <HugeiconsIcon icon={Box} size={22} className="stroke-[1.8]" />
+                    </div>
+                    <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-white/90 font-sans">
+                      Ready For A New 3D Model?
+                    </h2>
+                    <p className="text-xs sm:text-sm text-zinc-400 font-sans max-w-sm mx-auto">
+                      Instantly generate high-fidelity 3D assets from your reference images
+                    </p>
+                  </div>
+                </div>
+              )}
             </main>
           )}
 
@@ -477,7 +501,7 @@ export const WorkspaceShell: React.FC = () => {
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: -15 }}
                     transition={MOTION_FAST}
-                    className="absolute inset-x-2 top-2 bottom-2 md:inset-auto md:left-2 md:top-2 md:bottom-2 md:w-[320px] lg:w-[360px] max-w-[420px] md:max-w-[calc(100vw-5rem)] bg-[hsl(var(--surface-1))] border border-white/[0.1] rounded-2xl md:rounded-xl shadow-[0_8px_32px_rgba(0,0,0,0.6)] flex flex-col z-20 overflow-hidden overflow-x-hidden"
+                    className="absolute inset-x-2 md:inset-auto top-2 bottom-2 md:left-2 md:top-2 md:bottom-2 md:w-[320px] lg:w-[340px] rounded-2xl bg-[#16171B] border border-white/[0.06] shadow-[0_8px_32px_rgba(0,0,0,0.6)] flex flex-col z-20 overflow-hidden overflow-x-hidden"
                   >
                 {/* Mobile panel header with close button */}
                 <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-white/[0.08] bg-[hsl(var(--surface-0))] md:hidden flex-shrink-0">
@@ -548,7 +572,7 @@ export const WorkspaceShell: React.FC = () => {
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: 15 }}
                 transition={MOTION_FAST}
-                className="absolute inset-x-2 top-2 bottom-2 md:inset-auto md:right-2 md:top-2 md:bottom-2 md:w-[280px] lg:w-[320px] max-w-[420px] md:max-w-[calc(100vw-4.5rem)] bg-[hsl(var(--surface-1))] border border-white/[0.08] rounded-2xl md:rounded-xl shadow-[0_8px_32px_rgba(0,0,0,0.6)] flex flex-col z-20 overflow-hidden"
+                className="absolute inset-x-2 md:inset-auto top-2 bottom-2 md:right-2 md:top-2 md:bottom-2 md:w-[280px] rounded-2xl bg-[#16171B] border border-white/[0.06] shadow-[0_8px_32px_rgba(0,0,0,0.6)] flex flex-col z-20 overflow-hidden"
               >
                 {/* Mobile close button for right panel */}
                 <div className="flex items-center justify-between px-3.5 py-2 border-b border-white/[0.08] bg-[hsl(var(--surface-0))] md:hidden flex-shrink-0">
@@ -617,7 +641,7 @@ export const WorkspaceShell: React.FC = () => {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={MOTION_FAST}
-              className="absolute inset-0 left-0 md:left-[64px] z-[15] bg-[hsl(var(--surface-0))] overflow-auto flex flex-col"
+              className="absolute inset-0 left-0 md:left-[56px] z-[15] bg-[hsl(var(--surface-0))] overflow-auto flex flex-col"
             >
               <StudioDashboard />
             </motion.div>
@@ -629,7 +653,7 @@ export const WorkspaceShell: React.FC = () => {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={MOTION_FAST}
-              className="absolute inset-0 left-0 md:left-[64px] z-[15] bg-[hsl(var(--surface-0))] overflow-auto flex flex-col"
+              className="absolute inset-0 left-0 md:left-[56px] z-[15] bg-[hsl(var(--surface-0))] overflow-auto flex flex-col"
             >
               <OutputsPage />
             </motion.div>
@@ -641,7 +665,7 @@ export const WorkspaceShell: React.FC = () => {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={MOTION_FAST}
-              className="absolute inset-0 left-0 md:left-[64px] z-[15] bg-[hsl(var(--surface-0))] overflow-auto flex flex-col"
+              className="absolute inset-0 left-0 md:left-[56px] z-[15] bg-[hsl(var(--surface-0))] overflow-auto flex flex-col"
             >
               <SystemPage />
             </motion.div>
@@ -653,7 +677,7 @@ export const WorkspaceShell: React.FC = () => {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={MOTION_FAST}
-              className="absolute inset-0 left-0 md:left-[64px] z-[15] bg-[hsl(var(--surface-0))] overflow-auto flex flex-col"
+              className="absolute inset-0 left-0 md:left-[56px] z-[15] bg-[hsl(var(--surface-0))] overflow-auto flex flex-col"
             >
               <JobDetailView onBack={() => setMainNav('workspace')} />
             </motion.div>
@@ -664,6 +688,7 @@ export const WorkspaceShell: React.FC = () => {
       <ExportModal />
       <DccBridgeModal />
       <MotionLibraryDrawer />
+      <ActiveJobFloatingCard />
     </div>
   );
 };

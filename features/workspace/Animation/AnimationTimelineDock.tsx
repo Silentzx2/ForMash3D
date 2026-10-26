@@ -141,13 +141,13 @@ export const AnimationTimelineDock: React.FC = () => {
   return (
     <div
       id="animation-timeline-dock"
-      className="w-full bg-[hsl(var(--surface-1))]/95 backdrop-blur-md border-t border-white/[0.08] shadow-[0_-8px_32px_rgba(0,0,0,0.5)] flex flex-col flex-shrink-0 z-20 select-none overflow-hidden"
+      className="w-full bg-[#16171B]/95 backdrop-blur-md border-t border-white/[0.06] shadow-[0_-8px_32px_rgba(0,0,0,0.5)] flex flex-col flex-shrink-0 z-20 select-none overflow-hidden"
     >
       {/* Top Studio Controls Bar: Modes, Model Badge, Presets, Transport Controls, FPS */}
-      <div className="h-10 px-3 bg-[hsl(var(--surface-2))] border-b border-white/[0.08] flex items-center justify-between gap-2 overflow-x-auto no-scrollbar">
+      <div className="h-10 px-3 bg-[#1D1F26] border-b border-white/[0.06] flex items-center justify-between gap-2 overflow-x-auto no-scrollbar">
         {/* Left: Mode Switcher Pills */}
         <div className="flex items-center gap-1.5 flex-shrink-0">
-          <div className="flex items-center gap-1 bg-[hsl(var(--surface-0))] p-0.5 rounded-lg border border-white/[0.08]">
+          <div className="flex items-center gap-1 bg-[#16171B] p-0.5 rounded-lg border border-white/[0.06]">
             {modePills.map((mode) => {
               const isActive =
                 activeMode === mode.id ||
@@ -227,7 +227,7 @@ export const AnimationTimelineDock: React.FC = () => {
             <SimpleTooltip label={isPlaying ? 'Pause' : 'Play'}>
               <button
                 onClick={togglePlay}
-                className="w-7 h-7 rounded-full bg-gradient-to-r from-[#FFE066] via-[#FFCC00] to-[#E09800] hover:brightness-105 text-[#080808] flex items-center justify-center font-black shadow-[0_0_12px_rgba(255,204,0,0.4)] transition-transform active:scale-95 cursor-pointer mx-1"
+                className="w-7 h-7 rounded-full bg-[#F5C542] hover:bg-[#FFE066] text-black flex items-center justify-center font-bold shadow-[0_0_12px_rgba(245,197,66,0.35)] transition-transform active:scale-95 cursor-pointer mx-1"
               >
                 {isPlaying ? (
                   <HugeiconsIcon icon={PauseIcon} size={16} className="w-3.5 h-3.5 fill-current" />
@@ -355,7 +355,7 @@ export const AnimationTimelineDock: React.FC = () => {
             {/* Red Playhead Line & Scrub Needle */}
             <div
               style={{ left: `${Math.max(0, Math.min(progressPercent, 100))}%` }}
-              className="absolute top-0 bottom-0 w-0.5 bg-primary shadow-[0_0_8px_rgba(255,204,0,0.8)] pointer-events-none z-30"
+              className="absolute top-0 bottom-0 w-0.5 bg-primary shadow-[0_0_8px_rgba(245,197,66,0.6)] pointer-events-none z-30"
             >
               <div className="w-2.5 h-2.5 rounded-full bg-primary -translate-x-1/2 -translate-y-1 shadow-md border border-black" />
             </div>

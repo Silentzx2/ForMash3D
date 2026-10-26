@@ -326,7 +326,7 @@ export const MeshDiffViewer: React.FC<MeshDiffViewerProps> = ({
   useEffect(() => {
     if (leftContainerRef.current) {
       const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-      renderer.setPixelRatio(window.devicePixelRatio || 1);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25));
       renderer.setSize(leftContainerRef.current.clientWidth, leftContainerRef.current.clientHeight);
       leftContainerRef.current.appendChild(renderer.domElement);
       leftRenderer.current = renderer;
@@ -357,7 +357,7 @@ export const MeshDiffViewer: React.FC<MeshDiffViewerProps> = ({
 
     if (rightContainerRef.current) {
       const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-      renderer.setPixelRatio(window.devicePixelRatio || 1);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25));
       renderer.setSize(rightContainerRef.current.clientWidth, rightContainerRef.current.clientHeight);
       rightContainerRef.current.appendChild(renderer.domElement);
       rightRenderer.current = renderer;
