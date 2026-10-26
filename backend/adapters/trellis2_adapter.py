@@ -151,6 +151,21 @@ class Trellis2ImageToRawMeshAdapter(ImageToMeshModel):
             except Exception:
                 pass
 
+            # Pass explicit low_vram setting based on resource_plan or GPU memory (<20GB)
+            is_low_vram = False
+            if self.resource_plan:
+                strategy = str(self.resource_plan.get("strategy", ""))
+                if "low_vram" in strategy:
+                    is_low_vram = True
+            if not is_low_vram and torch.cuda.is_available():
+                try:
+                    target_gpu = self.gpu_id if self.gpu_id is not None else 0
+                    total_mb = torch.cuda.get_device_properties(target_gpu).total_memory / (1024 * 1024)
+                    if total_mb < 20480:
+                        is_low_vram = True
+                except Exception:
+                    pass
+
             # Initialize TRELLIS.2 runner
             from utils.trellis2_utils import Trellis2Runner
             self.runner = Trellis2Runner(
@@ -158,6 +173,7 @@ class Trellis2ImageToRawMeshAdapter(ImageToMeshModel):
                 model_cache_dir=str(self.model_path),
                 device=device,
                 resource_plan=self.resource_plan,
+                low_vram=is_low_vram,
             )
 
             # Pre-load the image-to-3D pipeline

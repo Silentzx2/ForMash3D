@@ -447,9 +447,13 @@ def model_worker_process(
                 logger.error(f"[MODEL LOAD FAILED] ❌ {err_msg}")
                 try:
                     control_response_queue.put(WorkerResponse("init", False, error=err_msg))
-                    time.sleep(1.0)
+                    if hasattr(control_response_queue, "close"):
+                        control_response_queue.close()
+                    if hasattr(control_response_queue, "join_thread"):
+                        control_response_queue.join_thread()
                 except Exception:
                     pass
+                time.sleep(0.5)
                 return  # Exit worker if model loading fails
         except Exception as e:
             import traceback
@@ -458,9 +462,13 @@ def model_worker_process(
             logger.error(f"❌ {err_msg}\n{tb}")
             try:
                 control_response_queue.put(WorkerResponse("init", False, error=err_msg))
-                time.sleep(1.0)
+                if hasattr(control_response_queue, "close"):
+                    control_response_queue.close()
+                if hasattr(control_response_queue, "join_thread"):
+                    control_response_queue.join_thread()
             except Exception:
                 pass
+            time.sleep(0.5)
             return  # Exit worker if model loading fails
 
         # Main worker loop
@@ -1586,6 +1594,55 @@ class MultiprocessModelScheduler:
             return {feature: self.model_features.get(feature, [])}
         return dict(self.model_features)
 
+    def get_loaded_models(self) -> List[str]:
+        """
+        Get list of model IDs currently loaded in active workers.
+
+        Returns:
+            List of model IDs that have at least one active worker process.
+        """
+        loaded: List[str] = []
+        for model_id, worker_ids in list(self.worker_assignments.items()):
+            if not self.workers and worker_ids:
+                if model_id not in loaded:
+                    loaded.append(model_id)
+                continue
+            alive = False
+            for w_id in worker_ids:
+                proc = self.workers.get(w_id)
+                if proc is not None:
+                    if hasattr(proc, "is_alive") and callable(proc.is_alive):
+                        try:
+                            if proc.is_alive():
+                                alive = True
+                                break
+                        except Exception:
+                            pass
+                    else:
+                        alive = True
+                        break
+            if alive and model_id not in loaded:
+                loaded.append(model_id)
+
+        for w_id, proc in list(self.workers.items()):
+            alive = False
+            if proc is not None:
+                if hasattr(proc, "is_alive") and callable(proc.is_alive):
+                    try:
+                        alive = proc.is_alive()
+                    except Exception:
+                        alive = False
+                else:
+                    alive = True
+            if alive:
+                cfg = self.worker_configs.get(w_id)
+                if cfg and getattr(cfg, "model_config", None):
+                    m_id = cfg.model_config.get("model_id") or cfg.model_config.get("name")
+                    if m_id and m_id not in loaded:
+                        loaded.append(m_id)
+
+        return loaded
+
     def _is_job_impossible(self, job_request: JobRequest) -> tuple[bool, str]:
         """
         Check if a job is impossible to process.
@@ -1648,6 +1705,7 @@ class MultiprocessModelScheduler:
                 "type": "multiprocess_resource_aware",
                 "running": self.running,
                 "num_workers": len(self.workers),
+                "loaded_models": self.get_loaded_models(),
                 "processing_mode": "priority_fifo_with_resource_rotation",
             },
             "gpu": gpu_status,
@@ -2858,9 +2916,18 @@ class MultiprocessModelScheduler:
 
             # Wait for worker process to initialize and report model load status
             init_success = False
-            error_reason = f"Worker {worker_id} terminated unexpectedly during model initialization"
             start_wait = time.time()
-            max_load_timeout = 180.0
+            timeout_env = os.environ.get("FORMSH3D_MODEL_LOAD_TIMEOUT")
+            if timeout_env:
+                try:
+                    max_load_timeout = float(timeout_env)
+                except ValueError:
+                    max_load_timeout = 600.0
+            elif any(k in model_id.lower() for k in ("trellis", "hunyuan", "unique3d", "pixal", "taoflow")):
+                max_load_timeout = 600.0
+            else:
+                max_load_timeout = 300.0
+            error_reason = f"Worker {worker_id} terminated unexpectedly during model initialization"
 
             while time.time() - start_wait < max_load_timeout:
                 # 1. Check response queue first before process status
@@ -2911,6 +2978,12 @@ class MultiprocessModelScheduler:
                     break
 
                 await asyncio.sleep(0.2)
+
+            if not init_success and worker_process.is_alive():
+                error_reason = (
+                    f"Worker {worker_id} timed out loading model '{model_id}' after {max_load_timeout:.0f}s. "
+                    "Model download or weights loading took longer than expected."
+                )
 
             if not init_success:
                 logger.error(

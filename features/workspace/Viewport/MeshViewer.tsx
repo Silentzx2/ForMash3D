@@ -1896,17 +1896,17 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     transformControlsRef.current = transformControls;
 
     // 5. Lighting Setup (Professional 360° Studio Rig)
-    // 5a. Ambient and Hemisphere Light (irradiance & ground bounce prevents pitch-black cavities)
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+    // 5a. Ambient and Hemisphere Light (irradiance & ground bounce prevents pitch-black cavities while preserving depth)
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.20);
     scene.add(ambientLight);
 
-    const hemiLight = new THREE.HemisphereLight(0xfff8f0, 0x22242a, 0.75);
+    const hemiLight = new THREE.HemisphereLight(0xfff8f0, 0x22242a, 0.45);
     hemiLight.position.set(0, 20, 0);
     scene.add(hemiLight);
     hemiLightRef.current = hemiLight;
 
-    // 5b. Key Light (Front-Right, high angle - crisp and soft contact shadow)
-    const mainKeyLight = new THREE.DirectionalLight(0xfff5ea, 1.8);
+    // 5b. Key Light (Front-Right, high angle - crisp directional shading and soft contact shadow)
+    const mainKeyLight = new THREE.DirectionalLight(0xfff5ea, 2.0);
     mainKeyLight.position.set(3.5, 5.0, 3.5);
     mainKeyLight.castShadow = true;
     mainKeyLight.shadow.mapSize.width = 2048;
@@ -1917,33 +1917,33 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     mainKeyLight.shadow.camera.right = 4.5;
     mainKeyLight.shadow.camera.top = 4.5;
     mainKeyLight.shadow.camera.bottom = -4.5;
-    mainKeyLight.shadow.bias = -0.0005;
-    mainKeyLight.shadow.normalBias = 0.03;
+    mainKeyLight.shadow.bias = -0.0003;
+    mainKeyLight.shadow.normalBias = 0.02;
     mainKeyLight.shadow.radius = 2.0;
     mainKeyLight.shadow.autoUpdate = true;
     scene.add(mainKeyLight);
     keyLightRef.current = mainKeyLight;
 
-    // 5c. Fill Light (Front-Left - balances key light, softens harsh front shadows)
-    const fillLight = new THREE.DirectionalLight(0xf5f5f7, 1.1);
+    // 5c. Fill Light (Front-Left - balances key light, softens harsh front shadows without flattening cavities)
+    const fillLight = new THREE.DirectionalLight(0xf5f5f7, 0.65);
     fillLight.position.set(-3.5, 2.5, 3.0);
     scene.add(fillLight);
     fillLightRef.current = fillLight;
 
     // 5d. Back / Rim Light (Back-Left - illuminates rear geometry and highlights edge silhouettes)
-    const rimLight = new THREE.DirectionalLight(0xffeed0, 1.4);
+    const rimLight = new THREE.DirectionalLight(0xffeed0, 1.3);
     rimLight.position.set(-3.0, 3.5, -3.5);
     scene.add(rimLight);
     rimLightRef.current = rimLight;
 
     // 5e. Back Fill Light (Back-Right - ensures the rear is completely visible from all angles)
-    const backFillLight = new THREE.DirectionalLight(0xf0f3fa, 1.1);
+    const backFillLight = new THREE.DirectionalLight(0xf0f3fa, 0.65);
     backFillLight.position.set(3.0, 2.5, -3.0);
     scene.add(backFillLight);
     backFillLightRef.current = backFillLight;
 
-    // 5f. Camera-Attached Viewport Fill Light (gentle headlight to illuminate whatever user faces)
-    const cameraLight = new THREE.DirectionalLight(0xffffff, 0.35);
+    // 5f. Camera-Attached Viewport Fill Light (gentle headlight to illuminate whatever user faces without blowing out cavity depth)
+    const cameraLight = new THREE.DirectionalLight(0xffffff, 0.15);
     cameraLight.position.set(0, 0, 1);
     camera.add(cameraLight);
     scene.add(camera);
@@ -3131,22 +3131,28 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
             gltf.scene.traverse((child) => {
               if (child instanceof THREE.Mesh) {
                 child.castShadow = true;
-                // Dense meshes: disable self-shadow receiver to avoid severe GPU pipeline hitch
+                // Enable self-shadow receiving for detailed models up to 1.5M vertices
                 const vCount = child.geometry?.attributes?.position?.count || 0;
-                child.receiveShadow = vCount < 200000;
+                child.receiveShadow = vCount < 1500000;
 
                 // Enhance normal map depth and crispness for micro-relief (eyes, teeth, ears)
                 if (child.material) {
                   const mats = Array.isArray(child.material) ? child.material : [child.material];
                   mats.forEach((m) => {
                     if (m instanceof THREE.MeshStandardMaterial) {
-                      // Non-textured models with missing diffuse map & high metalness (glTF default 1.0)
-                      // must not render as pitch-black mirror
-                      if (!m.map && m.metalness > 0.1) {
-                        m.metalness = 0.05;
-                        m.roughness = Math.max(0.65, m.roughness);
-                        if (m.color.r < 0.25 && m.color.g < 0.25 && m.color.b < 0.25) {
-                          m.color.setHex(0xd0d5dc);
+                      // Non-textured models: balance roughness and specular reflection
+                      // so geometric contours (folds, facial features, armor) pop with clarity
+                      if (!m.map) {
+                        if (!m.vertexColors) {
+                          m.roughness = 0.32; // crisp specular highlight on ridges, teeth, folds
+                          m.metalness = 0.08;
+                          if (m.color.r < 0.25 && m.color.g < 0.25 && m.color.b < 0.25) {
+                            m.color.setHex(0xd0d5dc);
+                          }
+                        } else {
+                          // Vertex-colored models (Unique3D): preserve sharp specular response without dulling colors
+                          m.roughness = 0.38;
+                          m.metalness = 0.05;
                         }
                         m.needsUpdate = true;
                       }

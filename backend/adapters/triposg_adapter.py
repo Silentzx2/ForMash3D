@@ -23,16 +23,16 @@ from core.utils.mesh_utils import MeshProcessor
 
 logger = logging.getLogger(__name__)
 
-TRIPOSG_MAX_HIERARCHICAL_DEPTH = 11
+TRIPOSG_MAX_HIERARCHICAL_DEPTH = 10
 # LOCKED / ACTIVE: values used by inference.
-# BASELINE: previous effective runtime values (source_quality="max", num_inference_steps=100, guidance_scale=9.0, flash_octree_depth=10, dense_octree_depth=10, hierarchical_octree_depth=11, use_flash_decoder=false)
+# BASELINE: previous effective runtime values (source_quality="max", num_inference_steps=100, guidance_scale=9.0, flash_octree_depth=9, dense_octree_depth=8, hierarchical_octree_depth=10, use_flash_decoder=false)
 # EXPERIMENTAL: selected experimental values, snapshot (2026-10-20) for stress-test; use only for benchmarking.
 # SUPPORTED BY: TripoSG adapter, EXPERIMENTAL-MODEL-SETTINGS.md section "TripoSG".
 # ROLLBACK: previous effective values; scheduler strips frontend overrides before adapter applies lock.
 _LOCKED_INFERENCE_PROFILE = {
     "source_quality": "max", "num_inference_steps": 100,
-    "guidance_scale": 9.0, "flash_octree_depth": 10,
-    "dense_octree_depth": 10, "hierarchical_octree_depth": 11,
+    "guidance_scale": 9.0, "flash_octree_depth": 9,
+    "dense_octree_depth": 8, "hierarchical_octree_depth": 10,
     "use_flash_decoder": False,
 }
 
@@ -56,8 +56,8 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
     Produces high-fidelity GLB/OBJ meshes with optional scribble+prompt support.
     """
 
-    # EXPERIMENTAL_MAX_DETAIL (2026-10-20): depth 10 dense + depth 11 hierarchical extraction,
-    # 100 steps, CFG 9.0 and no Flash decoder. Ask before changing the locked profile.
+    # LOCKED_PROFILE: depth 8 dense + depth 10 hierarchical extraction,
+    # 100 steps, CFG 9.0 and no Flash decoder.
     FEATURE_TYPE = "image_to_raw_mesh"
     MODEL_ID = "triposg_image_to_raw_mesh"
 
@@ -304,10 +304,10 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
             is_scribble = bool(inputs.get("is_scribble", False))
             prompt = str(inputs.get("prompt", "")).strip()
             octree_depth = int(inputs.get("flash_octree_depth", inputs.get("octree_depth", 9)))
-            dense_octree_depth = max(8, min(10, int(inputs.get("dense_octree_depth", 10))))
+            dense_octree_depth = max(8, min(8, int(inputs.get("dense_octree_depth", 8))))
             requested_hierarchical_octree_depth = min(
-                TRIPOSG_MAX_HIERARCHICAL_DEPTH,
-                max(dense_octree_depth, int(inputs.get("hierarchical_octree_depth", 11))),
+                10,
+                max(dense_octree_depth, int(inputs.get("hierarchical_octree_depth", 10))),
             )
 
             if not torch.cuda.is_available():
@@ -349,7 +349,6 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
                     dense_octree_depth=dense_octree_depth,
                     hierarchical_octree_depth=hierarchical_octree_depth,
                 ).samples[0]
-                mesh = trimesh.Trimesh(outputs[0].astype(np.float32), np.ascontiguousarray(outputs[1]), process=False)
             else:
                 # Run standard TripoSG pipeline
                 from image_process import prepare_image
@@ -371,9 +370,16 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
                     dense_octree_depth=dense_octree_depth,
                     hierarchical_octree_depth=hierarchical_octree_depth,
                 ).samples[0]
-                # hierarchical extraction with depth 11 (2048-wide grid) preserves fine details
-                # standard marching_cubes (method="lewiner") is used, not DMC which can smooth
-                mesh = trimesh.Trimesh(outputs[0].astype(np.float32), np.ascontiguousarray(outputs[1]), process=False)
+
+            if outputs is None or outputs[0] is None or len(outputs[0]) == 0:
+                raise RuntimeError(
+                    "TripoSG failed to extract surface geometry: marching cubes produced no vertices. "
+                    "The model output grid contains no isosurface zero-crossing."
+                )
+
+            # hierarchical extraction with depth 10 (1024-wide grid) preserves fine details
+            # standard marching_cubes (method="lewiner") is used, not DMC which can smooth
+            mesh = trimesh.Trimesh(outputs[0].astype(np.float32), np.ascontiguousarray(outputs[1]), process=False)
 
             # Model-native mesh is preserved for source.glb; optimization belongs strictly to downstream post-processing
             logger.info(
@@ -500,7 +506,7 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
                     "description": "Locked adapter-owned dense extraction depth.",
                     "default": _LOCKED_INFERENCE_PROFILE["dense_octree_depth"],
                     "minimum": 8,
-                    "maximum":  10,
+                    "maximum":  8,
                     "readOnly": True,
                     "required": False,
                 },
@@ -509,7 +515,7 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
                     "description": "Locked adapter-owned hierarchical extraction depth.",
                     "default": _LOCKED_INFERENCE_PROFILE["hierarchical_octree_depth"],
                     "minimum": 8,
-                    "maximum":  11,
+                    "maximum":  10,
                     "readOnly": True,
                     "required": False,
                 },

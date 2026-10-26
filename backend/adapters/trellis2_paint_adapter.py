@@ -85,12 +85,32 @@ class Trellis2ImageMeshPaintingAdapter(ImageToMeshModel):
             except Exception as fix_err:
                 logger.debug(f"apply_fix notice: {fix_err}")
             
+            if not torch.cuda.is_available():
+                raise RuntimeError("TRELLIS.2 requires CUDA; CPU inference is not supported.")
+            device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
+
+            is_low_vram = False
+            if self.resource_plan:
+                strategy = str(self.resource_plan.get("strategy", ""))
+                if "low_vram" in strategy:
+                    is_low_vram = True
+            if not is_low_vram and torch.cuda.is_available():
+                try:
+                    target_gpu = self.gpu_id if self.gpu_id is not None else 0
+                    total_mb = torch.cuda.get_device_properties(target_gpu).total_memory / (1024 * 1024)
+                    if total_mb < 20480:
+                        is_low_vram = True
+                except Exception:
+                    pass
+
             # Initialize TRELLIS.2 runner
             from utils.trellis2_utils import Trellis2Runner
             self.runner = Trellis2Runner(
                 trellis2_root=str(self.trellis2_root),
                 model_cache_dir=str(self.model_path),
-                device="cuda"
+                device=device,
+                resource_plan=self.resource_plan,
+                low_vram=is_low_vram,
             )
             
             # Pre-load the texturing pipeline

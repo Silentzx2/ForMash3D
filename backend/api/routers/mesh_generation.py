@@ -154,6 +154,23 @@ def _is_explicit_model_preference(model_preference: Optional[str]) -> bool:
     )
 
 
+def _get_loaded_models_from_scheduler(scheduler: Any) -> List[str]:
+    """Retrieve currently loaded models across scheduler workers."""
+    if scheduler is None:
+        return []
+    if hasattr(scheduler, "get_loaded_models") and callable(scheduler.get_loaded_models):
+        try:
+            return list(scheduler.get_loaded_models() or [])
+        except Exception as ex:
+            logger.warning("Failed to get loaded models from scheduler: %s", ex)
+    elif hasattr(scheduler, "worker_assignments"):
+        try:
+            return list(scheduler.worker_assignments.keys())
+        except Exception:
+            pass
+    return []
+
+
 # Enhanced Request models with file upload support
 class TextMeshPaintingRequest(BaseModel):
     """Request for text-based mesh painting"""
@@ -1080,16 +1097,21 @@ async def image_to_raw_mesh(
             "input_prep": mesh_request.input_prep,
         }
         from core.runtime_probe import probe_runtime
+        scheduler_loaded = _get_loaded_models_from_scheduler(scheduler)
         try:
-            runtime_facts = probe_runtime()
+            runtime_facts = probe_runtime(loaded_models=scheduler_loaded)
         except Exception as e:
             logger.warning("probe_runtime failed, using fallback runtime facts: %s", e)
             runtime_facts = {
                 "has_cuda": False,
                 "installed_adapters": [],
                 "enabled_adapters": [],
+                "loaded_models": scheduler_loaded,
                 "license_optins": {},
             }
+        existing_loaded = set(runtime_facts.get("loaded_models") or [])
+        existing_loaded.update(scheduler_loaded)
+        runtime_facts["loaded_models"] = list(existing_loaded)
         generation_plan = plan_generation(planner_req, runtime_facts)
         would_have_chosen = generation_plan.get("would_have_chosen") or generation_plan.get("adapter")
         logger.info("Planner would_have_chosen: %s, reasons: %s", would_have_chosen, generation_plan.get("reasons"))
@@ -1456,16 +1478,21 @@ async def image_to_textured_mesh(
             "input_prep": mesh_request.input_prep,
         }
         from core.runtime_probe import probe_runtime
+        scheduler_loaded = _get_loaded_models_from_scheduler(scheduler)
         try:
-            runtime_facts = probe_runtime()
+            runtime_facts = probe_runtime(loaded_models=scheduler_loaded)
         except Exception as e:
             logger.warning("probe_runtime failed, using fallback runtime facts: %s", e)
             runtime_facts = {
                 "has_cuda": False,
                 "installed_adapters": [],
                 "enabled_adapters": [],
+                "loaded_models": scheduler_loaded,
                 "license_optins": {},
             }
+        existing_loaded = set(runtime_facts.get("loaded_models") or [])
+        existing_loaded.update(scheduler_loaded)
+        runtime_facts["loaded_models"] = list(existing_loaded)
         generation_plan = plan_generation(planner_req, runtime_facts)
         would_have_chosen = generation_plan.get("would_have_chosen") or generation_plan.get("adapter")
         logger.info("Planner would_have_chosen: %s, reasons: %s", would_have_chosen, generation_plan.get("reasons"))

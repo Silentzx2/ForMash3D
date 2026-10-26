@@ -25,7 +25,10 @@ from core.utils.file_utils import OutputPathGenerator
 from core.utils.mesh_utils import MeshProcessor
 
 # Prevent CUDA memory fragmentation
-os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+if "PYTORCH_CUDA_ALLOC_CONF" not in os.environ:
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+elif "expandable_segments:True" not in os.environ["PYTORCH_CUDA_ALLOC_CONF"]:
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = f"{os.environ['PYTORCH_CUDA_ALLOC_CONF']},expandable_segments:True"
 
 logger = logging.getLogger(__name__)
 
@@ -202,6 +205,78 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
                 continue
         return None
 
+    def _find_local_image2normal(self) -> Optional[Path]:
+        """Find local image2normal directory containing 4-channel normal pipeline weights."""
+        candidates = [
+            Path(self.model_path) / "ckpt" / "image2normal",
+            Path(self.model_path) / "image2normal",
+            self.unique3d_root / "ckpt" / "image2normal",
+            Path("ckpt") / "image2normal",
+            Path("./ckpt/image2normal"),
+            Path("backend/ckpt") / "image2normal",
+            Path(__file__).resolve().parents[1] / "pretrained" / "Unique3D" / "ckpt" / "image2normal",
+            Path(__file__).resolve().parents[1] / "pretrained" / "Unique3D" / "image2normal",
+            Path(__file__).resolve().parents[2] / "pretrained" / "Unique3D" / "ckpt" / "image2normal",
+            Path(__file__).resolve().parents[2] / "pretrained" / "Unique3D" / "image2normal",
+        ]
+        if os.environ.get("PRETRAINED_DIR"):
+            p_dir = Path(os.environ["PRETRAINED_DIR"])
+            candidates.extend([p_dir / "Unique3D" / "ckpt" / "image2normal", p_dir / "Unique3D" / "image2normal"])
+        if os.environ.get("P3D_PRETRAINED_DIR"):
+            p_dir = Path(os.environ["P3D_PRETRAINED_DIR"])
+            candidates.extend([p_dir / "Unique3D" / "ckpt" / "image2normal", p_dir / "Unique3D" / "image2normal"])
+
+        for candidate in candidates:
+            try:
+                resolved = candidate.resolve()
+                if resolved.exists() and resolved.is_dir():
+                    if (resolved / "unet").exists() or (resolved / "model_index.json").exists() or (resolved / "image_encoder").exists():
+                        return resolved
+            except Exception:
+                continue
+        return None
+
+    def _ensure_checkpoints_downloaded(self):
+        """Auto-download Unique3D checkpoints if required UNet weights are missing."""
+        mvimg_unet = Path(self._find_checkpoint_file("img2mvimg/unet/diffusion_pytorch_model.safetensors"))
+        normal_unet = Path(self._find_checkpoint_file("image2normal/unet/diffusion_pytorch_model.safetensors"))
+        if mvimg_unet.is_file() and normal_unet.is_file():
+            return
+
+        logger.info(
+            f"Unique3D UNet weights missing (mvimg: {mvimg_unet.is_file()}, normal: {normal_unet.is_file()}). "
+            "Attempting automatic download from Wuvin/Unique3D..."
+        )
+        try:
+            self._sanitize_hf_tokens()
+            from huggingface_hub import snapshot_download
+            target_dir = Path(self.model_path).resolve()
+            target_dir.mkdir(parents=True, exist_ok=True)
+            snapshot_download(
+                repo_id="Wuvin/Unique3D",
+                repo_type="space",
+                allow_patterns=["ckpt/**/*", "ckpt/*"],
+                local_dir=str(target_dir),
+            )
+            # Create symlinks
+            ckpt_dir = target_dir / "ckpt"
+            if ckpt_dir.is_dir():
+                root_ckpt = Path("ckpt")
+                tp_ckpt = self.unique3d_root / "ckpt"
+                try:
+                    if not root_ckpt.exists():
+                        root_ckpt.symlink_to(ckpt_dir, target_is_directory=True)
+                except Exception:
+                    pass
+                try:
+                    if not tp_ckpt.exists():
+                        tp_ckpt.symlink_to(ckpt_dir, target_is_directory=True)
+                except Exception:
+                    pass
+            logger.info("Unique3D checkpoints downloaded successfully.")
+        except Exception as e:
+            logger.warning(f"Automatic download of Unique3D checkpoints failed: {e}")
+
     def _resolve_mvimg_config(self) -> str:
         """Resolve image2mvimage config to point to the actual local img2mvimg directory."""
         local_dir = self._find_local_img2mvimg()
@@ -348,7 +423,14 @@ trainers:
         The trained img2mvimg UNet has 8 input channels; image2normal checkpoint
         weights have 4-channel conv_in tensors and must not use that model as a base.
         """
-        base_model = "lambdalabs/sd-image-variations-diffusers"
+        local_dir = self._find_local_image2normal()
+        if local_dir:
+            abs_path_str = str(local_dir.resolve()).replace("\\", "/")
+            logger.info(f"Resolving image2normal using local directory: {abs_path_str}")
+            return self._create_normal_config_override(base_model=abs_path_str)
+
+        # Fallback to public compatible 4-channel repo if local weights not present
+        base_model = "lambda/sd-image-variations-diffusers"
         normal_cfg_path = Path(self.normal_config)
         cfg_content = ""
         if normal_cfg_path.is_file():
@@ -365,8 +447,7 @@ trainers:
             return str(normal_cfg_path)
 
         logger.info(
-            "Resolving image2normal with the compatible 4-channel image-variation base; "
-            "the 8-channel img2mvimg base is incompatible."
+            f"Resolving image2normal with remote 4-channel image-variation base: {base_model}"
         )
         self._sanitize_hf_tokens()
         return self._create_normal_config_override(base_model=base_model)
@@ -517,6 +598,7 @@ trainers:
             # Load multiview prediction pipeline (img2mvimg)
             logger.info("Loading multiview prediction pipeline (img2mvimg)...")
             self._ensure_unique3d_in_path()
+            self._ensure_checkpoints_downloaded()
             from app.custom_models.utils import load_pipeline
                 
             resolved_mvimg_config = self._resolve_mvimg_config()
@@ -587,6 +669,17 @@ trainers:
                 loaded_models["sr_model"] = self.sr_model
             except Exception as e:
                 logger.warning(f"Could not load super-resolution model: {e}")
+
+            # Check if ControlNet tile refinement pipeline can be initialized
+            try:
+                ckpt_tile = self._find_checkpoint_file("controlnet-tile")
+                if ckpt_tile and not getattr(self, "low_vram_mode", False):
+                    from app.all_models import model_zoo
+                    logger.info("Initializing Unique3D ControlNet-tile refinement pipeline...")
+                    model_zoo.init_models()
+                    loaded_models["refine_pipeline"] = getattr(model_zoo, "pipe_disney_controlnet_tile_ipadapter_i2i", None)
+            except Exception as e:
+                logger.warning(f"ControlNet tile refinement pipeline not initialized during load: {e}")
 
             # Enable attention & VAE slicing if available to reduce peak activation memory with ZERO quality loss
             for pipe in [self.mvimg_pipeline, self.normal_pipeline]:
@@ -740,6 +833,11 @@ trainers:
                 self.mvimg_pipeline.to(cuda_dev)
             except Exception:
                 pass
+        if self.mvimg_trainer is not None:
+            try:
+                self.mvimg_trainer.to(cuda_dev)
+            except Exception:
+                pass
 
         generator = torch.Generator(device=cuda_dev).manual_seed(int(seed)) if seed >= 0 else None
         
@@ -774,16 +872,30 @@ trainers:
     ) -> List[Image.Image]:
         """Run normal prediction on multiview images."""
         cuda_dev = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
-        if getattr(self, "low_vram_mode", False) and self.mvimg_pipeline is not None:
+        if self.mvimg_pipeline is not None:
             try:
                 self.mvimg_pipeline.to("cpu")
             except Exception:
                 pass
+        if self.mvimg_trainer is not None:
+            try:
+                self.mvimg_trainer.to("cpu")
+            except Exception:
+                pass
+        import gc
+        gc.collect()
+        if torch.cuda.is_available():
             torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()
 
         if self.normal_pipeline is not None:
             try:
                 self.normal_pipeline.to(cuda_dev)
+            except Exception:
+                pass
+        if self.normal_trainer is not None:
+            try:
+                self.normal_trainer.to(cuda_dev)
             except Exception:
                 pass
 
@@ -792,12 +904,17 @@ trainers:
             from scripts.utils import rotate_normals_torch
             img_list = images if isinstance(images, list) else [images]
             img_list = [rgba_to_rgb(i) if i.mode == 'RGBA' else i for i in img_list]
-            predicted = self.normal_trainer.pipeline_forward(
-                pipeline=self.normal_pipeline,
-                image=img_list,
-                num_inference_steps=num_inference_steps,
-                guidance_scale=guidance_scale,
-            ).images
+            predicted = []
+            for single_img in img_list:
+                out = self.normal_trainer.pipeline_forward(
+                    pipeline=self.normal_pipeline,
+                    image=[single_img],
+                    num_inference_steps=num_inference_steps,
+                    guidance_scale=guidance_scale,
+                ).images
+                predicted.extend(out)
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
             predicted = simple_remove(predicted)
             if do_rotate and len(predicted) > 1:
                 predicted = rotate_normals_torch(predicted, return_types='pil')
@@ -829,6 +946,14 @@ trainers:
         effective_do_refine = do_refine
         try:
             from app.all_models import model_zoo
+            if getattr(model_zoo, "pipe_disney_controlnet_tile_ipadapter_i2i", None) is None:
+                ckpt_tile = self._find_checkpoint_file("controlnet-tile")
+                if ckpt_tile and not getattr(self, "low_vram_mode", False):
+                    try:
+                        logger.info("Initializing Unique3D ControlNet-tile refinement pipeline...")
+                        model_zoo.init_models()
+                    except Exception as init_err:
+                        logger.warning(f"Could not initialize ControlNet tile pipeline: {init_err}")
             if getattr(model_zoo, "pipe_disney_controlnet_tile_ipadapter_i2i", None) is None:
                 effective_do_refine = False
         except Exception:
@@ -923,22 +1048,33 @@ trainers:
                 seed=seed
             )
 
-            # Move multiview pipeline to CPU to free VRAM for normal prediction & mesh reconstruction
+            # Move multiview pipeline and trainer to CPU to free VRAM for normal prediction & mesh reconstruction
             cuda_dev = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
-            if getattr(self, "low_vram_mode", False):
-                if self.mvimg_pipeline is not None:
-                    try:
-                        self.mvimg_pipeline.to("cpu")
-                    except Exception:
-                        pass
+            if self.mvimg_pipeline is not None:
+                try:
+                    self.mvimg_pipeline.to("cpu")
+                except Exception:
+                    pass
+            if self.mvimg_trainer is not None:
+                try:
+                    self.mvimg_trainer.to("cpu")
+                except Exception:
+                    pass
+            import gc
+            gc.collect()
+            if torch.cuda.is_available():
                 torch.cuda.empty_cache()
-                import gc
-                gc.collect()
+                torch.cuda.ipc_collect()
 
-            # Ensure normal prediction pipeline is loaded onto GPU
+            # Ensure normal prediction pipeline & trainer are loaded onto GPU
             if self.normal_pipeline is not None:
                 try:
                     self.normal_pipeline.to(cuda_dev)
+                except Exception:
+                    pass
+            if self.normal_trainer is not None:
+                try:
+                    self.normal_trainer.to(cuda_dev)
                 except Exception:
                     pass
 
@@ -954,16 +1090,22 @@ trainers:
                 init_type=init_type
             )
 
-            # Cleanup normal pipeline to CPU to free VRAM after reconstruction
-            if getattr(self, "low_vram_mode", False):
-                if self.normal_pipeline is not None:
-                    try:
-                        self.normal_pipeline.to("cpu")
-                    except Exception:
-                        pass
+            # Cleanup normal pipeline & trainer to CPU to free VRAM after reconstruction
+            if self.normal_pipeline is not None:
+                try:
+                    self.normal_pipeline.to("cpu")
+                except Exception:
+                    pass
+            if self.normal_trainer is not None:
+                try:
+                    self.normal_trainer.to("cpu")
+                except Exception:
+                    pass
+            import gc
+            gc.collect()
+            if torch.cuda.is_available():
                 torch.cuda.empty_cache()
-                import gc
-                gc.collect()
+                torch.cuda.ipc_collect()
 
             # Process mesh: adjust vertices for correct orientation
             from pytorch3d.structures import Meshes
