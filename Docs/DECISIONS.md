@@ -5,6 +5,21 @@
 
 ---
 
+## ADR-099: Raw Mesh Fidelity Preservation and Worker Load Timeout Extension (2026-10-26)
+
+**Context:** Raw 3D meshes exported by AI model adapters exhibited melted/soft surfaces, lost high-frequency features (faces, hard surfaces, weapons), and suffered from 600s worker timeouts during large checkpoint initialization on cloud/Kaggle environments. Furthermore, TRELLIS 1 raw meshes exhibited jagged needle spikes and boundary holes.
+
+**Decision:**
+1. In `MeshProcessor.save_mesh`, make `crease_angle_deg=None` default so raw geometric normals are preserved without forced angle-weighted normal clustering.
+2. In Hunyuan3D-2.1 adapters and `hunyuan3d_decoder_profile.py`, enable `FlashVDM` decoder and support dynamic `dmc` (Dual Marching Cubes) when `diso` is present, with graceful `mc` fallback.
+3. In Unique3D `simple_clean_mesh`, disable Laplacian smoothing and Loop subdivision for raw geometry generation.
+4. In Pixal3D adapter, set `remesh=False` in `to_glb`.
+5. In TRELLIS.2 adapter, enforce `max_num_tokens=524288` to prevent automatic cascade resolution degradation.
+6. In TRELLIS 1 adapter, apply topological hole filling (`fill_holes`, winding, normal repairs) and gentle volume-preserving Taubin smoothing (`filter_taubin(lamb=0.3, nu=-0.34, iterations=2)`).
+7. In `multiprocess_scheduler.py`, extend default `max_load_timeout` for heavy models from 600s to 1800s.
+
+---
+
 ## ADR-098: CPU Mode Skips Model Dependency Installation by Design (2026-10-23)
 
 **Context:** `scripts/setup.sh` and `backend/scripts/install.sh` unconditionally installed CUDA toolkit components, model adapters (TRELLIS, Hunyuan3D, TripoSG, Unique3D), and their heavy ML dependencies. On hosts without an NVIDIA GPU this wasted time, disk, and network, and could fail the whole setup when CUDA wheels or third-party model source were unavailable.

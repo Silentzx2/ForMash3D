@@ -1,3 +1,16 @@
+## 2026-10-26 — Raw mesh fidelity preservation, scheduler timeouts and geometry repairs
+
+- **Raw mesh detail preservation across AI models**:
+  - `MeshProcessor.save_mesh`: Set default `crease_angle_deg=None` so raw GLB export preserves native sharp geometric normals rather than overwriting vertices with angle-weighted smoothed clusters.
+  - Hunyuan3D-2.1 (`hunyuan3d_decoder_profile.py`, `hunyuan3d_shape_v21.py`, `hunyuan3d_dit_v2_mini_turbo.py`): Restored `FlashVDM` decoder support with dynamic `dmc` (Dual Marching Cubes via `diso`) / `mc` fallback; disabled automatic normal smoothing.
+  - Unique3D (`scripts/multiview_inference.py`): Disabled `apply_smooth` (Laplacian smoothing) and `apply_sub_divide` (Loop subdivision) in `simple_clean_mesh` to prevent melting hard features.
+  - Pixal3D (`pixal3d_adapter.py`): Set `remesh=False` in raw GLB export to avoid surface relaxation.
+  - TRELLIS.2 (`trellis2_adapter.py`, `trellis2_utils.py`): Enforced `max_num_tokens=524288` to prevent cascade resolution from silently falling back from 1536 to 512.
+- **TRELLIS 1 geometry repair and subtle smoothing**:
+  - `trellis_adapter.py`: Added automatic topological hole filling (`trimesh.repair.fill_holes`, winding, normal fixes) and two iterations of volume-preserving Taubin smoothing (`filter_taubin(lamb=0.3, nu=-0.34, iterations=2)`) to eliminate sparse-voxel needle spikes and boundary cracks while keeping sharp details intact.
+- **Worker initialization timeout extension**:
+  - `multiprocess_scheduler.py`: Increased `max_load_timeout` default from 600s to 1800s (30m) for heavy models (`trellis`, `hunyuan`, `unique3d`, `pixal`, `taoflow`) to prevent premature worker SIGKILL during large weight downloads and Kaggle/cloud disk initialization.
+
 ## 2026-10-24 — Postprocess texture, retopo fidelity and viewer shading guards
 
 - Auto-rig job scheduling now uses the canonical streaming SHA-256 helper instead of importing a deleted private pipeline symbol.

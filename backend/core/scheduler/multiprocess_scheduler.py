@@ -2922,11 +2922,11 @@ class MultiprocessModelScheduler:
                 try:
                     max_load_timeout = float(timeout_env)
                 except ValueError:
-                    max_load_timeout = 600.0
+                    max_load_timeout = 1800.0
             elif any(k in model_id.lower() for k in ("trellis", "hunyuan", "unique3d", "pixal", "taoflow")):
-                max_load_timeout = 600.0
+                max_load_timeout = 1800.0
             else:
-                max_load_timeout = 300.0
+                max_load_timeout = 600.0
             error_reason = f"Worker {worker_id} terminated unexpectedly during model initialization"
 
             while time.time() - start_wait < max_load_timeout:

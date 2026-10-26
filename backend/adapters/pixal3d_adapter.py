@@ -515,7 +515,7 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
             aabb=[[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]],
             decimation_target=1000000,
             texture_size=4096,
-            remesh=True,
+            remesh=False,
             remesh_band=1,
             remesh_project=0,
             use_tqdm=True,

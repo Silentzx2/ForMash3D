@@ -249,7 +249,7 @@ class Trellis2ImageToRawMeshAdapter(ImageToMeshModel):
             remesh_project = inputs.get("remesh_project", 0)
             seed = inputs.get("seed", None)
             pipeline_type = str(inputs.get("pipeline_type") or "1536_cascade")
-            max_num_tokens = int(inputs.get("max_num_tokens", 262144))
+            max_num_tokens = int(inputs.get("max_num_tokens", _LOCKED_INFERENCE_PROFILE["max_num_tokens"]))
             steps = inputs.get("steps") or inputs.get("num_inference_steps")
             default_steps = int(steps) if steps else 50
             # EXPERIMENTAL_MAX_DETAIL defaults from the community TRELLIS.2 issue #92.
