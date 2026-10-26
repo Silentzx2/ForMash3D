@@ -202,6 +202,43 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
                 continue
         return None
 
+    def _ensure_checkpoints_downloaded(self):
+        """Auto-download Unique3D checkpoints if required UNet weights are missing."""
+        mvimg_unet = Path(self._find_checkpoint_file("img2mvimg/unet/diffusion_pytorch_model.safetensors"))
+        if mvimg_unet.is_file():
+            return
+
+        logger.info(f"Unique3D UNet weights not found at {mvimg_unet}. Attempting automatic download from Wuvin/Unique3D...")
+        try:
+            self._sanitize_hf_tokens()
+            from huggingface_hub import snapshot_download
+            target_dir = Path(self.model_path).resolve()
+            target_dir.mkdir(parents=True, exist_ok=True)
+            snapshot_download(
+                repo_id="Wuvin/Unique3D",
+                repo_type="space",
+                allow_patterns=["ckpt/**/*", "ckpt/*"],
+                local_dir=str(target_dir),
+            )
+            # Create symlinks
+            ckpt_dir = target_dir / "ckpt"
+            if ckpt_dir.is_dir():
+                root_ckpt = Path("ckpt")
+                tp_ckpt = self.unique3d_root / "ckpt"
+                try:
+                    if not root_ckpt.exists():
+                        root_ckpt.symlink_to(ckpt_dir, target_is_directory=True)
+                except Exception:
+                    pass
+                try:
+                    if not tp_ckpt.exists():
+                        tp_ckpt.symlink_to(ckpt_dir, target_is_directory=True)
+                except Exception:
+                    pass
+            logger.info("Unique3D checkpoints downloaded successfully.")
+        except Exception as e:
+            logger.warning(f"Automatic download of Unique3D checkpoints failed: {e}")
+
     def _resolve_mvimg_config(self) -> str:
         """Resolve image2mvimage config to point to the actual local img2mvimg directory."""
         local_dir = self._find_local_img2mvimg()
@@ -517,6 +554,7 @@ trainers:
             # Load multiview prediction pipeline (img2mvimg)
             logger.info("Loading multiview prediction pipeline (img2mvimg)...")
             self._ensure_unique3d_in_path()
+            self._ensure_checkpoints_downloaded()
             from app.custom_models.utils import load_pipeline
                 
             resolved_mvimg_config = self._resolve_mvimg_config()

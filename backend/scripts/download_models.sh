@@ -682,9 +682,9 @@ download_unique3d() {
     local model_dir="$PRETRAINED_DIR/Unique3D"
     
     if [ "$FORCE_DOWNLOAD" = false ] && \
-       verify_directory "$model_dir/ckpt/controlnet-tile" 1 && \
-       verify_directory "$model_dir/ckpt/image2normal" 1 && \
-       verify_directory "$model_dir/ckpt/img2mvimg" 1 && \
+       verify_file "$model_dir/ckpt/controlnet-tile/diffusion_pytorch_model.safetensors" 100000000 && \
+       verify_file "$model_dir/ckpt/image2normal/unet/diffusion_pytorch_model.safetensors" 100000000 && \
+       verify_file "$model_dir/ckpt/img2mvimg/unet/diffusion_pytorch_model.safetensors" 100000000 && \
        verify_file "$model_dir/ckpt/realesrgan-x4.onnx" 50000000 && \
        verify_file "$model_dir/ckpt/v1-inference.yaml" 1000; then
         print_info "Unique3D model already exists and verified"
@@ -694,48 +694,13 @@ download_unique3d() {
     mkdir -p "$model_dir" 2>/dev/null || true
     ensure_writable_model_dir "$model_dir" || return 1
 
-    # Download controlnet-tile directory
-    print_info "Downloading Unique3D controlnet-tile..."
+    # Download all Unique3D checkpoints recursively from Wuvin/Unique3D space
+    print_info "Downloading Unique3D checkpoints (including UNet, VAE, ControlNet, ONNX)..."
     if ! hf_download --repo-type space Wuvin/Unique3D \
-        --include "ckpt/controlnet-tile/*" \
+        --include "ckpt/*" \
+        --include "ckpt/**/*" \
         --local-dir "$model_dir"; then
-        print_error "Failed to download controlnet-tile"
-        return 1
-    fi
-
-    # Download image2normal directory
-    print_info "Downloading Unique3D image2normal..."
-    if ! hf_download --repo-type space Wuvin/Unique3D \
-        --include "ckpt/image2normal/*" \
-        --local-dir "$model_dir"; then
-        print_error "Failed to download image2normal"
-        return 1
-    fi
-
-    # Download img2mvimg directory
-    print_info "Downloading Unique3D img2mvimg..."
-    if ! hf_download --repo-type space Wuvin/Unique3D \
-        --include "ckpt/img2mvimg/*" \
-        --local-dir "$model_dir"; then
-        print_error "Failed to download img2mvimg"
-        return 1
-    fi
-
-    # Download realesrgan-x4.onnx
-    print_info "Downloading Unique3D realesrgan-x4.onnx..."
-    if ! hf_download --repo-type space Wuvin/Unique3D \
-        --include "ckpt/realesrgan-x4.onnx" \
-        --local-dir "$model_dir"; then
-        print_error "Failed to download realesrgan-x4.onnx"
-        return 1
-    fi
-
-    # Download v1-inference.yaml
-    print_info "Downloading Unique3D v1-inference.yaml..."
-    if ! hf_download --repo-type space Wuvin/Unique3D \
-        --include "ckpt/v1-inference.yaml" \
-        --local-dir "$model_dir"; then
-        print_error "Failed to download v1-inference.yaml"
+        print_error "Failed to download Unique3D checkpoints"
         return 1
     fi
 
@@ -1005,9 +970,9 @@ verify_all_models() {
     verify_directory "$PRETRAINED_DIR/TRELLIS.2/TRELLIS.2-4B" 5 || all_verified=false
 
     print_info "Checking Unique3D..."
-    verify_directory "$PRETRAINED_DIR/Unique3D/ckpt/controlnet-tile" 1 || all_verified=false
-    verify_directory "$PRETRAINED_DIR/Unique3D/ckpt/image2normal" 1 || all_verified=false
-    verify_directory "$PRETRAINED_DIR/Unique3D/ckpt/img2mvimg" 1 || all_verified=false
+    verify_file "$PRETRAINED_DIR/Unique3D/ckpt/controlnet-tile/diffusion_pytorch_model.safetensors" 100000000 || all_verified=false
+    verify_file "$PRETRAINED_DIR/Unique3D/ckpt/image2normal/unet/diffusion_pytorch_model.safetensors" 100000000 || all_verified=false
+    verify_file "$PRETRAINED_DIR/Unique3D/ckpt/img2mvimg/unet/diffusion_pytorch_model.safetensors" 100000000 || all_verified=false
     verify_file "$PRETRAINED_DIR/Unique3D/ckpt/realesrgan-x4.onnx" 50000000 || all_verified=false
     verify_file "$PRETRAINED_DIR/Unique3D/ckpt/v1-inference.yaml" 1000 || all_verified=false
     
