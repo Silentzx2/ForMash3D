@@ -358,7 +358,7 @@ def plan_generation(
     enabled_adapters = runtime.get("enabled_adapters", [])
     license_optins = runtime.get("license_optins", {})
     has_cuda = runtime.get("has_cuda", False)
-    free_vram_gb = runtime.get("free_vram_gb")
+    free_vram_gb = runtime.get("freeable_vram_gb") if runtime.get("freeable_vram_gb") is not None else runtime.get("free_vram_gb")
 
     selected_candidate: Optional[Dict[str, Any]] = None
     selected_idx: int = -1
@@ -454,8 +454,9 @@ def plan_generation(
             low_vram_gb = round(float(low_vram_mb) / 1024.0, 2) if low_vram_mb is not None else 10.0
 
             gpu_count = int(runtime.get("gpu_count", 1 if has_cuda else 0))
-            aggregate_free_gb = runtime.get("aggregate_free_vram_gb") or free_vram_gb
-            max_free_gb = runtime.get("max_free_vram_gb") or free_vram_gb
+            aggregate_free_gb = runtime.get("aggregate_freeable_vram_gb") or runtime.get("aggregate_free_vram_gb") or free_vram_gb
+            max_free_gb = runtime.get("max_freeable_vram_gb") or runtime.get("max_free_vram_gb") or free_vram_gb
+            raw_max_free_gb = runtime.get("raw_max_free_vram_gb")
 
             req_low_vram = request.get("low_vram")
             if req_low_vram is None and isinstance(request.get("model_parameters"), dict):
@@ -466,6 +467,11 @@ def plan_generation(
                 reasons.append(f"Candidate '{cand_id}' is already loaded in worker memory.")
             # 1. Fits on single GPU
             elif max_free_gb is not None and max_free_gb >= vram_budget_gb:
+                if raw_max_free_gb is not None and raw_max_free_gb < vram_budget_gb:
+                    reasons.append(
+                        f"Candidate '{cand_id}' requires {vram_budget_gb} GB VRAM; accommodates by evicting idle workers "
+                        f"({raw_max_free_gb} GB free + {round(max_free_gb - raw_max_free_gb, 2)} GB freeable)."
+                    )
                 pass
             # 2. Fits across multiple GPUs (load sharing)
             elif multi_gpu and gpu_count > 1 and aggregate_free_gb is not None and aggregate_free_gb >= vram_budget_gb:

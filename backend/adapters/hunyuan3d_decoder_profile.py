@@ -1,6 +1,6 @@
 """Explicit fidelity-first volume/surface decoder contract for Hunyuan3D adapters."""
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 

@@ -1,3 +1,15 @@
+## 2026-10-26 — Unique3D gradient enable under scheduler and VRAM planner eviction
+
+- **Unique3D autograd under scheduler `torch.no_grad`**:
+  - `unique3d_adapter.py`: Wrapped `_run_geo_reconstruct` and mesh reconstruction inference within `torch.enable_grad()` and ensured mesh vertices have `requires_grad_(True)` so `loss.backward()` during iterative geometry deformation does not fail with `RuntimeError: element 0 of tensors does not require grad`.
+  - Submodule `backend/thirdparty/Unique3D`: Enabled autograd in `reconstruct_stage1`, `recon.py`, and `refine.py`.
+- **VRAM planner awareness & idle worker LRU eviction**:
+  - `mesh_generation.py`: Added `_augment_runtime_facts_with_freeable_vram` so API route validation counts VRAM held by idle workers as reclaimable capacity before calling `plan_generation`. Prevents HTTP 400 Bad Request rejection when switching models.
+  - `planner.py`: Updated candidate evaluation to acknowledge freeable VRAM when idle workers can be evicted.
+  - `multiprocess_scheduler.py`: Added `get_idle_workers_vram_by_gpu()` and `get_freeable_vram_by_gpu()`. Eviction logic now properly unloads idle workers across single- and multi-GPU configurations, strips unnecessary idle time gates, and destroys corrupt workers on fatal CUDA errors.
+- **Hunyuan3D decoder profile typing**:
+  - `hunyuan3d_decoder_profile.py`: Added missing `Optional` import to fix `NameError: name 'Optional' is not defined`.
+
 ## 2026-10-26 — Raw mesh fidelity preservation, scheduler timeouts and geometry repairs
 
 - **Raw mesh detail preservation across AI models**:
