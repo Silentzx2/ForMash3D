@@ -1,0 +1,79 @@
+import ast
+import os
+import sys
+from pathlib import Path
+import pytest
+
+ROOT = Path(__file__).resolve().parents[2]
+TRELLIS_DIR = ROOT / "backend" / "thirdparty" / "TRELLIS.2"
+
+
+def _read_ast(subpath: str) -> ast.AST:
+    file_path = TRELLIS_DIR / subpath
+    return ast.parse(file_path.read_text(encoding="utf-8"))
+
+
+def test_sparse_structure_flow_static_ast():
+    tree = _read_ast("trellis2/models/sparse_structure_flow.py")
+    source = (TRELLIS_DIR / "trellis2/models/sparse_structure_flow.py").read_text(encoding="utf-8")
+
+    # Verify input_layer casting before call
+    assert "input_dtype = self.input_layer.weight.dtype" in source
+    assert "self.input_layer(h)" in source
+    # Verify ape pos_emb dtype cast
+    assert "self.pos_emb[None].to(h.dtype)" in source
+    # Verify out_layer dtype cast
+    assert "out_dtype = self.out_layer.weight.dtype" in source
+    assert "self.out_layer(h)" in source
+    assert "manual_cast(h, x.dtype)" in source
+
+
+def test_sparse_linear_static_ast():
+    source = (TRELLIS_DIR / "trellis2/modules/sparse/linear.py").read_text(encoding="utf-8")
+    assert "feats.dtype != self.weight.dtype" in source
+    assert "feats = feats.to(self.weight.dtype)" in source
+
+
+def test_pipeline_noise_dtypes_static_ast():
+    source = (TRELLIS_DIR / "trellis2/pipelines/trellis2_image_to_3d.py").read_text(encoding="utf-8")
+    # Verify target_dtype used for noise in sample methods
+    assert "dtype=target_dtype" in source
+    assert "dtype=lr_dtype" in source
+    assert "dtype=hr_dtype" in source
+
+
+def test_sparse_structure_flow_and_linear_runtime():
+    torch = pytest.importorskip("torch")
+    sys.path.insert(0, str(TRELLIS_DIR))
+
+    from trellis2.models.sparse_structure_flow import SparseStructureFlowModel
+    from trellis2.modules.sparse.linear import SparseLinear
+    from trellis2.modules.sparse import VarLenTensor
+
+    # 1. SparseStructureFlowModel bfloat16 forward with float32 inputs
+    model = SparseStructureFlowModel(
+        resolution=4,
+        in_channels=4,
+        model_channels=16,
+        num_heads=1,
+        cond_channels=16,
+        out_channels=4,
+        num_blocks=1,
+        pe_mode="ape",
+        share_mod=True,
+    ).to(torch.bfloat16)
+
+    x = torch.randn(1, 4, 4, 4, 4, dtype=torch.float32)
+    t = torch.tensor([0.5], dtype=torch.float32)
+    cond = torch.randn(1, 4, 16, dtype=torch.float32)
+
+    out = model(x, t, cond)
+    assert out.shape == (1, 4, 4, 4, 4)
+    assert out.dtype == torch.float32, "Output must be cast back to x.dtype (float32)"
+
+    # 2. SparseLinear with mismatched dtype
+    linear = SparseLinear(8, 16).to(torch.bfloat16)
+    var_len = VarLenTensor(feats=torch.randn(10, 8, dtype=torch.float32), layout=[10])
+    out_lin = linear(var_len)
+    assert out_lin.feats.shape == (10, 16)
+    assert out_lin.feats.dtype == torch.bfloat16

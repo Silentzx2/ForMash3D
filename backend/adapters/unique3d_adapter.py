@@ -25,7 +25,10 @@ from core.utils.file_utils import OutputPathGenerator
 from core.utils.mesh_utils import MeshProcessor
 
 # Prevent CUDA memory fragmentation
-os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+if "PYTORCH_CUDA_ALLOC_CONF" not in os.environ:
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+elif "expandable_segments:True" not in os.environ["PYTORCH_CUDA_ALLOC_CONF"]:
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = f"{os.environ['PYTORCH_CUDA_ALLOC_CONF']},expandable_segments:True"
 
 logger = logging.getLogger(__name__)
 
@@ -830,6 +833,11 @@ trainers:
                 self.mvimg_pipeline.to(cuda_dev)
             except Exception:
                 pass
+        if self.mvimg_trainer is not None:
+            try:
+                self.mvimg_trainer.to(cuda_dev)
+            except Exception:
+                pass
 
         generator = torch.Generator(device=cuda_dev).manual_seed(int(seed)) if seed >= 0 else None
         
@@ -864,16 +872,30 @@ trainers:
     ) -> List[Image.Image]:
         """Run normal prediction on multiview images."""
         cuda_dev = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
-        if getattr(self, "low_vram_mode", False) and self.mvimg_pipeline is not None:
+        if self.mvimg_pipeline is not None:
             try:
                 self.mvimg_pipeline.to("cpu")
             except Exception:
                 pass
+        if self.mvimg_trainer is not None:
+            try:
+                self.mvimg_trainer.to("cpu")
+            except Exception:
+                pass
+        import gc
+        gc.collect()
+        if torch.cuda.is_available():
             torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()
 
         if self.normal_pipeline is not None:
             try:
                 self.normal_pipeline.to(cuda_dev)
+            except Exception:
+                pass
+        if self.normal_trainer is not None:
+            try:
+                self.normal_trainer.to(cuda_dev)
             except Exception:
                 pass
 
@@ -882,12 +904,17 @@ trainers:
             from scripts.utils import rotate_normals_torch
             img_list = images if isinstance(images, list) else [images]
             img_list = [rgba_to_rgb(i) if i.mode == 'RGBA' else i for i in img_list]
-            predicted = self.normal_trainer.pipeline_forward(
-                pipeline=self.normal_pipeline,
-                image=img_list,
-                num_inference_steps=num_inference_steps,
-                guidance_scale=guidance_scale,
-            ).images
+            predicted = []
+            for single_img in img_list:
+                out = self.normal_trainer.pipeline_forward(
+                    pipeline=self.normal_pipeline,
+                    image=[single_img],
+                    num_inference_steps=num_inference_steps,
+                    guidance_scale=guidance_scale,
+                ).images
+                predicted.extend(out)
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
             predicted = simple_remove(predicted)
             if do_rotate and len(predicted) > 1:
                 predicted = rotate_normals_torch(predicted, return_types='pil')
@@ -1021,22 +1048,33 @@ trainers:
                 seed=seed
             )
 
-            # Move multiview pipeline to CPU to free VRAM for normal prediction & mesh reconstruction
+            # Move multiview pipeline and trainer to CPU to free VRAM for normal prediction & mesh reconstruction
             cuda_dev = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
-            if getattr(self, "low_vram_mode", False):
-                if self.mvimg_pipeline is not None:
-                    try:
-                        self.mvimg_pipeline.to("cpu")
-                    except Exception:
-                        pass
+            if self.mvimg_pipeline is not None:
+                try:
+                    self.mvimg_pipeline.to("cpu")
+                except Exception:
+                    pass
+            if self.mvimg_trainer is not None:
+                try:
+                    self.mvimg_trainer.to("cpu")
+                except Exception:
+                    pass
+            import gc
+            gc.collect()
+            if torch.cuda.is_available():
                 torch.cuda.empty_cache()
-                import gc
-                gc.collect()
+                torch.cuda.ipc_collect()
 
-            # Ensure normal prediction pipeline is loaded onto GPU
+            # Ensure normal prediction pipeline & trainer are loaded onto GPU
             if self.normal_pipeline is not None:
                 try:
                     self.normal_pipeline.to(cuda_dev)
+                except Exception:
+                    pass
+            if self.normal_trainer is not None:
+                try:
+                    self.normal_trainer.to(cuda_dev)
                 except Exception:
                     pass
 
@@ -1052,16 +1090,22 @@ trainers:
                 init_type=init_type
             )
 
-            # Cleanup normal pipeline to CPU to free VRAM after reconstruction
-            if getattr(self, "low_vram_mode", False):
-                if self.normal_pipeline is not None:
-                    try:
-                        self.normal_pipeline.to("cpu")
-                    except Exception:
-                        pass
+            # Cleanup normal pipeline & trainer to CPU to free VRAM after reconstruction
+            if self.normal_pipeline is not None:
+                try:
+                    self.normal_pipeline.to("cpu")
+                except Exception:
+                    pass
+            if self.normal_trainer is not None:
+                try:
+                    self.normal_trainer.to("cpu")
+                except Exception:
+                    pass
+            import gc
+            gc.collect()
+            if torch.cuda.is_available():
                 torch.cuda.empty_cache()
-                import gc
-                gc.collect()
+                torch.cuda.ipc_collect()
 
             # Process mesh: adjust vertices for correct orientation
             from pytorch3d.structures import Meshes

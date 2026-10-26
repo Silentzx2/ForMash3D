@@ -7,7 +7,10 @@ from importlib.machinery import ModuleSpec
 from PIL import Image
 import pytest
 torch = pytest.importorskip("torch", reason="torch is required for Unique3D tests")
-pymeshlab = pytest.importorskip("pymeshlab", reason="pymeshlab is required for Unique3D tests")
+try:
+    import pymeshlab
+except ImportError:
+    pymeshlab = None
 if not hasattr(torch, "float16"):
     pytest.skip("torch does not have float16", allow_module_level=True)
 
@@ -35,7 +38,7 @@ class MockModule(types.ModuleType):
         return val
 
 class MockFinder(MetaPathFinder):
-    MOCK_PREFIXES = ("pytorch3d", "diffusers", "transformers", "rembg", "nvdiffrast", "torch_scatter")
+    MOCK_PREFIXES = ("pytorch3d", "diffusers", "transformers", "rembg", "nvdiffrast", "torch_scatter", "pymeshlab")
 
     def find_spec(self, fullname, path, target=None):
         if any(fullname == p or fullname.startswith(p + ".") for p in self.MOCK_PREFIXES):
