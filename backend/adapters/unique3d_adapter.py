@@ -959,15 +959,16 @@ trainers:
         except Exception:
             effective_do_refine = False
         
-        return geo_reconstruct(
-            rgb_pils=rgb_pils,
-            normal_pils=normal_pils,
-            front_pil=front_pil,
-            do_refine=effective_do_refine,
-            predict_normal=predict_normal,
-            expansion_weight=expansion_weight,
-            init_type=init_type
-        )
+        with torch.enable_grad():
+            return geo_reconstruct(
+                rgb_pils=rgb_pils,
+                normal_pils=normal_pils,
+                front_pil=front_pil,
+                do_refine=effective_do_refine,
+                predict_normal=predict_normal,
+                expansion_weight=expansion_weight,
+                init_type=init_type
+            )
 
     def _process_request(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -1080,15 +1081,16 @@ trainers:
 
             # Step 3: Geometry reconstruction and refinement (including high-res normal prediction)
             logger.info("Running geometry reconstruction and refinement...")
-            new_meshes = self._run_geo_reconstruct(
-                rgb_pils=rgb_pils,
-                normal_pils=None,
-                front_pil=front_pil,
-                do_refine=do_refine,
-                predict_normal=True,
-                expansion_weight=expansion_weight,
-                init_type=init_type
-            )
+            with torch.enable_grad():
+                new_meshes = self._run_geo_reconstruct(
+                    rgb_pils=rgb_pils,
+                    normal_pils=None,
+                    front_pil=front_pil,
+                    do_refine=do_refine,
+                    predict_normal=True,
+                    expansion_weight=expansion_weight,
+                    init_type=init_type
+                )
 
             # Cleanup normal pipeline & trainer to CPU to free VRAM after reconstruction
             if self.normal_pipeline is not None:
