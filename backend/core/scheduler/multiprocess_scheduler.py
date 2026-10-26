@@ -2858,9 +2858,18 @@ class MultiprocessModelScheduler:
 
             # Wait for worker process to initialize and report model load status
             init_success = False
-            error_reason = f"Worker {worker_id} terminated unexpectedly during model initialization"
             start_wait = time.time()
-            max_load_timeout = 180.0
+            timeout_env = os.environ.get("FORMSH3D_MODEL_LOAD_TIMEOUT")
+            if timeout_env:
+                try:
+                    max_load_timeout = float(timeout_env)
+                except ValueError:
+                    max_load_timeout = 600.0
+            elif any(k in model_id.lower() for k in ("trellis", "hunyuan", "unique3d", "pixal", "taoflow")):
+                max_load_timeout = 600.0
+            else:
+                max_load_timeout = 300.0
+            error_reason = f"Worker {worker_id} terminated unexpectedly during model initialization"
 
             while time.time() - start_wait < max_load_timeout:
                 # 1. Check response queue first before process status
@@ -2911,6 +2920,12 @@ class MultiprocessModelScheduler:
                     break
 
                 await asyncio.sleep(0.2)
+
+            if not init_success and worker_process.is_alive():
+                error_reason = (
+                    f"Worker {worker_id} timed out loading model '{model_id}' after {max_load_timeout:.0f}s. "
+                    "Model download or weights loading took longer than expected."
+                )
 
             if not init_success:
                 logger.error(

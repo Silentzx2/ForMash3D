@@ -498,6 +498,10 @@ download_trellis2() {
     print_info "Downloading TRELLIS.2-4B model (image-based generation only)..."
     if hf_download  microsoft/TRELLIS.2-4B --local-dir "$model_dir"; then
         print_success "TRELLIS.2-4B model downloaded successfully"
+        print_info "Ensuring TRELLIS.2 image conditioning (DinoV3) model is cached..."
+        hf_download camenduru/dinov3-vitl16-pretrain-lvd1689m || true
+        print_info "Ensuring TRELLIS.2 background removal (BiRefNet) model is cached..."
+        hf_download ZhengPeng7/BiRefNet || true
     else
         print_error "Failed to download TRELLIS.2-4B model"
         return 1
