@@ -171,6 +171,74 @@ def _get_loaded_models_from_scheduler(scheduler: Any) -> List[str]:
     return []
 
 
+def _augment_runtime_facts_with_freeable_vram(runtime_facts: Dict[str, Any], scheduler: Any) -> None:
+    """
+    Augment runtime_facts with freeable VRAM accounting for idle workers that can be evicted.
+    Updates free_vram_gb, max_free_vram_gb, and aggregate_free_vram_gb so planners
+    treat reclaimable memory as available for candidate evaluation.
+    """
+    if not runtime_facts or not runtime_facts.get("has_cuda"):
+        return
+    idle_vram_by_gpu: Dict[int, int] = {}
+    if scheduler is not None:
+        if hasattr(scheduler, "get_idle_workers_vram_by_gpu") and callable(scheduler.get_idle_workers_vram_by_gpu):
+            try:
+                idle_vram_by_gpu = scheduler.get_idle_workers_vram_by_gpu() or {}
+            except Exception as ex:
+                logger.warning("Failed to get idle workers VRAM from scheduler: %s", ex)
+        elif hasattr(scheduler, "worker_status") and hasattr(scheduler, "worker_configs"):
+            for wid, is_busy in getattr(scheduler, "worker_status", {}).items():
+                if not is_busy and getattr(scheduler, "worker_current_job", {}).get(wid) is None:
+                    cfg = getattr(scheduler, "worker_configs", {}).get(wid)
+                    if cfg:
+                        gid = getattr(cfg, "gpu_id", 0)
+                        if gid is not None:
+                            req = int((getattr(cfg, "model_config", {}) or {}).get("vram_requirement", 1024))
+                            idle_vram_by_gpu[int(gid)] = idle_vram_by_gpu.get(int(gid), 0) + req
+
+    if not idle_vram_by_gpu:
+        return
+
+    gpu_devices = runtime_facts.get("gpu_devices") or []
+    max_freeable_gb = 0.0
+    agg_freeable_gb = 0.0
+    for dev in gpu_devices:
+        dev_id = int(dev.get("id", 0))
+        cur_free = float(dev.get("free_vram_gb") or 0.0)
+        tot_vram = float(dev.get("total_vram_gb") or 0.0)
+        idle_gb = round(idle_vram_by_gpu.get(dev_id, 0) / 1024.0, 2)
+        freeable = cur_free + idle_gb
+        if tot_vram > 0:
+            freeable = min(tot_vram, freeable)
+        freeable = round(freeable, 2)
+        dev["freeable_vram_gb"] = freeable
+        dev["idle_worker_vram_gb"] = idle_gb
+        dev["raw_free_vram_gb"] = cur_free
+        max_freeable_gb = max(max_freeable_gb, freeable)
+        agg_freeable_gb += freeable
+
+    if not gpu_devices and runtime_facts.get("free_vram_gb") is not None:
+        cur_free = float(runtime_facts.get("free_vram_gb") or 0.0)
+        tot_vram = float(runtime_facts.get("total_vram_gb") or cur_free)
+        idle_gb = round(sum(idle_vram_by_gpu.values()) / 1024.0, 2)
+        freeable = round(min(tot_vram, cur_free + idle_gb) if tot_vram > 0 else (cur_free + idle_gb), 2)
+        max_freeable_gb = freeable
+        agg_freeable_gb = freeable
+
+    runtime_facts["raw_free_vram_gb"] = runtime_facts.get("free_vram_gb")
+    runtime_facts["raw_max_free_vram_gb"] = runtime_facts.get("max_free_vram_gb")
+    runtime_facts["raw_aggregate_free_vram_gb"] = runtime_facts.get("aggregate_free_vram_gb")
+
+    runtime_facts["freeable_vram_gb"] = max_freeable_gb
+    runtime_facts["max_freeable_vram_gb"] = max_freeable_gb
+    runtime_facts["aggregate_freeable_vram_gb"] = agg_freeable_gb
+
+    # Update the planner free VRAM fields to reflect freeable VRAM
+    runtime_facts["free_vram_gb"] = max_freeable_gb
+    runtime_facts["max_free_vram_gb"] = max_freeable_gb
+    runtime_facts["aggregate_free_vram_gb"] = agg_freeable_gb
+
+
 # Enhanced Request models with file upload support
 class TextMeshPaintingRequest(BaseModel):
     """Request for text-based mesh painting"""
@@ -1112,6 +1180,7 @@ async def image_to_raw_mesh(
         existing_loaded = set(runtime_facts.get("loaded_models") or [])
         existing_loaded.update(scheduler_loaded)
         runtime_facts["loaded_models"] = list(existing_loaded)
+        _augment_runtime_facts_with_freeable_vram(runtime_facts, scheduler)
         generation_plan = plan_generation(planner_req, runtime_facts)
         would_have_chosen = generation_plan.get("would_have_chosen") or generation_plan.get("adapter")
         logger.info("Planner would_have_chosen: %s, reasons: %s", would_have_chosen, generation_plan.get("reasons"))
@@ -1493,6 +1562,7 @@ async def image_to_textured_mesh(
         existing_loaded = set(runtime_facts.get("loaded_models") or [])
         existing_loaded.update(scheduler_loaded)
         runtime_facts["loaded_models"] = list(existing_loaded)
+        _augment_runtime_facts_with_freeable_vram(runtime_facts, scheduler)
         generation_plan = plan_generation(planner_req, runtime_facts)
         would_have_chosen = generation_plan.get("would_have_chosen") or generation_plan.get("adapter")
         logger.info("Planner would_have_chosen: %s, reasons: %s", would_have_chosen, generation_plan.get("reasons"))

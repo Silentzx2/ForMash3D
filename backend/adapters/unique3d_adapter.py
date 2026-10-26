@@ -823,8 +823,17 @@ trainers:
         from rembg import remove as rembg_remove
         from scripts.utils import session as rembg_session
         
-        if remove_bg and (image.mode == "RGB" or np.array(image)[..., -1].mean() == 255.):
-            image = rembg_remove(image, session=rembg_session)
+        if remove_bg:
+            needs_rembg = True
+            if image.mode == "RGBA":
+                alpha = np.array(image)[..., -1]
+                if alpha.mean() < 220.0 and (alpha == 0).sum() > 500:
+                    needs_rembg = False
+            if needs_rembg:
+                try:
+                    image = rembg_remove(image, session=rembg_session)
+                except Exception as e_rem:
+                    logger.warning(f"rembg background removal failed: {e_rem}")
         
         
         cuda_dev = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
@@ -935,8 +944,9 @@ trainers:
         front_pil: Image.Image,
         do_refine: bool = True,
         predict_normal: bool = True,
-        expansion_weight: float = 1.5,
-        init_type: str = "std"
+        expansion_weight: float = 0.1,
+        init_type: str = "std",
+        apply_texture: bool = False
     ):
         """Run geometry reconstruction and refinement."""
         self._ensure_unique3d_in_path()
@@ -959,15 +969,20 @@ trainers:
         except Exception:
             effective_do_refine = False
         
-        return geo_reconstruct(
-            rgb_pils=rgb_pils,
-            normal_pils=normal_pils,
-            front_pil=front_pil,
-            do_refine=effective_do_refine,
-            predict_normal=predict_normal,
-            expansion_weight=expansion_weight,
-            init_type=init_type
-        )
+        call_kwargs = {
+            "rgb_pils": rgb_pils,
+            "normal_pils": normal_pils,
+            "front_pil": front_pil,
+            "do_refine": effective_do_refine,
+            "predict_normal": predict_normal,
+            "expansion_weight": expansion_weight,
+            "init_type": init_type,
+        }
+        if apply_texture:
+            call_kwargs["apply_texture"] = True
+
+        with torch.enable_grad():
+            return geo_reconstruct(**call_kwargs)
 
     def _process_request(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -1080,15 +1095,17 @@ trainers:
 
             # Step 3: Geometry reconstruction and refinement (including high-res normal prediction)
             logger.info("Running geometry reconstruction and refinement...")
-            new_meshes = self._run_geo_reconstruct(
-                rgb_pils=rgb_pils,
-                normal_pils=None,
-                front_pil=front_pil,
-                do_refine=do_refine,
-                predict_normal=True,
-                expansion_weight=expansion_weight,
-                init_type=init_type
-            )
+            with torch.enable_grad():
+                new_meshes = self._run_geo_reconstruct(
+                    rgb_pils=rgb_pils,
+                    normal_pils=None,
+                    front_pil=front_pil,
+                    do_refine=do_refine,
+                    predict_normal=True,
+                    expansion_weight=expansion_weight,
+                    init_type=init_type,
+                    apply_texture=False
+                )
 
             # Cleanup normal pipeline & trainer to CPU to free VRAM after reconstruction
             if self.normal_pipeline is not None:
@@ -1107,18 +1124,19 @@ trainers:
                 torch.cuda.empty_cache()
                 torch.cuda.ipc_collect()
 
-            # Process mesh: adjust vertices for correct orientation
+            # Process mesh: scale adjustment
             from pytorch3d.structures import Meshes
             vertices = new_meshes.verts_packed()
             vertices = vertices / 2 * 1.35
-            vertices[..., [0, 2]] = - vertices[..., [0, 2]]
+            # Note: save_py3dmesh_with_trimesh_fast already applies [0, 2] = -[0, 2] for GLB export.
+            # Do NOT invert here to avoid double-inversion!
             new_meshes = Meshes(
                 verts=[vertices], 
                 faces=new_meshes.faces_list(), 
-                textures=new_meshes.textures
+                textures=None
             )
 
-            # Step 5: Save mesh
+            # Step 5: Save raw untextured mesh
             from scripts.utils import save_glb_and_video
             
             ret_mesh, _ = save_glb_and_video(
@@ -1128,7 +1146,8 @@ trainers:
                 dist=3.5, 
                 fov_in_degrees=2 / 1.35, 
                 cam_type="ortho", 
-                export_video=False
+                export_video=False,
+                include_vertex_color=False
             )
 
             # Convert format if needed
@@ -1143,6 +1162,24 @@ trainers:
                 self.mesh_processor.save_mesh(mesh, final_output_path, do_normalise=False)
             else:
                 shutil.move(ret_mesh, final_output_path)
+
+            # Filter out tiny disconnected floating debris and ensure clean raw geometry
+            try:
+                import trimesh
+                clean_mesh = trimesh.load(final_output_path, force="mesh", process=False)
+                if isinstance(clean_mesh, trimesh.Trimesh):
+                    comps = clean_mesh.split(only_watertight=False)
+                    if len(comps) > 1:
+                        total_f = len(clean_mesh.faces)
+                        keep = [c for c in comps if len(c.faces) >= max(30, int(total_f * 0.05))]
+                        if keep:
+                            clean_mesh = trimesh.util.concatenate(keep)
+                        else:
+                            clean_mesh = max(comps, key=lambda c: len(c.faces))
+                    clean_mesh.remove_unreferenced_vertices()
+                    clean_mesh.export(final_output_path)
+            except Exception as e_clean:
+                logger.warning(f"Post-cleanup of Unique3D mesh failed: {e_clean}")
 
             # Load final mesh for statistics
             final_mesh = self.mesh_processor.load_mesh(final_output_path)
@@ -1159,8 +1196,8 @@ trainers:
                     "vertex_count": mesh_stats["vertex_count"],
                     "face_count": mesh_stats["face_count"],
                     "has_texture": False,
-                    "has_vertex_color": True,
-                    "vertex_color": True,
+                    "has_vertex_color": False,
+                    "vertex_color": False,
                     "seed": seed,
                     "source_quality": inputs.get("source_quality", "max"),
                     "native_vertex_count": mesh_stats["vertex_count"],

@@ -700,6 +700,14 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
                 # Rotate from TRELLIS z-up to standard y-up coordinates (x'=x, y'=z, z'=-y)
                 vertices = vertices @ np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]])
                 mesh = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
+                # Repair sparse-voxel boundary holes and apply gentle volume-preserving Taubin smoothing
+                try:
+                    trimesh.repair.fill_holes(mesh)
+                    trimesh.repair.fix_winding(mesh)
+                    trimesh.repair.fix_normals(mesh)
+                    trimesh.smoothing.filter_taubin(mesh, lamb=0.3, nu=-0.34, iterations=2)
+                except Exception as _t_repair_err:
+                    logger.debug("TRELLIS-1 subtle repair note: %s", _t_repair_err)
                 if hasattr(mesh, "vertex_normals"):
                     _ = mesh.vertex_normals
                 has_texture = False

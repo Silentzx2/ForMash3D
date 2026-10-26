@@ -348,7 +348,7 @@ class Trellis2Runner:
         verbose: bool = True,
         raw_mesh_only: bool = True,
         pipeline_type: str = "1536_cascade",
-        max_num_tokens: int = 262144,
+        max_num_tokens: int = 524288,
         sparse_structure_sampler_params: Optional[Dict[str, Any]] = None,
         shape_slat_sampler_params: Optional[Dict[str, Any]] = None,
         tex_slat_sampler_params: Optional[Dict[str, Any]] = None,

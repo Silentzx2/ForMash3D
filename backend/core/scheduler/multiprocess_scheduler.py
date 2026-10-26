@@ -1444,9 +1444,14 @@ class MultiprocessModelScheduler:
         if hasattr(self.job_queue, "request_cancel"):
             await self.job_queue.request_cancel(job_id)
 
+        # Cleanup any dead/stuck workers to reclaim GPU memory immediately
+        try:
+            await self._cleanup_dead_workers(run_once=True)
+        except Exception as e_clean:
+            logger.debug("Worker cleanup during cancel encountered error: %s", e_clean)
+
         if not stopped:
             logger.info("No live worker found for processing job %s; set cooperative cancel request", job_id)
-            return False
 
         self._cleanup_temporary_inputs(job)
         return True
@@ -1642,6 +1647,66 @@ class MultiprocessModelScheduler:
                         loaded.append(m_id)
 
         return loaded
+
+    def get_idle_workers_vram_by_gpu(self) -> Dict[int, int]:
+        """
+        Get total VRAM (in MB) held by idle workers per GPU.
+        A worker is considered idle if it is not currently executing a job.
+        Returns a dict mapping gpu_id -> total_idle_vram_mb.
+        """
+        idle_vram_by_gpu: Dict[int, int] = {}
+        current_jobs = getattr(self, "worker_current_job", {})
+        workers_dict = getattr(self, "workers", {})
+        configs_dict = getattr(self, "worker_configs", {})
+        for worker_id, is_busy in list(getattr(self, "worker_status", {}).items()):
+            if is_busy:
+                continue
+            if current_jobs.get(worker_id) is not None:
+                continue
+            proc = workers_dict.get(worker_id)
+            if proc is not None and hasattr(proc, "is_alive") and not proc.is_alive():
+                continue
+            config = configs_dict.get(worker_id)
+            if not config:
+                continue
+            resource_plan = getattr(config, "resource_plan", None)
+            reservation_mb = resource_plan.get("reservation_mb") if isinstance(resource_plan, dict) else None
+            if reservation_mb and isinstance(reservation_mb, dict):
+                for gid, vram_mb in reservation_mb.items():
+                    try:
+                        gid_int = int(gid)
+                        idle_vram_by_gpu[gid_int] = idle_vram_by_gpu.get(gid_int, 0) + int(vram_mb)
+                    except (ValueError, TypeError):
+                        pass
+            elif getattr(config, "gpu_id", None) is not None:
+                try:
+                    gid_int = int(config.gpu_id)
+                    model_cfg = getattr(config, "model_config", {})
+                    if not isinstance(model_cfg, dict):
+                        model_cfg = {}
+                    req_vram = int(model_cfg.get("vram_requirement", 1024))
+                    idle_vram_by_gpu[gid_int] = idle_vram_by_gpu.get(gid_int, 0) + req_vram
+                except (ValueError, TypeError):
+                    pass
+        return idle_vram_by_gpu
+
+    def get_freeable_vram_by_gpu(self) -> Dict[int, int]:
+        """
+        Get total available VRAM (in MB) per GPU including freeable VRAM from idle workers.
+        """
+        idle_map = self.get_idle_workers_vram_by_gpu()
+        result: Dict[int, int] = {}
+        gpu_status = self.gpu_monitor.get_gpu_status()
+        for gpu_info in gpu_status:
+            gpu_id = int(gpu_info["id"])
+            current_avail = self.gpu_monitor.get_gpu_available_vram(gpu_id)
+            idle_mb = idle_map.get(gpu_id, 0)
+            total_mb = int(gpu_info.get("memory_total") or gpu_info.get("total_mb") or 0)
+            freeable = current_avail + idle_mb
+            if total_mb > 0:
+                freeable = min(total_mb, freeable)
+            result[gpu_id] = freeable
+        return result
 
     def _is_job_impossible(self, job_request: JobRequest) -> tuple[bool, str]:
         """
@@ -2654,23 +2719,36 @@ class MultiprocessModelScheduler:
 
     async def _stop_worker_for_job(self, job_id: str, reason: str) -> bool:
         """Terminate the worker owning a job and release its resources."""
+        current_jobs = getattr(self, "worker_current_job", {})
         worker_id = next(
-            (wid for wid, current_job in self.worker_current_job.items()
+            (wid for wid, current_job in current_jobs.items()
              if current_job == job_id),
             None,
         )
         if not worker_id:
+            callback_id = getattr(self, "job_to_callback", {}).get(job_id)
+            if callback_id:
+                worker_id = next(
+                    (wid for wid, cb in getattr(self, "worker_current_callback", {}).items()
+                     if cb == callback_id),
+                    None,
+                )
+        if not worker_id:
             return False
 
-        callback_id = self.worker_current_callback.get(worker_id)
-        with self.result_lock:
-            future = self.pending_results.pop(callback_id, None) if callback_id else None
-            self.job_to_callback.pop(job_id, None)
+        callback_id = getattr(self, "worker_current_callback", {}).get(worker_id)
+        with getattr(self, "result_lock", threading.Lock()):
+            future = getattr(self, "pending_results", {}).pop(callback_id, None) if callback_id else None
+            getattr(self, "job_to_callback", {}).pop(job_id, None)
 
-        process = self.workers.get(worker_id)
+        process = getattr(self, "workers", {}).get(worker_id)
         if process and process.is_alive():
             process.terminate()
             await asyncio.to_thread(process.join, 2.0)
+            if process.is_alive():
+                logger.warning(f"Worker {worker_id} did not terminate after SIGTERM; killing with SIGKILL")
+                process.kill()
+                await asyncio.to_thread(process.join, 1.0)
 
         await self._destroy_worker(worker_id)
 
@@ -2813,7 +2891,18 @@ class MultiprocessModelScheduler:
             # Multi-GPU LRU eviction: if no GPU has enough free VRAM, evict idle workers
             # starting with the oldest idle (LRU) on the GPU where the new model will fit.
             required_vram = int(model_config.get("vram_requirement", 1024))
-            await self._evict_lru_workers_to_free_vram(required_vram, model_config)
+            caps = dict(model_config.get("capabilities") or {})
+            low_vram_supported = (
+                bool(caps.get("low_vram_supported"))
+                or bool(caps.get("cpu_offload"))
+                or "low_vram_requirement" in model_config
+            )
+            low_vram_req = int(model_config.get("low_vram_requirement") or 10240) if low_vram_supported else required_vram
+
+            evicted = await self._evict_lru_workers_to_free_vram(required_vram, model_config)
+            if not evicted and low_vram_supported and low_vram_req < required_vram:
+                await self._evict_lru_workers_to_free_vram(low_vram_req, model_config)
+
             resource_plan = self.resource_planner.plan(
                 model_config,
                 active_workers=self.resource_planner.cpu_worker_limit(len(self.workers)),
@@ -2845,21 +2934,31 @@ class MultiprocessModelScheduler:
                     model_config,
                     active_workers=self.resource_planner.cpu_worker_limit(len(self.workers)),
                 )
+                if resource_plan is None and not (model_config.get("capabilities") or {}).get("cpu_only"):
+                    required_vram = int(model_config.get("vram_requirement", 1024))
+                    await self._evict_lru_workers_to_free_vram(required_vram, model_config)
+                    resource_plan = self.resource_planner.plan(
+                        model_config,
+                        active_workers=self.resource_planner.cpu_worker_limit(len(self.workers)),
+                    )
                 if resource_plan is None:
                     return None
 
             allocated = []
             for plan_gpu, plan_vram in resource_plan.reservation_mb.items():
                 if not self.gpu_monitor.allocate_vram(int(plan_gpu), int(plan_vram)):
-                    for allocated_gpu, allocated_vram in allocated:
-                        self.gpu_monitor.deallocate_vram(allocated_gpu, allocated_vram)
-                    logger.error(
-                        "Failed to reserve %sMB on GPU %s for model %s",
-                        plan_vram,
-                        plan_gpu,
-                        model_id,
-                    )
-                    return None
+                    # Attempt eviction of idle workers on this specific GPU
+                    await self._ensure_vram_available(int(plan_vram), int(plan_gpu))
+                    if not self.gpu_monitor.allocate_vram(int(plan_gpu), int(plan_vram)):
+                        for allocated_gpu, allocated_vram in allocated:
+                            self.gpu_monitor.deallocate_vram(allocated_gpu, allocated_vram)
+                        logger.error(
+                            "Failed to reserve %sMB on GPU %s for model %s",
+                            plan_vram,
+                            plan_gpu,
+                            model_id,
+                        )
+                        return None
                 allocated.append((int(plan_gpu), int(plan_vram)))
 
             primary_gpu = resource_plan.primary_gpu
@@ -2922,11 +3021,11 @@ class MultiprocessModelScheduler:
                 try:
                     max_load_timeout = float(timeout_env)
                 except ValueError:
-                    max_load_timeout = 600.0
+                    max_load_timeout = 1800.0
             elif any(k in model_id.lower() for k in ("trellis", "hunyuan", "unique3d", "pixal", "taoflow")):
-                max_load_timeout = 600.0
+                max_load_timeout = 1800.0
             else:
-                max_load_timeout = 300.0
+                max_load_timeout = 600.0
             error_reason = f"Worker {worker_id} terminated unexpectedly during model initialization"
 
             while time.time() - start_wait < max_load_timeout:
@@ -3043,30 +3142,45 @@ class MultiprocessModelScheduler:
             # Find idle workers on this GPU
             idle_workers_on_gpu = []
             current_time = time.time()
+            current_jobs = getattr(self, "worker_current_job", {})
 
-            for worker_id, is_busy in self.worker_status.items():
-                logger.info(f"Worker {worker_id} is busy: {is_busy}")
-                if not is_busy:
-                    worker_config = self.worker_configs[worker_id]
-                    if worker_config.gpu_id == gpu_id:
-                        last_used = self.worker_last_used.get(worker_id, current_time)
+            for worker_id, is_busy in list(getattr(self, "worker_status", {}).items()):
+                if not is_busy and current_jobs.get(worker_id) is None:
+                    worker_config = getattr(self, "worker_configs", {}).get(worker_id)
+                    if not worker_config:
+                        continue
+                    res_plan = getattr(worker_config, "resource_plan", None)
+                    res_mb = res_plan.get("reservation_mb") if isinstance(res_plan, dict) else {}
+                    if not isinstance(res_mb, dict):
+                        res_mb = {}
+                    worker_gpu_id = getattr(worker_config, "gpu_id", None)
+                    worker_gpu_ids = getattr(worker_config, "gpu_ids", None)
+                    if not isinstance(worker_gpu_ids, (list, tuple)):
+                        worker_gpu_ids = []
+                    if (
+                        worker_gpu_id == gpu_id
+                        or gpu_id in worker_gpu_ids
+                        or str(gpu_id) in res_mb
+                        or gpu_id in res_mb
+                    ):
+                        last_used = getattr(self, "worker_last_used", {}).get(worker_id, current_time)
+                        if not isinstance(last_used, (int, float)):
+                            last_used = current_time
                         idle_time = current_time - last_used
-
-                        # Only consider workers that have been idle for a reasonable time
-                        if idle_time > 10:  # 10 seconds
-                            worker_vram = worker_config.model_config.get(
-                                "vram_requirement", 1024
-                            )
-                            idle_workers_on_gpu.append(
-                                (worker_id, idle_time, worker_vram)
-                            )
-                            logger.info(
-                                f"Worker {worker_id} has been idle for {idle_time} seconds"
-                            )
-                        else:
-                            logger.info(
-                                f"Worker {worker_id} hasn't been idle for enough time: {idle_time}"
-                            )
+                        model_cfg = getattr(worker_config, "model_config", {})
+                        if not isinstance(model_cfg, dict):
+                            model_cfg = {}
+                        worker_vram = int(
+                            res_mb.get(gpu_id)
+                            or res_mb.get(str(gpu_id))
+                            or model_cfg.get("vram_requirement", 1024)
+                        )
+                        idle_workers_on_gpu.append(
+                            (worker_id, idle_time, worker_vram)
+                        )
+                        logger.info(
+                            f"Worker {worker_id} is idle ({idle_time:.1f}s) holding {worker_vram}MB on GPU {gpu_id}"
+                        )
 
             # Sort by idle time (longest idle first)
             idle_workers_on_gpu.sort(key=lambda x: x[1], reverse=True)
@@ -3118,12 +3232,37 @@ class MultiprocessModelScheduler:
             needed = required_vram - current_available
 
             idle_on_gpu = []
-            for worker_id, is_busy in self.worker_status.items():
-                if not is_busy:
-                    cfg = self.worker_configs.get(worker_id)
-                    if cfg and cfg.gpu_id == gpu_id:
-                        last_used = self.worker_last_used.get(worker_id, current_time)
-                        worker_vram = int(cfg.model_config.get("vram_requirement", 1024))
+            current_jobs = getattr(self, "worker_current_job", {})
+            for worker_id, is_busy in list(getattr(self, "worker_status", {}).items()):
+                if not is_busy and current_jobs.get(worker_id) is None:
+                    cfg = getattr(self, "worker_configs", {}).get(worker_id)
+                    if not cfg:
+                        continue
+                    res_plan = getattr(cfg, "resource_plan", None)
+                    res_mb = res_plan.get("reservation_mb") if isinstance(res_plan, dict) else {}
+                    if not isinstance(res_mb, dict):
+                        res_mb = {}
+                    worker_gpu_id = getattr(cfg, "gpu_id", None)
+                    worker_gpu_ids = getattr(cfg, "gpu_ids", None)
+                    if not isinstance(worker_gpu_ids, (list, tuple)):
+                        worker_gpu_ids = []
+                    if (
+                        worker_gpu_id == gpu_id
+                        or gpu_id in worker_gpu_ids
+                        or str(gpu_id) in res_mb
+                        or gpu_id in res_mb
+                    ):
+                        last_used = getattr(self, "worker_last_used", {}).get(worker_id, current_time)
+                        if not isinstance(last_used, (int, float)):
+                            last_used = current_time
+                        model_cfg = getattr(cfg, "model_config", {})
+                        if not isinstance(model_cfg, dict):
+                            model_cfg = {}
+                        worker_vram = int(
+                            res_mb.get(gpu_id)
+                            or res_mb.get(str(gpu_id))
+                            or model_cfg.get("vram_requirement", 1024)
+                        )
                         idle_on_gpu.append((worker_id, last_used, worker_vram))
 
             # Oldest idle first (LRU)
@@ -3193,17 +3332,30 @@ class MultiprocessModelScheduler:
             # Find idle workers on the target GPU to destroy
             idle_workers = []
             current_time = time.time()
+            current_jobs = getattr(self, "worker_current_job", {})
 
-            for worker_id, is_busy in self.worker_status.items():
-                if not is_busy:
-                    worker_config = self.worker_configs.get(worker_id)
+            for worker_id, is_busy in list(getattr(self, "worker_status", {}).items()):
+                if not is_busy and current_jobs.get(worker_id) is None:
+                    worker_config = getattr(self, "worker_configs", {}).get(worker_id)
                     if not worker_config:
                         continue
-                    worker_gpu_id = worker_config.gpu_id
-
-                    # Only consider workers on the target GPU
-                    if worker_gpu_id == target_gpu_id:
-                        last_used = self.worker_last_used.get(worker_id, current_time)
+                    res_plan = getattr(worker_config, "resource_plan", None)
+                    res_mb = res_plan.get("reservation_mb") if isinstance(res_plan, dict) else {}
+                    if not isinstance(res_mb, dict):
+                        res_mb = {}
+                    worker_gpu_id = getattr(worker_config, "gpu_id", None)
+                    worker_gpu_ids = getattr(worker_config, "gpu_ids", None)
+                    if not isinstance(worker_gpu_ids, (list, tuple)):
+                        worker_gpu_ids = []
+                    if (
+                        worker_gpu_id == target_gpu_id
+                        or target_gpu_id in worker_gpu_ids
+                        or str(target_gpu_id) in res_mb
+                        or target_gpu_id in res_mb
+                    ):
+                        last_used = getattr(self, "worker_last_used", {}).get(worker_id, current_time)
+                        if not isinstance(last_used, (int, float)):
+                            last_used = current_time
                         idle_time = current_time - last_used
                         idle_workers.append((worker_id, idle_time))
 
@@ -3346,6 +3498,18 @@ class MultiprocessModelScheduler:
                                 # Mark worker as available again
                                 self._mark_worker_available(worker_id)
                                 logger.debug(f"Marked worker {worker_id} as available")
+
+                                # If worker experienced a fatal CUDA error or crashed, destroy it to release GPU state
+                                if not success and isinstance(result, dict):
+                                    err_str = str(result.get("error", "")).lower()
+                                    if any(kw in err_str for kw in ["out of memory", "cuda error", "illegal memory access", "all cuda-capable devices are busy"]):
+                                        logger.warning(
+                                            f"Worker {worker_id} encountered fatal CUDA error; destroying worker to release resources: {err_str}"
+                                        )
+                                        if self.main_event_loop:
+                                            self.main_event_loop.call_soon_threadsafe(
+                                                lambda wid=worker_id: asyncio.create_task(self._destroy_worker(wid))
+                                            )
 
                                 # Set result in event loop
                                 if self.main_event_loop and not future.done():

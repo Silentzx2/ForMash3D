@@ -367,20 +367,26 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
             seed = int(inputs.get("seed", 42))
             generator = torch.Generator(device=self.device).manual_seed(seed)
 
-            configure_native_dense_decoder(self.pipeline_shapegen, "Hunyuan3D-Shape-v2.1")
+            algo = inputs.get("mc_algo", "mc")
+            try:
+                import diso
+                algo = "dmc"
+            except ImportError:
+                pass
+            configure_native_dense_decoder(self.pipeline_shapegen, "Hunyuan3D-Shape-v2.1", mc_algo=algo)
             mesh_result = self.pipeline_shapegen(
                 image=image,
                 octree_resolution=octree_res,
                 num_inference_steps=num_steps,
                 guidance_scale=guidance_scale,
                 num_chunks=num_chunks,
-                mc_algo=inputs["mc_algo"],
+                mc_algo=algo,
                 generator=generator,
             )[0]
 
             base_name = f"{self.model_id}_{image_path.stem}"
             output_path = self._generate_output_path(base_name, output_format)
-            self.mesh_processor.save_mesh(mesh_result, output_path, do_normalise=False, crease_angle_deg=45.0)
+            self.mesh_processor.save_mesh(mesh_result, output_path, do_normalise=False, crease_angle_deg=None)
 
             final_mesh = self.mesh_processor.load_mesh(output_path)
             mesh_stats = self.mesh_processor.get_mesh_stats(final_mesh)

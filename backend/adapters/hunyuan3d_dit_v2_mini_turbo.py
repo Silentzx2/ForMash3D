@@ -357,14 +357,20 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
             seed = int(inputs.get("seed", 42))
             generator = torch.Generator(device=self.device).manual_seed(seed)
 
-            configure_native_dense_decoder(self.pipeline, "Hunyuan3D-DiT-v2-mini-Turbo")
+            algo = inputs.get("mc_algo", "mc")
+            try:
+                import diso
+                algo = "dmc"
+            except ImportError:
+                pass
+            configure_native_dense_decoder(self.pipeline, "Hunyuan3D-DiT-v2-mini-Turbo", mc_algo=algo)
             mesh_result = self.pipeline(
                 image=image,
                 octree_resolution=octree_res,
                 num_inference_steps=num_steps,
                 guidance_scale=guidance_scale,
                 num_chunks=num_chunks,
-                mc_algo=inputs["mc_algo"],
+                mc_algo=algo,
                 generator=generator,
             )[0]
 

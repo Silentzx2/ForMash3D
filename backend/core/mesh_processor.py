@@ -639,7 +639,7 @@ class MeshProcessor:
         output_path: Union[str, Path],
         format: str = "glb",
         do_normalise: bool = True,
-        crease_angle_deg: Optional[float] = 45.0,
+        crease_angle_deg: Optional[float] = None,
     ) -> Path:
         """Save a mesh to file with optimal angle-weighted normals and sharp edge preservation."""
         output_path = Path(output_path)
