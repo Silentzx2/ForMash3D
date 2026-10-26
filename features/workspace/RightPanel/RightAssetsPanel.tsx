@@ -168,7 +168,7 @@ export const RightAssetsPanel: React.FC = () => {
   const paginatedAssets = filteredAssets.slice((safePage - 1) * ITEMS_PER_PAGE, safePage * ITEMS_PER_PAGE);
 
   return (
-    <div id="panel-assets-library" className="flex flex-col h-full bg-[#16171B] text-xs select-none">
+    <div id="panel-assets-library" className="flex flex-col h-full bg-[hsl(var(--surface-1))] text-xs select-none">
       {/* Hidden file input for uploading custom 3D files */}
       <input
         ref={fileInputRef}
@@ -180,7 +180,7 @@ export const RightAssetsPanel: React.FC = () => {
       />
 
       {/* Top Action Sub-bar */}
-      <div className="px-2.5 py-2 border-b border-white/[0.06] bg-[#16171B]">
+      <div className="px-2.5 py-2 border-b border-white/[0.08] bg-[hsl(var(--surface-1))]">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5">
             {/* GridIcon / All View */}
@@ -348,14 +348,14 @@ export const RightAssetsPanel: React.FC = () => {
           onDrop={handleDrop}
           onClick={() => !uploadActive && fileInputRef.current?.click()}
           aria-disabled={uploadActive}
-          className={`group relative w-full studio-card border-dashed ${uploadActive ? 'cursor-wait opacity-60' : 'cursor-pointer'} p-3 flex flex-col items-center justify-center text-center transition-all ${
+          className={`group relative w-full rounded-xl border border-dashed ${uploadActive ? 'cursor-wait opacity-60' : 'cursor-pointer'} p-3 flex flex-col items-center justify-center text-center transition-all ${
             isDragOver
-              ? 'border-primary bg-primary/15 shadow-[0_0_16px_rgba(245,197,66,0.25)]'
-              : 'hover:border-primary/70 hover:bg-[#242732]'
+              ? 'border-primary bg-primary/15 shadow-[0_0_16px_rgba(255,204,0,0.25)]'
+              : 'border-white/[0.12] hover:border-primary/70 bg-[hsl(var(--surface-0))] hover:bg-[hsl(var(--surface-1))]'
           }`}
         >
           <div className="flex flex-col items-center justify-center">
-            <div className={`w-9 h-9 rounded-full bg-[#16171B] border border-white/[0.08] flex items-center justify-center transition-all mb-1.5 ${
+            <div className={`w-9 h-9 rounded-full bg-[hsl(var(--surface-2))] border border-white/[0.08] flex items-center justify-center transition-all mb-1.5 ${
               isDragOver ? 'text-primary border-primary' : 'text-zinc-400 group-hover:text-primary group-hover:border-primary/40'
             }`}>
               <HugeiconsIcon icon={Box} size={16} className="w-4 h-4" />
@@ -363,7 +363,7 @@ export const RightAssetsPanel: React.FC = () => {
             <span className="text-xs font-bold text-white leading-tight">
               {isDragOver ? 'Drop 3D Model Here' : 'Import 3D Model'}
             </span>
-            <span className="text-[10px] text-zinc-400 mt-0.5 font-medium font-mono">
+            <span className="text-[10px] text-zinc-400 mt-0.5 font-medium">
               GLB, GLTF, OBJ, FBX, STL, PLY
             </span>
           </div>
@@ -392,10 +392,10 @@ export const RightAssetsPanel: React.FC = () => {
                   e.dataTransfer.effectAllowed = 'copyMove';
                 }}
                 onClick={() => setCurrentAsset(asset)}
-                className={`group relative studio-card overflow-hidden cursor-grab active:cursor-grabbing transition-all aspect-square flex flex-col ${
+                className={`group relative rounded-xl overflow-hidden cursor-grab active:cursor-grabbing transition-all aspect-square flex flex-col ${
                   isSelected
-                    ? 'ring-2 ring-primary bg-[#1D1F26] shadow-md shadow-primary/15'
-                    : 'hover:border-white/[0.2] hover:bg-[#242732]'
+                    ? 'ring-2 ring-[hsl(var(--primary))] bg-[hsl(var(--surface-2))] shadow-md shadow-[hsl(var(--primary))]/15'
+                    : 'border border-white/[0.08] bg-[hsl(var(--surface-0))] hover:border-white/[0.2] hover:bg-[#1A1B1F]'
                 }`}
                 title={`Click or drag "${asset.name}" into 3D Viewport`}
               >
@@ -409,11 +409,11 @@ export const RightAssetsPanel: React.FC = () => {
                       crossOrigin="anonymous"
                     />
                   ) : (
-                    <div className="w-full h-full flex flex-col items-center justify-center bg-[#16171B] gap-1 p-1">
-                      <div className="w-7 h-7 rounded-lg bg-[#1D1F26] border border-white/[0.08] flex items-center justify-center">
+                    <div className="w-full h-full flex flex-col items-center justify-center bg-[hsl(var(--surface-1))] gap-1 p-1">
+                      <div className="w-7 h-7 rounded-lg bg-[hsl(var(--surface-2))] border border-white/[0.08] flex items-center justify-center">
                         <HugeiconsIcon icon={Box} size={16} className="w-4 h-4 text-zinc-400" />
                       </div>
-                      <span className="text-[9px] font-bold font-mono text-zinc-400 uppercase">
+                      <span className="text-[9px] font-bold text-zinc-400 uppercase">
                         {asset.format}
                       </span>
                     </div>
@@ -443,20 +443,13 @@ export const RightAssetsPanel: React.FC = () => {
                   )}
                 </div>
 
-                {/* Bottom Asset Label & Telemetry */}
-                <div className="px-2 py-1.5 bg-[#16171B] border-t border-white/[0.06] flex items-center justify-between gap-1">
-                  <div className="flex flex-col min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <span className={`text-xs truncate font-medium ${isSelected ? 'text-primary font-bold' : 'text-zinc-200'}`}>
-                        {asset.name}
-                      </span>
-                      <QualityBadge asset={asset} size="sm" />
-                    </div>
-                    {asset.vertices !== undefined && asset.vertices > 0 && (
-                      <span className="text-[9px] font-mono text-zinc-400 truncate">
-                        {(asset.vertices / 1000).toFixed(1)}k v · {(asset.faces ? (asset.faces / 1000).toFixed(1) + 'k f' : asset.format)}
-                      </span>
-                    )}
+                {/* Bottom Asset Label */}
+                <div className="px-2 py-1.5 bg-[hsl(var(--surface-1))] border-t border-white/[0.06] flex items-center justify-between gap-1">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className={`text-xs truncate font-medium ${isSelected ? 'text-primary font-bold' : 'text-zinc-200'}`}>
+                      {asset.name}
+                    </span>
+                    <QualityBadge asset={asset} size="sm" />
                   </div>
 
                   {/* 3-Dots Menu */}
@@ -594,7 +587,7 @@ export const RightAssetsPanel: React.FC = () => {
       </div>
 
       {/* Pagination Footer */}
-      <div className="px-3 py-2 border-t border-white/[0.06] bg-[#16171B] flex items-center justify-between text-xs text-zinc-400">
+      <div className="px-3 py-2 border-t border-white/[0.08] bg-[hsl(var(--surface-1))] flex items-center justify-between text-xs text-zinc-400">
         <span className="text-[10px] text-zinc-500 font-mono">
           Page {safePage} of {totalPages}
         </span>

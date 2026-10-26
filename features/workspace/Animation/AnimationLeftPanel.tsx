@@ -332,7 +332,7 @@ export const AnimationLeftPanel: React.FC = () => {
   return (
     <aside
       id="animation-generation-panel"
-      className="w-full h-full bg-[#16171B] border-r border-white/[0.06] flex flex-col select-none text-zinc-200"
+      className="w-full h-full bg-[hsl(var(--surface-1))] border-r border-white/[0.08] flex flex-col select-none text-zinc-200"
     >
       {/* Scrollable Container */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
@@ -388,7 +388,7 @@ export const AnimationLeftPanel: React.FC = () => {
               </div>
 
               {/* Symmetry / X-Mirror Toggle */}
-              <div className="flex items-center justify-between p-2.5 studio-card">
+              <div className="flex items-center justify-between p-2.5 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08]">
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-semibold text-zinc-200">X-Mirror Symmetry</span>
                   <span className="text-[10px] text-zinc-400">Auto-mirror left/right</span>
@@ -405,7 +405,7 @@ export const AnimationLeftPanel: React.FC = () => {
 
               {/* Rotation Euler Controls for Selected Bone */}
               {selectedBone && (
-                <div className="p-3 studio-card space-y-3">
+                <div className="p-3 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08] space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-white flex items-center gap-1.5">
                       <HugeiconsIcon icon={RotateCw} size={16} className="w-3.5 h-3.5 text-primary" />
@@ -564,7 +564,7 @@ export const AnimationLeftPanel: React.FC = () => {
                     </select>
                   </div>
 
-                  <div className="p-3 studio-card flex items-center justify-between gap-3">
+                  <div className="p-3 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08] flex items-center justify-between gap-3">
                     <div className="min-w-0">
                       <span className="text-xs font-bold text-white truncate block">{currentAsset?.name || 'Target character'}</span>
                       <p className="text-[10px] text-zinc-300 font-mono mt-0.5">
@@ -582,7 +582,7 @@ export const AnimationLeftPanel: React.FC = () => {
                     </span>
                   </div>
 
-                  <div className="space-y-2 p-3 studio-card text-xs">
+                  <div className="space-y-2 p-3 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08] text-xs">
                     {([
                       ['scaleNormalization', 'Scale Normalization'],
                       ['footContactLock', 'Foot Contact Lock'],
@@ -616,7 +616,7 @@ export const AnimationLeftPanel: React.FC = () => {
             /* 4. DEFAULT TEXT TO MOTION GENERATION MODE */
             <div className="space-y-4">
             {/* Quick-Apply Animation Preset Library */}
-            <div className="space-y-2 p-3 studio-card">
+            <div className="space-y-2 p-3 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08]">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-white flex items-center gap-1.5">
                   <span className="text-primary text-xs">⚡</span>
@@ -819,7 +819,7 @@ export const AnimationLeftPanel: React.FC = () => {
 
             {/* Progress Stage */}
             {motionAiIsGenerating && (
-              <div className="p-3 studio-card border-primary/30 space-y-2">
+              <div className="p-3 rounded-xl bg-[hsl(var(--surface-0))] border border-primary/30 space-y-2">
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-semibold text-zinc-200 flex items-center gap-1.5">
                     <HugeiconsIcon icon={LoaderCircle} size={16} className="w-3.5 h-3.5 text-primary animate-spin" />
@@ -848,7 +848,7 @@ export const AnimationLeftPanel: React.FC = () => {
               <button
                 disabled={motionAiIsGenerating || !hasRig}
                 onClick={handleGenerate}
-                className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 bg-[#F5C542] hover:bg-[#FFE066] disabled:opacity-50 disabled:cursor-not-allowed text-black font-bold text-xs rounded-xl shadow-[0_4px_16px_rgba(245,197,66,0.25)] hover:shadow-[0_6px_20px_rgba(245,197,66,0.35)] active:scale-[0.98] transition-all cursor-pointer ${motionAiIsGenerating ? 'is-executing' : ''}`}
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 bg-gradient-to-r from-[#FFE066] via-[#FFCC00] to-[#E09800] hover:brightness-105 disabled:opacity-50 disabled:cursor-not-allowed text-[#080808] font-black text-xs rounded-xl shadow-[0_4px_16px_rgba(255,204,0,0.38)] active:scale-[0.98] transition-all cursor-pointer btn-lighting-shine ${motionAiIsGenerating ? 'is-executing' : ''}`}
               >
                 {motionAiIsGenerating ? (
                   <>
@@ -865,7 +865,7 @@ export const AnimationLeftPanel: React.FC = () => {
 
               <button
                 onClick={() => setInspectorTab('animation')}
-                className="p-2.5 rounded-xl bg-[#242732] hover:bg-[#2c303f] border border-white/[0.06] text-zinc-300 hover:text-white transition-colors cursor-pointer"
+                className="p-2.5 rounded-xl bg-[hsl(var(--surface-0))] hover:bg-[hsl(var(--surface-2))] border border-white/[0.08] text-zinc-300 hover:text-white transition-colors cursor-pointer"
                 title="Open Advanced ARDY Settings"
               >
                 <HugeiconsIcon icon={SlidersHorizontalIcon} size={16} className="w-4 h-4 text-primary" />
@@ -877,7 +877,7 @@ export const AnimationLeftPanel: React.FC = () => {
       </div>
 
       {/* Target Asset Footer */}
-      <div className="p-3 border-t border-white/[0.06] bg-[#16171B] text-xs text-zinc-400 flex items-center justify-between">
+      <div className="p-3 border-t border-white/[0.08] bg-[hsl(var(--surface-0))] text-xs text-zinc-400 flex items-center justify-between">
         <div className="truncate">
           <span className="text-[10px] text-zinc-400 block uppercase font-bold tracking-wider">Target Character</span>
           <span className="text-zinc-200 font-semibold truncate block">

@@ -320,7 +320,7 @@ export const ModelComparisonViewer: React.FC<ModelComparisonViewerProps> = ({
     containerRefs.forEach((containerRef, index) => {
       if (containerRef && !renderers[index]) {
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25));
+        renderer.setPixelRatio(window.devicePixelRatio || 1);
         renderer.setSize(containerRef.clientWidth, containerRef.clientHeight);
         containerRef.appendChild(renderer.domElement);
         const renderersCopy = [...renderers];

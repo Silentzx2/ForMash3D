@@ -6,55 +6,55 @@
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
-  --background: 222 25% 4%;
+  --background: 0 0% 3.1%;
   --foreground: 0 0% 96%;
-  --card: 222 16% 13%;
+  --card: 0 0% 6.7%;
   --card-foreground: 0 0% 96%;
-  --popover: 222 16% 13%;
+  --popover: 0 0% 10.2%;
   --popover-foreground: 0 0% 96%;
-  --primary: 43 89% 61%;
-  --primary-foreground: 0 0% 0%;
-  --secondary: 222 18% 10%;
+  --primary: 48 100% 50%;
+  --primary-foreground: 0 0% 5%;
+  --secondary: 0 0% 10.2%;
   --secondary-foreground: 0 0% 96%;
-  --muted: 222 14% 17%;
+  --muted: 0 0% 14.1%;
   --muted-foreground: 0 0% 63%;
-  --accent: 43 89% 61%;
-  --accent-foreground: 0 0% 0%;
+  --accent: 48 100% 50%;
+  --accent-foreground: 0 0% 5%;
   --destructive: 0 72% 56%;
   --destructive-foreground: 0 0% 100%;
-  --border: 0 0% 100% / 0.06;
-  --input: 222 14% 17%;
-  --ring: 43 89% 61%;
-  --surface-0: 222 25% 4%;
-  --surface-1: 222 18% 10%;
-  --surface-2: 222 16% 13%;
-  --surface-3: 222 14% 17%;
-  --surface-4: 222 14% 22%;
-  --studio-gray-1: 222 25% 4%;
-  --studio-gray-2: 222 18% 10%;
-  --studio-gray-3: 222 16% 13%;
-  --studio-gray-4: 222 14% 17%;
+  --border: 0 0% 22%;
+  --input: 0 0% 14.1%;
+  --ring: 48 100% 50%;
+  --surface-0: 0 0% 3.1%;
+  --surface-1: 0 0% 7.5%;
+  --surface-2: 0 0% 11.5%;
+  --surface-3: 0 0% 15.5%;
+  --surface-4: 0 0% 22%;
+  --studio-gray-1: 0 0% 3.1%;
+  --studio-gray-2: 0 0% 7.5%;
+  --studio-gray-3: 0 0% 11.5%;
+  --studio-gray-4: 0 0% 15.5%;
   --studio-gray-100: 0 0% 96%;
   --studio-gray-200: 0 0% 75%;
   --studio-gray-300: 0 0% 63%;
-  --studio-yellow-1: 43 89% 61%;
+  --studio-yellow-1: 48 100% 50%;
   --studio-white-5: 0 0% 100% / 0.05;
   --studio-white-10: 0 0% 100% / 0.1;
-  --neon-purple: 43 89% 61%;
-  --neon-amber: 43 89% 61%;
+  --neon-purple: 48 100% 50%;
+  --neon-amber: 48 100% 50%;
   --neon-blue: 45 100% 70%;
   --neon-cyan: 45 100% 70%;
-  --neon-pink: 43 89% 61%;
+  --neon-pink: 44 89% 61%;
   --neon-green: 142 71% 45%;
   --neon-orange: 38 92% 50%;
   --green-500: 142 71% 45%;
   --blue-500: 210 90% 55%;
-  --purple-500: 43 89% 61%;
-  --amber-500: 43 89% 61%;
+  --purple-500: 44 89% 61%;
+  --amber-500: 44 89% 61%;
   --cyan-500: 45 100% 70%;
   --orange-500: 38 92% 50%;
   --red-500: 0 72% 56%;
-  --chart-1: 43 89% 61%;
+  --chart-1: 44 89% 61%;
   --chart-2: 45 100% 70%;
   --chart-3: 0 0% 62.7%;
   --chart-4: 45 100% 43.9%;
@@ -283,21 +283,21 @@
     transition: all 250ms cubic-bezier(0.16, 1, 0.3, 1);
   }
   .card-depth:hover {
-    border-color: rgba(245, 197, 66, 0.5);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 24px rgba(245, 197, 66, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 204, 0, 0.5);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 24px rgba(255, 204, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.12);
     transform: translateY(-1px);
   }
 
   .btn-accent {
-    background: linear-gradient(135deg, #FFE066 0%, #F5C542 50%, #E0A800 100%);
+    background: linear-gradient(135deg, #FFE066 0%, #FFCC00 50%, #E09800 100%);
     color: #080808;
     font-weight: 800;
     border-top: 1px solid rgba(255, 255, 255, 0.6);
-    box-shadow: 0 4px 18px -2px rgba(245, 197, 66, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+    box-shadow: 0 4px 18px -2px rgba(255, 204, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.5);
     transition: all 200ms ease-out;
   }
   .btn-accent:hover {
-    box-shadow: 0 6px 28px rgba(245, 197, 66, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+    box-shadow: 0 6px 28px rgba(255, 204, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.7);
     filter: brightness(1.05);
     transform: translateY(-1px);
   }
@@ -323,7 +323,7 @@
       transparent 0%,
       rgba(255, 255, 255, 0.2) 20%,
       rgba(255, 255, 255, 0.75) 50%,
-      rgba(245, 197, 66, 0.8) 70%,
+      rgba(255, 204, 0, 0.8) 70%,
       transparent 100%
     );
     transform: rotate(25deg);
@@ -371,8 +371,8 @@
     transition: all 250ms cubic-bezier(0.16, 1, 0.3, 1);
   }
   .glass-card-interactive:hover {
-    border-color: rgba(245, 197, 66, 0.5);
-    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6), 0 0 20px rgba(245, 197, 66, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 204, 0, 0.5);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6), 0 0 20px rgba(255, 204, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.15);
     transform: translateY(-1px);
   }
 
@@ -1095,31 +1095,6 @@
 
 @layer utilities {
 
-  /* ── Studio Design System Primitives ────────────────────── */
-  .studio-dock {
-    @apply bg-[#16171B] border border-white/[0.06] rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.6)] backdrop-blur-xl;
-  }
-
-  .studio-card {
-    @apply bg-[#1D1F26] border border-white/[0.06] rounded-xl;
-  }
-
-  .studio-pill-track {
-    @apply bg-[#1C1D22] border border-white/[0.06] rounded-full p-1;
-  }
-
-  .studio-pill-active {
-    @apply bg-[#272930] text-white rounded-full shadow-sm;
-  }
-
-  .studio-generate-btn {
-    @apply bg-[#F5C542] hover:bg-[#FFE066] text-black font-bold rounded-full h-11 transition-all active:scale-[0.98];
-  }
-
-  .studio-canvas-vignette {
-    background: radial-gradient(circle at center, #23262D 0%, #111215 100%);
-  }
-
   /* ── Animation Delays ──────────────────────────────────── */
 
   .animate-delay-75 { animation-delay: 75ms; }
@@ -1696,52 +1671,52 @@ input[type="radio"], [role="switch"], [role="checkbox"],
 html.dark {
   color-scheme: dark;
 
-  --background: 222 25% 4%;
+  --background: 0 0% 3.1%;
   --foreground: 0 0% 96%;
-  --card: 222 16% 13%;
+  --card: 0 0% 6.7%;
   --card-foreground: 0 0% 96%;
-  --popover: 222 16% 13%;
+  --popover: 0 0% 10.2%;
   --popover-foreground: 0 0% 96%;
-  --secondary: 222 18% 10%;
+  --secondary: 0 0% 10.2%;
   --secondary-foreground: 0 0% 96%;
-  --muted: 222 14% 17%;
+  --muted: 0 0% 14.1%;
   --muted-foreground: 0 0% 63%;
   --destructive: 0 72% 56%;
   --destructive-foreground: 0 0% 100%;
-  --border: 0 0% 100% / 0.06;
-  --input: 222 14% 17%;
+  --border: 0 0% 22%;
+  --input: 0 0% 14.1%;
 
-  --surface-0: 222 25% 4%;
-  --surface-1: 222 18% 10%;
-  --surface-2: 222 16% 13%;
-  --surface-3: 222 14% 17%;
-  --surface-4: 222 14% 22%;
+  --surface-0: 0 0% 3.1%;
+  --surface-1: 0 0% 7.5%;
+  --surface-2: 0 0% 11.5%;
+  --surface-3: 0 0% 15.5%;
+  --surface-4: 0 0% 22%;
 
-  --primary: 43 89% 61%;
-  --primary-foreground: 0 0% 0%;
-  --ring: 43 89% 61%;
-  --accent: 43 89% 61%;
-  --accent-foreground: 0 0% 0%;
+  --primary: 44 89% 61%;
+  --primary-foreground: 0 0% 5%;
+  --ring: 44 89% 61%;
+  --accent: 44 89% 61%;
+  --accent-foreground: 0 0% 5%;
 
-  --neon-purple: 43 89% 61%;
-  --neon-amber: 43 89% 61%;
+  --neon-purple: 44 89% 61%;
+  --neon-amber: 44 89% 61%;
   --neon-blue: 45 100% 70%;
   --neon-cyan: 45 100% 70%;
-  --neon-pink: 43 89% 61%;
+  --neon-pink: 44 89% 61%;
   --neon-green: 142 71% 45%;
 
-  --studio-gray-1: 222 25% 4%;
-  --studio-gray-2: 222 18% 10%;
-  --studio-gray-3: 222 16% 13%;
-  --studio-gray-4: 222 14% 17%;
+  --studio-gray-1: 0 0% 3.1%;
+  --studio-gray-2: 0 0% 7.5%;
+  --studio-gray-3: 0 0% 11.5%;
+  --studio-gray-4: 0 0% 15.5%;
   --studio-gray-100: 0 0% 96%;
   --studio-gray-200: 0 0% 75%;
   --studio-gray-300: 0 0% 63%;
-  --studio-yellow-1: 43 89% 61%;
+  --studio-yellow-1: 44 89% 61%;
   --studio-white-5: 0 0% 100% / 0.05;
   --studio-white-10: 0 0% 100% / 0.1;
 
-  --chart-1: 43 89% 61%;
+  --chart-1: 44 89% 61%;
   --chart-2: 45 100% 70%;
   --chart-3: 0 0% 62.7%;
   --chart-4: 45 100% 43.9%;
@@ -2570,7 +2545,7 @@ html.reduced-animations *::after {
   inset: 0;
   border-radius: inherit;
   padding: 1px;
-  background: linear-gradient(135deg, rgba(245, 197, 66, 0.45), rgba(255, 255, 255, 0.08), rgba(245, 197, 66, 0.25));
+  background: linear-gradient(135deg, rgba(255, 204, 0, 0.45), rgba(255, 255, 255, 0.08), rgba(255, 204, 0, 0.25));
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;

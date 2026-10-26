@@ -18,21 +18,12 @@ const buttonVariants = cva(
           'bg-secondary text-secondary-foreground hover:bg-secondary/80 border border-border/50 shadow-sm',
         ghost: 'bg-secondary/30 text-foreground hover:bg-accent/20 hover:text-accent-foreground',
         link: 'text-primary underline-offset-4 hover:underline hover:text-primary/80',
-        'studio-pill':
-          'rounded-full bg-[#1C1D22] text-white/90 hover:bg-[#272930] hover:text-white border border-white/[0.06] shadow-sm',
-        'studio-gold':
-          'rounded-full bg-[#F5C542] hover:bg-[#FFE066] text-black font-bold shadow-md shadow-[#F5C542]/20 active:scale-[0.98]',
-        'studio-ghost':
-          'rounded-full text-white/70 hover:text-white hover:bg-white/[0.06] active:bg-white/[0.1]',
       },
       size: {
         default: 'h-10 px-4 py-2',
         sm: 'h-9 rounded-md px-3',
         lg: 'h-11 rounded-md px-8',
         icon: 'h-10 w-10',
-        pill: 'h-11 rounded-full px-6',
-        'studio-sm': 'h-8 rounded-full px-3 text-xs',
-        'studio-icon': 'h-9 w-9 rounded-full p-0',
       },
     },
     defaultVariants: {

@@ -503,13 +503,13 @@ export interface EnvironmentPreset {
 
 export const LIGHT_TONES: Record<LightTone, { label: string; key: number; fill: number; rim: number }> = {
   studio: { label: 'Studio', key: 0xfff8f0, fill: 0xf5f5f7, rim: 0xffeed0 },
-  warm: { label: 'Warm Gold', key: 0xffe8cc, fill: 0xfff5ea, rim: 0xf5c542 },
+  warm: { label: 'Warm Gold', key: 0xffe8cc, fill: 0xfff5ea, rim: 0xffcc00 },
   cool: { label: 'Cyber Cool', key: 0xffffff, fill: 0xd8e6ff, rim: 0xd0e0ff },
   neutral: { label: 'Neutral', key: 0xffffff, fill: 0xffffff, rim: 0xffffff },
 };
 
 export const BACKGROUND_OPTIONS = [
-  { id: 'transparent', label: 'Studio Vignette (Default)', value: 'transparent', preview: 'radial-gradient(circle, #23262D 0%, #111215 100%)' },
+  { id: 'transparent', label: 'Studio Dark Gray', value: 'transparent', preview: 'radial-gradient(circle, #16181d 0%, #08090a 100%)' },
   { id: 'dark-gray', label: 'Dark Charcoal', value: '#131519', preview: '#131519' },
   { id: 'slate', label: 'Dark Slate', value: '#181b22', preview: '#181b22' },
   { id: 'clay', label: 'Clay Gray', value: '#242730', preview: '#242730' },
@@ -678,9 +678,9 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     paintBrushSettingsRef.current = paintBrushSettings;
     if (brushCursorRef.current) {
       if (activeTool === 'texture') {
-        (brushCursorRef.current.material as THREE.MeshBasicMaterial).color.set(paintBrushSettings?.color || '#F5C542');
+        (brushCursorRef.current.material as THREE.MeshBasicMaterial).color.set(paintBrushSettings?.color || '#FFCC00');
       } else {
-        (brushCursorRef.current.material as THREE.MeshBasicMaterial).color.set(0xf5c542);
+        (brushCursorRef.current.material as THREE.MeshBasicMaterial).color.set(0xffcc00);
       }
     }
   }, [activeTool, sculptSettings, paintBrushSettings]);
@@ -688,7 +688,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
   // Dynamic BrushIcon Size Preview HUD overlay state
   const [brushPreviewVisible, setBrushPreviewVisible] = useState(false);
   const [brushPreviewRadius, setBrushPreviewRadius] = useState(24);
-  const [brushPreviewColor, setBrushPreviewColor] = useState('#F5C542');
+  const [brushPreviewColor, setBrushPreviewColor] = useState('#FFCC00');
   const brushPreviewTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Dynamic 2D Brush Reticle Pointer tracking (ref-based for zero React re-renders)
@@ -699,13 +699,13 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     if (activeTool === 'edit') {
       const px = Math.max(16, Math.min(220, (sculptSettings?.radius || 0.15) * 450));
       setBrushPreviewRadius(px);
-      setBrushPreviewColor('#F5C542');
+      setBrushPreviewColor('#FFCC00');
       setBrushPreviewVisible(true);
       if (brushPreviewTimerRef.current) clearTimeout(brushPreviewTimerRef.current);
       brushPreviewTimerRef.current = setTimeout(() => setBrushPreviewVisible(false), 850);
     } else if (activeTool === 'texture') {
       setBrushPreviewRadius(Math.max(8, Math.min(200, (paintBrushSettings?.size || 24) * 1.5)));
-      setBrushPreviewColor(paintBrushSettings?.color || '#F5C542');
+      setBrushPreviewColor(paintBrushSettings?.color || '#FFCC00');
       setBrushPreviewVisible(true);
       if (brushPreviewTimerRef.current) clearTimeout(brushPreviewTimerRef.current);
       brushPreviewTimerRef.current = setTimeout(() => setBrushPreviewVisible(false), 850);
@@ -821,7 +821,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       if (envPanelRef.current && !envPanelRef.current.contains(e.target as Node)) {
         // Only close if click wasn't on the toggle button itself
         const target = e.target as HTMLElement;
-        if (!target.closest('#btn-env-settings-toggle') && !target.closest('#btn-hud-environment-settings')) {
+        if (!target.closest('#btn-env-settings-toggle')) {
           setShowEnvironmentPanel(false);
         }
       }
@@ -839,12 +839,6 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [cameraMenuOpen, showEnvironmentPanel]);
-
-  useEffect(() => {
-    const handleToggleEnv = () => setShowEnvironmentPanel((prev) => !prev);
-    window.addEventListener('toggleEnvironmentPanel', handleToggleEnv);
-    return () => window.removeEventListener('toggleEnvironmentPanel', handleToggleEnv);
-  }, []);
 
   useEffect(() => {
     const handleToggle = (e: Event) => {
@@ -1083,17 +1077,6 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     baseY: number;
   } | null>(null);
 
-  // 3D Camera Coordinate Axis Orientation Gizmo refs (zero React re-renders)
-  const axisLineXRef = useRef<SVGLineElement | null>(null);
-  const axisLineYRef = useRef<SVGLineElement | null>(null);
-  const axisLineZRef = useRef<SVGLineElement | null>(null);
-  const axisHeadXRef = useRef<SVGCircleElement | null>(null);
-  const axisHeadYRef = useRef<SVGCircleElement | null>(null);
-  const axisHeadZRef = useRef<SVGCircleElement | null>(null);
-  const axisTextXRef = useRef<SVGTextElement | null>(null);
-  const axisTextYRef = useRef<SVGTextElement | null>(null);
-  const axisTextZRef = useRef<SVGTextElement | null>(null);
-
   useEffect(() => {
     const renderer = rendererRef.current;
     if (!renderer) return;
@@ -1103,7 +1086,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     const cappedDpr = performanceMode === 'smooth'
       ? Math.min(dpr, 0.85)
       : performanceMode === 'quality'
-        ? Math.min(dpr, 1.25)
+        ? Math.min(dpr, 1.5)
         : Math.min(dpr, heavy ? 1.0 : 1.25);
     renderer.setPixelRatio(cappedDpr);
     renderer.shadowMap.enabled = performanceMode !== 'smooth' && !(performanceMode === 'auto' && heavy);
@@ -2009,7 +1992,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     // 7e. Interactive 3D BrushIcon Cursor Ring for Sculpt & Paint
     const brushRingGeo = new THREE.RingGeometry(0.92, 1.0, 36);
     const brushRingMat = new THREE.MeshBasicMaterial({
-      color: 0xf5c542,
+      color: 0xffcc00,
       side: THREE.DoubleSide,
       depthTest: false,
       transparent: true,
@@ -2258,7 +2241,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
 
           const pSettings = paintBrushSettingsRef.current;
           const radius = Math.max(1, pSettings?.size || 24);
-          const color = pSettings?.color || '#F5C542';
+          const color = pSettings?.color || '#FFCC00';
           const opacity = Math.max(0.05, Math.min(1.0, pSettings?.opacity ?? 1.0));
           const hardness = Math.max(0.02, Math.min(0.98, pSettings?.hardness ?? 0.7));
 
@@ -2410,7 +2393,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     };
 
     const onFillPaintCanvas = (e: any) => {
-      const color = e.detail?.color || '#F5C542';
+      const color = e.detail?.color || '#FFCC00';
       currentMeshGroupRef.current?.traverse((child) => {
         if (child instanceof THREE.Mesh) {
           let mat = child.material as any;
@@ -2808,65 +2791,6 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
           renderer.render(scene, camera);
         } catch (renderError) {
           console.warn('[MeshViewer] Frame render caught exception:', renderError);
-        }
-
-        // Update 3D Camera Coordinate Axis Orientation Gizmo
-        if (axisLineXRef.current && camera) {
-          const cx = 28;
-          const cy = 28;
-          const len = 17;
-          const m = camera.matrixWorldInverse;
-
-          const xx = m.elements[0];
-          const xy = m.elements[1];
-          const yx = m.elements[4];
-          const yy = m.elements[5];
-          const zx = m.elements[8];
-          const zy = m.elements[9];
-
-          const xPx = (cx + xx * len).toFixed(1);
-          const xPy = (cy - xy * len).toFixed(1);
-          const yPx = (cx + yx * len).toFixed(1);
-          const yPy = (cy - yy * len).toFixed(1);
-          const zPx = (cx + zx * len).toFixed(1);
-          const zPy = (cy - zy * len).toFixed(1);
-
-          axisLineXRef.current.setAttribute('x2', xPx);
-          axisLineXRef.current.setAttribute('y2', xPy);
-          if (axisHeadXRef.current) {
-            axisHeadXRef.current.setAttribute('cx', xPx);
-            axisHeadXRef.current.setAttribute('cy', xPy);
-          }
-          if (axisTextXRef.current) {
-            axisTextXRef.current.setAttribute('x', xPx);
-            axisTextXRef.current.setAttribute('y', (Number(xPy) + 2.5).toFixed(1));
-          }
-
-          if (axisLineYRef.current) {
-            axisLineYRef.current.setAttribute('x2', yPx);
-            axisLineYRef.current.setAttribute('y2', yPy);
-          }
-          if (axisHeadYRef.current) {
-            axisHeadYRef.current.setAttribute('cx', yPx);
-            axisHeadYRef.current.setAttribute('cy', yPy);
-          }
-          if (axisTextYRef.current) {
-            axisTextYRef.current.setAttribute('x', yPx);
-            axisTextYRef.current.setAttribute('y', (Number(yPy) + 2.5).toFixed(1));
-          }
-
-          if (axisLineZRef.current) {
-            axisLineZRef.current.setAttribute('x2', zPx);
-            axisLineZRef.current.setAttribute('y2', zPy);
-          }
-          if (axisHeadZRef.current) {
-            axisHeadZRef.current.setAttribute('cx', zPx);
-            axisHeadZRef.current.setAttribute('cy', zPy);
-          }
-          if (axisTextZRef.current) {
-            axisTextZRef.current.setAttribute('x', zPx);
-            axisTextZRef.current.setAttribute('y', (Number(zPy) + 2.5).toFixed(1));
-          }
         }
       }
     };
@@ -4439,20 +4363,12 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       }
     };
 
-    const handleSetEnvironmentEvent = (e: Event) => {
-      const ce = e as CustomEvent<Partial<typeof environmentSettings>>;
-      if (ce.detail) {
-        setEnvironmentSettings(prev => ({ ...prev, ...ce.detail }));
-      }
-    };
-
     window.addEventListener('setCameraPreset', handleCameraPresetEvent);
     window.addEventListener('takeViewportSnapshot', handleSnapshotEvent);
     window.addEventListener('formash_capture_turntable', handleCaptureTurntableEvent);
     window.addEventListener('setInteractionMode', handleInteractionModeEvent);
     window.addEventListener('toggleGrid', handleToggleGridEvent);
     window.addEventListener('restoreCameraState', handleRestoreCameraEvent);
-    window.addEventListener('setEnvironmentSettings', handleSetEnvironmentEvent);
     return () => {
       window.removeEventListener('setCameraPreset', handleCameraPresetEvent);
       window.removeEventListener('takeViewportSnapshot', handleSnapshotEvent);
@@ -4460,7 +4376,6 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       window.removeEventListener('setInteractionMode', handleInteractionModeEvent);
       window.removeEventListener('toggleGrid', handleToggleGridEvent);
       window.removeEventListener('restoreCameraState', handleRestoreCameraEvent);
-      window.removeEventListener('setEnvironmentSettings', handleSetEnvironmentEvent);
     };
   }, [applyCameraPreset, handleCaptureTurntable, setInteractionMode]);
 
@@ -4650,7 +4565,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       className={`relative w-full h-full overflow-hidden select-none ${className}`}
       style={{
         background: environmentSettings.backgroundColor === 'transparent'
-          ? 'transparent'
+          ? 'radial-gradient(ellipse 80% 70% at 50% 45%, #16181d 0%, #0f1013 55%, #08090a 100%)'
           : environmentSettings.backgroundColor
       }}
       onDragOver={handleDragOver}
@@ -4715,19 +4630,19 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
               width: `${Math.max(18, activeTool === 'edit' ? (sculptSettings?.radius || 0.15) * 280 : (paintBrushSettings?.size || 24) * 2)}px`,
               height: `${Math.max(18, activeTool === 'edit' ? (sculptSettings?.radius || 0.15) * 280 : (paintBrushSettings?.size || 24) * 2)}px`,
               borderColor: activeTool === 'texture' 
-                ? (paintBrushSettings?.color || '#F5C542') 
-                : '#F5C542',
+                ? (paintBrushSettings?.color || '#FFCC00') 
+                : '#FFCC00',
               backgroundColor: activeTool === 'texture' 
-                ? `${paintBrushSettings?.color || '#F5C542'}22` 
-                : 'rgba(245, 197, 66, 0.08)',
-              boxShadow: '0 0 14px rgba(245, 197, 66, 0.4), inset 0 0 8px rgba(245, 197, 66, 0.2)',
+                ? `${paintBrushSettings?.color || '#FFCC00'}22` 
+                : 'rgba(255, 204, 0, 0.08)',
+              boxShadow: '0 0 14px rgba(255, 204, 0, 0.4), inset 0 0 8px rgba(255, 204, 0, 0.2)',
             }}
           >
             {/* Center Reticle Icon — Shows the actual tool/brush icon */}
             <div 
               className="w-4 h-4 rounded-full flex items-center justify-center shadow-sm"
               style={{
-                backgroundColor: activeTool === 'texture' ? (paintBrushSettings?.color || '#F5C542') : '#F5C542'
+                backgroundColor: activeTool === 'texture' ? (paintBrushSettings?.color || '#FFCC00') : '#FFCC00'
               }}
             >
               {React.createElement(getActiveBrushIcon(activeTool, sculptSettings?.brush, false), {
@@ -4755,7 +4670,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         <div className="absolute inset-0 pointer-events-none z-40 flex items-center justify-center animate-in fade-in zoom-in-95 duration-150">
           <div className="relative flex flex-col items-center justify-center">
             <div
-              className="rounded-full border-2 border-dashed shadow-[0_0_25px_rgba(245,197,66,0.5)]"
+              className="rounded-full border-2 border-dashed shadow-[0_0_25px_rgba(255,204,0,0.5)]"
               style={{
                 width: `${brushPreviewRadius * 2}px`,
                 height: `${brushPreviewRadius * 2}px`,
@@ -4778,7 +4693,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       {/* Drag & Drop Visual Dropzone Overlay */}
       {isDragOver && (
         <div className="absolute inset-0 bg-[#0c0c0c]/95 border-2 border-dashed border-primary flex flex-col items-center justify-center z-40 transition-all pointer-events-none">
-          <div className="w-16 h-16 rounded-2xl bg-primary/20 border border-primary/50 flex items-center justify-center text-primary shadow-[0_0_30px_rgba(245,197,66,0.3)] animate-bounce mb-3">
+          <div className="w-16 h-16 rounded-2xl bg-primary/20 border border-primary/50 flex items-center justify-center text-primary shadow-[0_0_30px_rgba(255,204,0,0.3)] animate-bounce mb-3">
             <HugeiconsIcon icon={CloudUpload} size={16} className="w-8 h-8" />
           </div>
           <span className="text-base font-bold text-white tracking-wide">
@@ -4936,7 +4851,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                 {React.createElement(getActiveBrushIcon(activeTool, sculptSettings?.brush), { className: "w-3.5 h-3.5" })}
               </div>
               <span className="text-xs font-bold text-white tracking-wide uppercase">
-                {activeTool === 'edit' ? `Sculpt: ${sculptSettings?.brush || 'standard'}` : `3D Paint: ${paintBrushSettings?.color || '#F5C542'}`}
+                {activeTool === 'edit' ? `Sculpt: ${sculptSettings?.brush || 'standard'}` : `3D Paint: ${paintBrushSettings?.color || '#FFCC00'}`}
               </span>
             </div>
             <div className="h-4 w-px bg-white/10" />
@@ -5044,125 +4959,38 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         </div>
       )}
 
+      {/* Empty State Overlay when no asset is active */}
+      {!currentAsset && !isLoading && !isExecuting && !debugBlueprint && showOverlayUI && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center z-10 pointer-events-none p-4">
+          <div className="max-w-xs w-full p-5 rounded-2xl bg-[hsl(var(--surface-1))]/95 border border-white/[0.12] card-depth shadow-2xl backdrop-blur-md text-center pointer-events-auto space-y-3">
+            <div className="w-12 h-12 rounded-2xl bg-[hsl(var(--surface-2))] border border-white/[0.12] flex items-center justify-center mx-auto text-primary shadow-[0_0_20px_rgba(255,204,0,0.15)]">
+              <HugeiconsIcon icon={Box} size={16} className="w-6 h-6 stroke-[2.2]" />
+            </div>
+            <div className="space-y-1">
+              <h3 className="font-bold text-sm text-white">3D Viewport Ready</h3>
+              <p className="text-[11px] text-zinc-400 leading-relaxed">
+                Generate a 3D asset from the left panel, or drag and drop a GLB/OBJ file directly here.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                onClick={() => {
+                  setIsLeftPanelOpen(true);
+                  setActiveTool('model');
+                }}
+                className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-[#FFE066] via-[#FFCC00] to-[#E09800] hover:brightness-105 text-[#080808] font-black text-[11px] flex items-center justify-center gap-1.5 transition-all shadow-[0_4px_16px_rgba(255,204,0,0.35)] hover:shadow-[0_6px_22px_rgba(255,204,0,0.5)] active:scale-95 cursor-pointer btn-lighting-shine"
+              >
+                <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5" />
+                <span>Generate 3D Asset</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Persistent Viewport Overlays */}
       {showOverlayUI && (
         <>
-          {/* 3D Coordinate Axis Orientation Gizmo (Top Right) */}
-          <div
-            id="viewport-orientation-gizmo"
-            style={{ right: `${rightOffset}px` }}
-            className="absolute top-14 z-10 hidden sm:flex items-center justify-center w-14 h-14 rounded-full bg-[#16171B]/80 backdrop-blur-md border border-white/[0.08] shadow-lg select-none transition-all duration-200 pointer-events-auto hover:border-white/20 group"
-          >
-            <svg
-              viewBox="0 0 56 56"
-              className="w-14 h-14"
-            >
-              {/* Center Pivot Point */}
-              <circle
-                cx="28"
-                cy="28"
-                r="3.5"
-                className="fill-zinc-400 hover:fill-white cursor-pointer transition-colors"
-                onClick={() => applyCameraPreset('perspective')}
-              >
-                <title>Reset Perspective (Home)</title>
-              </circle>
-
-              {/* X Axis (Red) */}
-              <line
-                ref={axisLineXRef}
-                x1="28"
-                y1="28"
-                x2="46"
-                y2="28"
-                stroke="#EF4444"
-                strokeWidth="2"
-                strokeLinecap="round"
-              />
-              <circle
-                ref={axisHeadXRef}
-                cx="46"
-                cy="28"
-                r="5"
-                className="fill-[#EF4444] cursor-pointer hover:scale-110 transition-transform"
-                onClick={() => applyCameraPreset('right')}
-              >
-                <title>Align Right (+X)</title>
-              </circle>
-              <text
-                ref={axisTextXRef}
-                x="46"
-                y="31"
-                textAnchor="middle"
-                className="fill-white font-mono font-bold text-[7px] pointer-events-none select-none"
-              >
-                X
-              </text>
-
-              {/* Y Axis (Green) */}
-              <line
-                ref={axisLineYRef}
-                x1="28"
-                y1="28"
-                x2="28"
-                y2="10"
-                stroke="#22C55E"
-                strokeWidth="2"
-                strokeLinecap="round"
-              />
-              <circle
-                ref={axisHeadYRef}
-                cx="28"
-                cy="10"
-                r="5"
-                className="fill-[#22C55E] cursor-pointer hover:scale-110 transition-transform"
-                onClick={() => applyCameraPreset('top')}
-              >
-                <title>Align Top (+Y)</title>
-              </circle>
-              <text
-                ref={axisTextYRef}
-                x="28"
-                y="13"
-                textAnchor="middle"
-                className="fill-white font-mono font-bold text-[7px] pointer-events-none select-none"
-              >
-                Y
-              </text>
-
-              {/* Z Axis (Blue) */}
-              <line
-                ref={axisLineZRef}
-                x1="28"
-                y1="28"
-                x2="16"
-                y2="38"
-                stroke="#3B82F6"
-                strokeWidth="2"
-                strokeLinecap="round"
-              />
-              <circle
-                ref={axisHeadZRef}
-                cx="16"
-                cy="38"
-                r="5"
-                className="fill-[#3B82F6] cursor-pointer hover:scale-110 transition-transform"
-                onClick={() => applyCameraPreset('front')}
-              >
-                <title>Align Front (+Z)</title>
-              </circle>
-              <text
-                ref={axisTextZRef}
-                x="16"
-                y="41"
-                textAnchor="middle"
-                className="fill-white font-mono font-bold text-[7px] pointer-events-none select-none"
-              >
-                Z
-              </text>
-            </svg>
-          </div>
-
           {/* Top-Right: Topology HUD & Corner View Controller */}
           <div 
             style={{ right: `${rightOffset}px` }} 
@@ -5336,6 +5164,84 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                 </>
               )}
             </div>
+          </div>
+
+          {/* Right Floating Tool Rail - visible on tablet & desktop (hidden on mobile to prevent clutter) */}
+          <div 
+            style={{ right: `${rightOffset}px` }} 
+            className="hidden md:flex absolute top-1/2 -translate-y-1/2 z-10 flex-col gap-1.5 bg-[hsl(var(--surface-1))] border border-white/[0.12] p-1.5 rounded-2xl shadow-2xl transition-all duration-200"
+          >
+            <SimpleTooltip side="left" label={interactionMode === 'move' ? 'Return to Orbit Mode' : 'Move / Translate 3D Model'}>
+              <button
+                id="btn-viewport-move-tool"
+                onClick={() => setInteractionMode(interactionMode === 'move' ? 'orbit' : 'move')}
+                className={`p-2 rounded-xl transition-all ${
+                  interactionMode === 'move' 
+                    ? 'bg-primary text-black font-bold ring-2 ring-[hsl(var(--primary))]/40' 
+                    : 'text-zinc-300 hover:text-white hover:bg-[#1f222a]'
+                }`}
+              >
+                <HugeiconsIcon icon={MoveIcon} size={16} className="w-4 h-4 stroke-[2.2]" />
+              </button>
+            </SimpleTooltip>
+
+            <SimpleTooltip side="left" label={interactionMode === 'pan' ? 'Switch to Orbit Mode' : 'Switch to Pan Mode'}>
+              <button
+                onClick={() => setInteractionMode(interactionMode === 'pan' ? 'orbit' : 'pan')}
+                className={`p-2 rounded-xl transition-all ${
+                  interactionMode === 'pan' 
+                    ? 'bg-primary text-black font-bold' 
+                    : 'text-zinc-300 hover:text-white hover:bg-[#1f222a]'
+                }`}
+              >
+                <HugeiconsIcon icon={Hand} size={16} className="w-4 h-4 stroke-[2.2]" />
+              </button>
+            </SimpleTooltip>
+
+            <SimpleTooltip side="left" label="Capture 3D Viewport Screenshot">
+              <button
+                onClick={handleScreenshot}
+                className="p-2 rounded-xl text-zinc-300 hover:text-primary hover:bg-[#1f222a] transition-all"
+              >
+                <HugeiconsIcon icon={CameraIcon} size={16} className="w-4 h-4 stroke-[2.2]" />
+              </button>
+            </SimpleTooltip>
+
+            <SimpleTooltip side="left" label={environmentSettings.gridVisible ? 'Hide Floor Grid' : 'Show Floor Grid'}>
+              <button
+                onClick={() => patchEnv({ gridVisible: !environmentSettings.gridVisible })}
+                className={`p-2 rounded-xl transition-all ${
+                  environmentSettings.gridVisible 
+                    ? 'text-primary bg-[#1f222a]' 
+                    : 'text-zinc-300 hover:text-white hover:bg-[#1f222a]'
+                }`}
+              >
+                <HugeiconsIcon icon={GridIcon} size={16} className="w-4 h-4 stroke-[2.2]" />
+              </button>
+            </SimpleTooltip>
+
+            <SimpleTooltip side="left" label="Reset Camera (Hotkey: F)">
+              <button
+                onClick={resetCamera}
+                className="p-2 rounded-xl text-zinc-300 hover:text-white hover:bg-[#1f222a] transition-all"
+              >
+                <HugeiconsIcon icon={RotateCcwIcon} size={16} className="w-4 h-4 stroke-[2.2]" />
+              </button>
+            </SimpleTooltip>
+
+            <SimpleTooltip side="left" label="Environment Settings — Lighting &amp; Camera">
+              <button
+                id="btn-env-settings-toggle"
+                onClick={() => setShowEnvironmentPanel(!showEnvironmentPanel)}
+                className={`p-2 rounded-xl transition-all cursor-pointer ${
+                  showEnvironmentPanel
+                    ? 'bg-primary text-black font-bold' 
+                    : 'text-zinc-300 hover:text-white hover:bg-[#1f222a]'
+                }`}
+              >
+                <HugeiconsIcon icon={SunIcon} size={16} className="w-4 h-4 stroke-[2.2]" />
+              </button>
+            </SimpleTooltip>
           </div>
 
           {/* Environment Settings Panel */}
@@ -5694,7 +5600,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                             ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]'
                             : isQueued
                             ? 'bg-amber-400/50'
-                            : 'bg-gradient-to-r from-amber-400 to-primary shadow-[0_0_8px_rgba(245,197,66,0.6)]'
+                            : 'bg-gradient-to-r from-amber-400 to-primary shadow-[0_0_8px_rgba(255,204,0,0.6)]'
                         }`}
                         style={{
                           width: `${isCompleted || isFailed ? 100 : isQueued ? 15 : Math.max(job.progress || 0, 5)}%`,
@@ -5746,7 +5652,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
               return (
                 <div
                   style={{ right: `${rightOffset}px` }}
-                  className="absolute top-32 z-20 pointer-events-auto transition-[right] duration-200 flex flex-col gap-2"
+                  className="absolute top-14 z-20 pointer-events-auto transition-[right] duration-200 flex flex-col gap-2"
                 >
                   {isMultiJob && (
                     <div
@@ -5818,7 +5724,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
 
                     <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mt-1 p-[0.5px]">
                       <div
-                        className="h-full bg-gradient-to-r from-amber-400 to-primary rounded-full transition-all duration-300 shadow-[0_0_8px_rgba(245,197,66,0.6)]"
+                        className="h-full bg-gradient-to-r from-amber-400 to-primary rounded-full transition-all duration-300 shadow-[0_0_8px_rgba(255,204,0,0.6)]"
                         style={{ width: `${isExecuting ? Math.max(executionProgress || 0, 5) : 100}%` }}
                       />
                     </div>
@@ -5842,7 +5748,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
               onBlur={handleReflectionPeekLeave}
             >
               <div
-                className={"relative w-[120px] h-[88px] overflow-hidden rounded-xl bg-black/80 border " + (reflectionPeekFocused ? "border-primary shadow-[0_0_22px_rgba(245,197,66,0.22)]" : "border-white/[0.12]") + " backdrop-blur-md transition-all duration-150"}
+                className={"relative w-[120px] h-[88px] overflow-hidden rounded-xl bg-black/80 border " + (reflectionPeekFocused ? "border-primary shadow-[0_0_22px_rgba(255,204,0,0.22)]" : "border-white/[0.12]") + " backdrop-blur-md transition-all duration-150"}
                 onClick={() => {
                   if (reflectionPeekFocused) handleReflectionPeekLeave();
                   else handleReflectionPeekEnter();
@@ -5992,7 +5898,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                   onClick={() => setIsTurntable(!isTurntable)}
                   className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer active:scale-95 flex items-center gap-1.5 ${
                     isTurntable
-                      ? 'bg-[#F5C542] hover:bg-[#FFE066] text-black border-[#F5C542] font-bold shadow-md'
+                      ? 'bg-gradient-to-r from-[#FFE066] via-[#FFCC00] to-[#E09800] text-[#080808] border-primary font-bold shadow-md'
                       : 'bg-[hsl(var(--surface-1))]/90 backdrop-blur-md border-white/[0.12] text-zinc-300 hover:text-white'
                   }`}
                 >
@@ -6025,7 +5931,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
               <button
                 id="btn-viewport-export"
                 onClick={() => setIsExportModalOpen(true)}
-                className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-xl bg-[#F5C542] hover:bg-[#FFE066] active:scale-95 text-black text-xs font-bold shadow-[0_4px_16px_rgba(245,197,66,0.35)] hover:shadow-[0_6px_22px_rgba(245,197,66,0.5)] transition-all cursor-pointer border border-[#F5C542]/30"
+                className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-xl bg-gradient-to-r from-[#FFE066] via-[#FFCC00] to-[#E09800] hover:brightness-105 active:scale-95 text-[#080808] text-xs font-black shadow-[0_4px_16px_rgba(255,204,0,0.35)] hover:shadow-[0_6px_22px_rgba(255,204,0,0.5)] transition-all cursor-pointer border border-white/20 btn-lighting-shine"
               >
                 <HugeiconsIcon icon={DownloadIcon} size={16} className="w-3.5 h-3.5 stroke-[2.5]" />
                 <span>Export</span>

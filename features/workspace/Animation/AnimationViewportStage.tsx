@@ -301,9 +301,9 @@ export const AnimationViewportStage: React.FC = () => {
       </div>
 
       {/* 2. REFINED & UNCLUTTERED COMPACT TIMELINE */}
-      <div className="h-[148px] bg-[#16171B] border-t border-white/[0.06] flex flex-col flex-shrink-0 z-20">
+      <div className="h-[148px] bg-[hsl(var(--surface-1))] border-t border-white/[0.08] flex flex-col flex-shrink-0 z-20">
         {/* Timeline Top Bar (Transport Controls + Timers + FPS) */}
-        <div className="h-10 px-4 bg-[#1D1F26] border-b border-white/[0.06] flex items-center justify-between">
+        <div className="h-10 px-4 bg-[hsl(var(--surface-2))] border-b border-white/[0.08] flex items-center justify-between">
           {/* Left: Timeline Tabs */}
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1.5 mr-2">
@@ -311,7 +311,7 @@ export const AnimationViewportStage: React.FC = () => {
               <span className="text-xs font-bold text-white tracking-wide">Timeline</span>
             </div>
 
-            <div className="flex items-center gap-1 bg-[#16171B] p-0.5 rounded-lg border border-white/[0.06]">
+            <div className="flex items-center gap-1 bg-[hsl(var(--surface-0))] p-0.5 rounded-lg border border-white/[0.08]">
               {(['edit', 'playback', 'keyframes'] as const).map((tab) => (
                 <button
                   key={tab}
@@ -347,7 +347,7 @@ export const AnimationViewportStage: React.FC = () => {
               </button>
               <button
                 onClick={togglePlay}
-                className="w-7 h-7 rounded-full bg-[#F5C542] hover:bg-[#FFE066] text-black flex items-center justify-center font-bold shadow-[0_0_14px_rgba(245,197,66,0.35)] transition-transform active:scale-95 cursor-pointer mx-1"
+                className="w-7 h-7 rounded-full bg-gradient-to-r from-[#FFE066] via-[#FFCC00] to-[#E09800] hover:brightness-105 text-[#080808] flex items-center justify-center font-black shadow-[0_0_14px_rgba(255,204,0,0.45)] transition-transform active:scale-95 cursor-pointer mx-1"
                 title={isPlaying ? 'Pause' : 'Play'}
               >
                 {isPlaying ? <HugeiconsIcon icon={PauseIcon} size={16} className="w-3.5 h-3.5 fill-current" /> : <HugeiconsIcon icon={PlayIcon} size={16} className="w-3.5 h-3.5 fill-current ml-0.5" />}
@@ -490,7 +490,7 @@ export const AnimationViewportStage: React.FC = () => {
                   <div
                     key={idx}
                     style={{ left: `${marker.pct}%` }}
-                    className={`absolute -top-1.5 w-3 h-3 ${marker.color} rotate-45 transform -translate-x-1/2 shadow-[0_0_6px_rgba(245,197,66,0.4)] cursor-pointer hover:scale-125 transition-transform`}
+                    className={`absolute -top-1.5 w-3 h-3 ${marker.color} rotate-45 transform -translate-x-1/2 shadow-[0_0_6px_rgba(255,204,0,0.5)] cursor-pointer hover:scale-125 transition-transform`}
                     title={`${marker.label} (${((marker.pct / 100) * duration).toFixed(1)}s)`}
                   />
                 ))}
@@ -500,7 +500,7 @@ export const AnimationViewportStage: React.FC = () => {
             {/* SCRUBBER PLAYHEAD (Yellow vertical line with smooth triangular needle) */}
             <div
               style={{ left: `${scrubProgress}%` }}
-              className="absolute top-0 bottom-0 w-0.5 bg-primary z-20 pointer-events-none transform -translate-x-1/2 shadow-[0_0_8px_rgba(245,197,66,0.6)]"
+              className="absolute top-0 bottom-0 w-0.5 bg-primary z-20 pointer-events-none transform -translate-x-1/2 shadow-[0_0_8px_rgba(255,204,0,0.9)]"
             >
               <div className="w-3.5 h-3 bg-primary rounded-b-xs shadow-md -translate-x-[6px] flex items-center justify-center">
                 <div className="w-1 h-1 rounded-full bg-black" />

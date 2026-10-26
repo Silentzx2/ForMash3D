@@ -267,34 +267,34 @@ export const RightPropertyPanel: React.FC = () => {
   return (
     <div 
       id="panel-properties-inspector" 
-      className="flex flex-col h-full bg-[#16171B] text-xs select-none overflow-hidden"
+      className="flex flex-col h-full bg-[hsl(var(--surface-1))] text-xs select-none overflow-hidden"
     >
       {/* Header with Asset Meta */}
-      <div className="p-2.5 border-b border-white/[0.06] flex items-center justify-between">
+      <div className="p-2.5 border-b border-[hsl(var(--border))] flex items-center justify-between">
         <div className="flex items-center gap-2 min-w-0">
-          <div className="w-7 h-7 rounded-lg bg-[#242732] border border-white/[0.06] flex items-center justify-center text-primary flex-shrink-0">
+          <div className="w-7 h-7 rounded-lg bg-[hsl(var(--surface-3))] border border-[hsl(var(--border))] flex items-center justify-center text-primary flex-shrink-0">
             <HugeiconsIcon icon={SlidersHorizontalIcon} size={16} className="w-4 h-4" />
           </div>
           <div className="min-w-0">
-            <h2 className="font-bold text-sm text-white truncate">{currentAsset.name}</h2>
-            <span className="text-xs text-zinc-400 block">Inspector & Properties</span>
+            <h2 className="font-bold text-sm text-[hsl(var(--foreground))] truncate">{currentAsset.name}</h2>
+            <span className="text-xs text-[hsl(var(--muted-foreground))] block">Inspector & Properties</span>
           </div>
         </div>
-        <span className="text-xs uppercase font-mono font-bold px-2 py-0.5 rounded-md bg-[#242732] border border-white/[0.06] text-primary flex-shrink-0">
+        <span className="text-xs uppercase font-mono font-bold px-2 py-0.5 rounded-md bg-[hsl(var(--surface-3))] border border-[hsl(var(--border))] text-primary flex-shrink-0">
           {currentAsset.format}
         </span>
       </div>
 
       {/* Client-side text filter */}
-      <div className="px-2.5 py-2 border-b border-white/[0.06] bg-[#121316]/60">
+      <div className="px-2.5 py-2 border-b border-[hsl(var(--border))] bg-[hsl(var(--surface-0))]/50">
         <div className="relative flex items-center">
-          <HugeiconsIcon icon={Search01Icon} size={14} className="absolute left-2.5 text-zinc-400 pointer-events-none" />
+          <HugeiconsIcon icon={Search01Icon} size={14} className="absolute left-2.5 text-[hsl(var(--muted-foreground))] pointer-events-none" />
           <input
             type="text"
             value={filterQuery}
             onChange={(e) => setFilterQuery(e.target.value)}
             placeholder="Filter properties..."
-            className="w-full pl-8 pr-7 py-1 text-xs rounded-lg bg-[#16171B] border border-white/[0.06] text-white placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-primary transition-all font-mono"
+            className="w-full pl-8 pr-7 py-1 text-xs rounded-lg bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))] text-[hsl(var(--foreground))] placeholder:text-[hsl(var(--muted-foreground))] focus:outline-none focus:ring-1 focus:ring-primary transition-all font-mono"
           />
           {filterQuery && (
             <button
@@ -313,7 +313,7 @@ export const RightPropertyPanel: React.FC = () => {
           <Collapsible
             open={isSectionExpanded('transform', transformKeywords)}
             onOpenChange={() => handleManualToggle('transform')}
-            className="studio-card overflow-hidden transition-all"
+            className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-1))] overflow-hidden transition-all"
           >
             <div className="flex items-center justify-between p-2.5 hover:bg-[hsl(var(--surface-2))]/40 transition-colors">
               <CollapsibleTrigger asChild>
@@ -495,35 +495,34 @@ export const RightPropertyPanel: React.FC = () => {
           const surfaceArea = currentAsset?.surfaceArea ?? modelStats?.surfaceArea;
           const volume = currentAsset?.volume ?? modelStats?.volume;
           const uvCharts = currentAsset?.uvCharts ?? modelStats?.uvCharts;
-          const dimensions = currentAsset?.dimensions ?? modelStats?.dimensions;
 
           return (
             <Collapsible
               open={isSectionExpanded('geometry', geometryKeywords)}
               onOpenChange={() => handleManualToggle('geometry')}
-              className="studio-card overflow-hidden transition-all"
+              className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-1))] overflow-hidden transition-all"
             >
-              <div className="flex items-center justify-between p-2.5 hover:bg-white/[0.04] transition-colors">
+              <div className="flex items-center justify-between p-2.5 hover:bg-[hsl(var(--surface-2))]/40 transition-colors">
                 <CollapsibleTrigger asChild>
                   <button
                     type="button"
                     className="flex items-center gap-1.5 flex-1 text-left select-none cursor-pointer group"
                   >
                     <HugeiconsIcon icon={Box} size={16} className="w-3.5 h-3.5 text-primary shrink-0" />
-                    <span className="font-bold text-xs text-zinc-400 group-hover:text-white uppercase tracking-wider transition-colors">
+                    <span className="font-bold text-xs text-[hsl(var(--muted-foreground))] group-hover:text-[hsl(var(--foreground))] uppercase tracking-wider transition-colors">
                       Geometry & Topology
                     </span>
                     <HugeiconsIcon
                       icon={ChevronDown}
                       size={14}
-                      className={`w-3.5 h-3.5 text-zinc-400 ml-auto mr-1 transition-transform duration-200 ${
+                      className={`w-3.5 h-3.5 text-[hsl(var(--muted-foreground))] ml-auto mr-1 transition-transform duration-200 ${
                         isSectionExpanded('geometry', geometryKeywords) ? 'rotate-180 text-primary' : ''
                       }`}
                     />
                   </button>
                 </CollapsibleTrigger>
                 {isManifold && nonManifoldEdges === 0 ? (
-                  <span className="flex items-center gap-1 text-[10px] text-emerald-400 font-mono px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30">
+                  <span className="flex items-center gap-1 text-[10px] text-[hsl(var(--neon-green))] font-mono px-1.5 py-0.5 rounded bg-[hsl(var(--neon-green))]/10 border border-[hsl(var(--neon-green))]/30">
                     <HugeiconsIcon icon={ShieldCheckIcon} size={16} className="w-3 h-3" />
                     Manifold
                   </span>
@@ -535,49 +534,47 @@ export const RightPropertyPanel: React.FC = () => {
                 )}
               </div>
 
-              <CollapsibleContent className="px-2.5 pb-3 space-y-2.5 pt-1 border-t border-white/[0.06]">
+              <CollapsibleContent className="px-2.5 pb-3 space-y-2.5 pt-1 border-t border-[hsl(var(--border))]/40">
                 {/* Counts & Flow */}
                 <div className="grid grid-cols-3 gap-1.5 font-mono text-xs">
-                  <div className="p-2 rounded-lg bg-[#16171B] border border-white/[0.06]">
-                    <span className="text-zinc-400 block text-[10px] font-sans">Vertices</span>
-                    <span className="font-bold font-mono text-white">{verticesDisplay}</span>
+                  <div className="p-2 rounded-lg bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))]">
+                    <span className="text-[hsl(var(--muted-foreground))] block text-[10px]">Vertices</span>
+                    <span className="font-bold text-[hsl(var(--foreground))]">{verticesDisplay}</span>
                   </div>
-                  <div className="p-2 rounded-lg bg-[#16171B] border border-white/[0.06]">
-                    <span className="text-zinc-400 block text-[10px] font-sans">Triangles</span>
-                    <span className="font-bold font-mono text-primary">{facesDisplay}</span>
+                  <div className="p-2 rounded-lg bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))]">
+                    <span className="text-[hsl(var(--muted-foreground))] block text-[10px]">Polygons</span>
+                    <span className="font-bold text-primary">{facesDisplay}</span>
                   </div>
-                  <div className="p-2 rounded-lg bg-[#16171B] border border-white/[0.06]">
-                    <span className="text-zinc-400 block text-[10px] font-sans">Topology</span>
-                    <span className="font-bold font-mono text-sky-400 truncate block">{currentAsset.topology || 'Triangle'}</span>
+                  <div className="p-2 rounded-lg bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))]">
+                    <span className="text-[hsl(var(--muted-foreground))] block text-[10px]">Topology</span>
+                    <span className="font-bold text-[hsl(var(--neon-blue))] truncate block">{currentAsset.topology || 'Triangle'}</span>
                   </div>
                 </div>
 
                 {/* Physical Telemetry: Surface Area, Volume, UV Charts */}
                 <div className="grid grid-cols-3 gap-1.5 font-mono text-xs">
-                  <div className="p-2 rounded-lg bg-[#16171B] border border-white/[0.06]">
-                    <span className="text-zinc-400 block text-[10px] font-sans">Surface Area</span>
-                    <span className="font-bold font-mono text-white">{surfaceArea !== undefined ? `${surfaceArea} m²` : '—'}</span>
+                  <div className="p-2 rounded-lg bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))]">
+                    <span className="text-[hsl(var(--muted-foreground))] block text-[10px]">Surface Area</span>
+                    <span className="font-bold text-[hsl(var(--foreground))]">{surfaceArea !== undefined ? `${surfaceArea} m²` : '—'}</span>
                   </div>
-                  <div className="p-2 rounded-lg bg-[#16171B] border border-white/[0.06]">
-                    <span className="text-zinc-400 block text-[10px] font-sans">Volume</span>
-                    <span className="font-bold font-mono text-primary">{volume !== undefined ? `${volume} m³` : '—'}</span>
+                  <div className="p-2 rounded-lg bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))]">
+                    <span className="text-[hsl(var(--muted-foreground))] block text-[10px]">Volume</span>
+                    <span className="font-bold text-primary">{volume !== undefined ? `${volume} m³` : '—'}</span>
                   </div>
-                  <div className="p-2 rounded-lg bg-[#16171B] border border-white/[0.06]">
-                    <span className="text-zinc-400 block text-[10px] font-sans">UV Islands</span>
-                    <span className="font-bold font-mono text-emerald-400">{uvCharts !== undefined && uvCharts > 0 ? `${uvCharts} charts` : '1 chart'}</span>
+                  <div className="p-2 rounded-lg bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))]">
+                    <span className="text-[hsl(var(--muted-foreground))] block text-[10px]">UV Islands</span>
+                    <span className="font-bold text-[hsl(var(--neon-green))]">{uvCharts !== undefined && uvCharts > 0 ? `${uvCharts} charts` : '1 chart'}</span>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between text-xs text-zinc-400 pt-1 border-t border-white/[0.06]">
+                <div className="flex items-center justify-between text-xs text-[hsl(var(--muted-foreground))] pt-1 border-t border-[hsl(var(--border))]">
                   <span>UV Channels</span>
-                  <span className="font-mono text-white">2 (UV0: Diffuse, UV1: Lightmap)</span>
+                  <span className="font-mono text-[hsl(var(--foreground))]">2 (UV0: Diffuse, UV1: Lightmap)</span>
                 </div>
-                {dimensions && (
-                  <div className="flex items-center justify-between text-xs text-zinc-400 pt-1 border-t border-white/[0.06]">
-                    <span>Dimensions / Bounds (X×Y×Z)</span>
-                    <span className="font-mono text-white">
-                      {typeof dimensions.x === 'number' ? dimensions.x.toFixed(2) : dimensions.x} × {typeof dimensions.y === 'number' ? dimensions.y.toFixed(2) : dimensions.y} × {typeof dimensions.z === 'number' ? dimensions.z.toFixed(2) : dimensions.z} m
-                    </span>
+                {currentAsset.dimensions && (
+                  <div className="flex items-center justify-between text-xs text-[hsl(var(--muted-foreground))] pt-1 border-t border-[hsl(var(--border))]">
+                    <span>Dimensions (X×Y×Z)</span>
+                    <span className="font-mono text-[hsl(var(--foreground))]">{currentAsset.dimensions.x} × {currentAsset.dimensions.y} × {currentAsset.dimensions.z} m</span>
                   </div>
                 )}
                 {currentAsset.componentCount !== undefined && (
@@ -610,7 +607,7 @@ export const RightPropertyPanel: React.FC = () => {
           <Collapsible
             open={isSectionExpanded('context', contextKeywords)}
             onOpenChange={() => handleManualToggle('context')}
-            className="studio-card overflow-hidden transition-all"
+            className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-1))] overflow-hidden transition-all"
           >
             <div className="flex items-center justify-between p-2.5 hover:bg-[hsl(var(--surface-2))]/40 transition-colors">
               <CollapsibleTrigger asChild>
@@ -818,7 +815,7 @@ export const RightPropertyPanel: React.FC = () => {
           <Collapsible
             open={isSectionExpanded('shading', shadingKeywords)}
             onOpenChange={() => handleManualToggle('shading')}
-            className="studio-card overflow-hidden transition-all"
+            className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-1))] overflow-hidden transition-all"
           >
             <div className="flex items-center justify-between p-2.5 hover:bg-[hsl(var(--surface-2))]/40 transition-colors">
               <CollapsibleTrigger asChild>
@@ -940,7 +937,7 @@ export const RightPropertyPanel: React.FC = () => {
           <Collapsible
             open={isSectionExpanded('meshDiff', meshDiffKeywords)}
             onOpenChange={() => handleManualToggle('meshDiff')}
-            className="studio-card overflow-hidden transition-all"
+            className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-1))] overflow-hidden transition-all"
           >
             <div className="flex items-center justify-between p-2.5 hover:bg-[hsl(var(--surface-2))]/40 transition-colors">
               <CollapsibleTrigger asChild>
@@ -973,7 +970,7 @@ export const RightPropertyPanel: React.FC = () => {
           <Collapsible
             open={isSectionExpanded('modelComparison', comparisonKeywords)}
             onOpenChange={() => handleManualToggle('modelComparison')}
-            className="studio-card overflow-hidden transition-all"
+            className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-1))] overflow-hidden transition-all"
           >
             <div className="flex items-center justify-between p-2.5 hover:bg-[hsl(var(--surface-2))]/40 transition-colors">
               <CollapsibleTrigger asChild>
@@ -1142,7 +1139,7 @@ export const RightPropertyPanel: React.FC = () => {
           <Collapsible
             open={isSectionExpanded('export', exportKeywords)}
             onOpenChange={() => handleManualToggle('export')}
-            className="studio-card overflow-hidden transition-all"
+            className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-1))] overflow-hidden transition-all"
           >
             <div className="flex items-center justify-between p-2.5 hover:bg-[hsl(var(--surface-2))]/40 transition-colors">
               <CollapsibleTrigger asChild>

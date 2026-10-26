@@ -170,10 +170,10 @@ export const MeshEditPanel: React.FC = () => {
     : (hasTargetMesh && Boolean(referenceImage)));
 
   return (
-    <div id="panel-mesh-edit" className="flex flex-col h-full bg-[#16171B] text-white select-none overflow-x-hidden overflow-y-hidden">
+    <div id="panel-mesh-edit" className="flex flex-col h-full bg-[hsl(var(--surface-1))] text-white select-none overflow-x-hidden overflow-y-hidden">
       {/* Top Header Tabs: Text Sculpt vs Image Sculpt vs Sculpt Brushes */}
-      <div className="px-3 py-2 border-b border-white/[0.06] bg-[#16171B] flex-shrink-0">
-        <div className="flex gap-1 p-0.5 bg-[#121316] rounded-lg border border-white/[0.06]">
+      <div className="px-3 py-2 border-b border-white/[0.08] bg-[hsl(var(--surface-1))] flex-shrink-0">
+        <div className="flex gap-1 p-0.5 bg-[hsl(var(--surface-0))] rounded-lg border border-white/[0.06]">
           {[
             { id: 'text', label: 'Text Inpaint' },
             { id: 'image', label: 'Image Guided' },
@@ -211,7 +211,7 @@ export const MeshEditPanel: React.FC = () => {
       <div className="flex-1 overflow-y-auto overflow-x-hidden px-2.5 py-2.5 space-y-2.5 scrollbar-none pr-1.5">
         <MeshUploadStatus state={meshUploadState} />
         {/* 1. Target Input Mesh */}
-        <div className="studio-card p-2.5 space-y-2">
+        <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-[11px] text-zinc-300 font-bold uppercase tracking-wider flex items-center gap-1.5">
               <HugeiconsIcon icon={Box} size={16} className="w-3.5 h-3.5 text-primary" />
@@ -300,7 +300,7 @@ export const MeshEditPanel: React.FC = () => {
         </div>
 
         {/* 2. Edit Mode Selection */}
-        <div className="studio-card p-2.5 space-y-1.5">
+        <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-1.5">
           <div className="flex items-center justify-between text-xs">
             <span className="text-zinc-200 font-bold uppercase text-[11px] tracking-wider">Edit Mode</span>
             <span className="text-[10px] font-mono text-primary font-bold uppercase">{editMode}</span>
@@ -333,7 +333,7 @@ export const MeshEditPanel: React.FC = () => {
         </div>
 
         {/* 3. Selection Mask & Gizmo */}
-        <div className="studio-card p-2.5 space-y-2">
+        <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-zinc-200 font-bold uppercase text-[11px] tracking-wider">Selection Mask</span>
             <button
@@ -377,7 +377,7 @@ export const MeshEditPanel: React.FC = () => {
 
         {/* 4. Guidance Inputs (Text vs Image) */}
         {inputTab === 'text' && (
-          <div className="studio-card p-2.5 space-y-2">
+          <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
             <div className="flex items-center justify-between text-xs">
               <span className="text-zinc-200 font-bold uppercase text-[11px] tracking-wider">Sculpt Guidance</span>
               <span className="font-mono text-zinc-500 text-[10px]">{targetPrompt.length}/500</span>
@@ -473,7 +473,7 @@ export const MeshEditPanel: React.FC = () => {
         )}
 
         {inputTab === 'image' && (
-          <div className="studio-card p-2.5 space-y-2">
+          <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
             <div className="flex items-center justify-between text-xs">
               <span className="text-zinc-200 font-bold uppercase text-[11px] tracking-wider">Reference Guidance</span>
               {referenceImage && (
@@ -578,7 +578,7 @@ export const MeshEditPanel: React.FC = () => {
         {inputTab === 'sculpt' && (
           <div className="space-y-2.5">
             {/* Brush Selector */}
-            <div className="studio-card p-2.5 space-y-2">
+            <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-zinc-200 font-bold uppercase text-[11px] tracking-wider flex items-center gap-1.5">
                   <HugeiconsIcon icon={BrushIcon} size={16} className="w-3.5 h-3.5 text-primary" />
@@ -605,7 +605,7 @@ export const MeshEditPanel: React.FC = () => {
                       onClick={() => setSculptBrush(b.id as any)}
                       className={`p-2 rounded-xl border text-left transition-all cursor-pointer ${
                         isActive
-                          ? 'bg-primary text-black font-bold shadow-[0_2px_12px_rgba(245,197,66,0.3)] border-primary'
+                          ? 'bg-primary text-black font-bold shadow-[0_2px_12px_rgba(255,204,0,0.3)] border-primary'
                           : 'bg-[hsl(var(--surface-1))] border-white/[0.06] text-zinc-300 hover:text-white hover:bg-[hsl(var(--surface-2))]'
                       }`}
                     >
@@ -632,7 +632,7 @@ export const MeshEditPanel: React.FC = () => {
             </div>
 
             {/* Brush Dynamics Sliders */}
-            <div className="studio-card p-2.5 space-y-2">
+            <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
               <span className="text-zinc-200 font-bold uppercase text-[11px] tracking-wider">Brush Dynamics</span>
 
               <div className="space-y-1">
@@ -701,7 +701,7 @@ export const MeshEditPanel: React.FC = () => {
             </div>
 
             {/* Direction & Symmetry */}
-            <div className="studio-card p-2.5 space-y-2">
+            <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
               <span className="text-zinc-200 font-bold uppercase text-[11px] tracking-wider">Deformation &amp; Symmetry</span>
 
               <div className="grid grid-cols-2 gap-1.5">
@@ -759,7 +759,7 @@ export const MeshEditPanel: React.FC = () => {
             </div>
 
             {/* Steady Mouse & Stroke */}
-            <div className="studio-card p-2.5 space-y-2">
+            <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
               <span className="text-zinc-200 font-bold uppercase text-[11px] tracking-wider">Stabilizer &amp; Smooth</span>
 
               <div className="space-y-1">
@@ -800,7 +800,7 @@ export const MeshEditPanel: React.FC = () => {
         {inputTab === 'boolean' && (
           <div className="space-y-2.5">
             {/* Operation Selector */}
-            <div className="studio-card p-2.5 space-y-2">
+            <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-zinc-200 font-bold uppercase text-[11px] tracking-wider flex items-center gap-1.5">
                   <HugeiconsIcon icon={ScissorsIcon} size={16} className="w-3.5 h-3.5 text-primary" />
@@ -837,7 +837,7 @@ export const MeshEditPanel: React.FC = () => {
             </div>
 
             {/* Stamp Primitive Selector */}
-            <div className="studio-card p-2.5 space-y-2">
+            <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
               <span className="text-zinc-200 font-bold uppercase text-[11px] tracking-wider">Stamp Primitive</span>
               <div className="grid grid-cols-3 gap-1.5">
                 {[
@@ -865,7 +865,7 @@ export const MeshEditPanel: React.FC = () => {
             </div>
 
             {/* Stamp Dimensions Sliders */}
-            <div className="studio-card p-2.5 space-y-2">
+            <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
               <span className="text-zinc-200 font-bold uppercase text-[11px] tracking-wider">Stamp Dimensions</span>
               
               <div className="space-y-1">
@@ -946,7 +946,7 @@ export const MeshEditPanel: React.FC = () => {
               description: 'No mesh changes were applied.'
             })}
             disabled={!hasTargetMesh}
-            className="w-full h-10 rounded-xl bg-[#F5C542] hover:bg-[#FFE066] text-black font-bold text-xs flex items-center justify-center gap-2 shadow-[0_4px_16px_rgba(245,197,66,0.25)] hover:shadow-[0_6px_20px_rgba(245,197,66,0.35)] transition-all cursor-pointer active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full h-10 rounded-xl bg-gradient-to-r from-[#FFE066] via-[#FFCC00] to-[#E09800] text-[#080808] font-black text-xs flex items-center justify-center gap-2 shadow-[0_4px_16px_rgba(255,204,0,0.35)] hover:shadow-[0_6px_20px_rgba(255,204,0,0.45)] transition-all cursor-pointer active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <HugeiconsIcon icon={BrushIcon} size={16} className="w-4 h-4 text-black stroke-[2.5]" />
             <span>SCULPT TOOL NOT CONNECTED</span>
@@ -958,7 +958,7 @@ export const MeshEditPanel: React.FC = () => {
               description: 'No mesh changes were applied.'
             })}
             disabled={!hasTargetMesh}
-            className="w-full h-10 rounded-xl bg-[#F5C542] hover:bg-[#FFE066] text-black font-bold text-xs flex items-center justify-center gap-2 shadow-[0_4px_16px_rgba(245,197,66,0.25)] hover:shadow-[0_6px_20px_rgba(245,197,66,0.35)] transition-all cursor-pointer active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full h-10 rounded-xl bg-gradient-to-r from-[#FFE066] via-[#FFCC00] to-[#E09800] text-[#080808] font-black text-xs flex items-center justify-center gap-2 shadow-[0_4px_16px_rgba(255,204,0,0.35)] hover:shadow-[0_6px_20px_rgba(255,204,0,0.45)] transition-all cursor-pointer active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <HugeiconsIcon icon={ScissorsIcon} size={16} className="w-4 h-4 text-black stroke-[2.5]" />
             <span>BOOLEAN OPERATION NOT CONNECTED</span>
@@ -975,12 +975,12 @@ export const MeshEditPanel: React.FC = () => {
             background={
               isRunning
                 ? "hsl(var(--surface-2))"
-                : "#F5C542"
+                : "linear-gradient(135deg, #FFE066 0%, #FFCC00 50%, #E09800 100%)"
             }
-            className={`w-full h-10 font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition-all duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+            className={`w-full h-10 font-black text-xs flex items-center justify-center gap-2 shadow-lg transition-all duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
               isRunning 
                 ? 'text-primary border border-primary/30' 
-                : 'text-black shadow-[0_4px_16px_rgba(245,197,66,0.25)] hover:shadow-[0_6px_20px_rgba(245,197,66,0.35)] active:scale-[0.98]'
+                : 'text-[#080808] shadow-[0_4px_16px_rgba(255,204,0,0.35)] hover:shadow-[0_6px_20px_rgba(255,204,0,0.45)] active:scale-[0.98]'
             }`}
           >
             {isRunning ? (
