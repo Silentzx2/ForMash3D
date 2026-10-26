@@ -511,8 +511,10 @@ The only retained project runtime log is the repository-root `logs/master.log`. 
 - Docker Compose and `manager.sh docker-run` mount root `logs/` into `/app/logs`; Supervisor forwards Redis, scheduler, API and frontend output to the same append target.
 - The Admin Logs API and UI read only `master.log`. Clearing logs truncates the active file in place rather than unlinking it.
 - A remote Redis instance cannot write into the application host's local file; its server-side logs remain on the Redis host.
-- The /api/v1/system/logs/stream endpoint streams the complete master.log from byte 0 and then follows every appended write, emitting file-identity plus byte-offset event IDs. Chunks are forwarded without line parsing, so partial lines, CR/CRLF control characters and Unicode survive intact, and there is no line-count replay bound.
-- The Next.js SSE proxy sets X-Accel-Buffering: no and forwards upstream chunks directly. The Admin Logs tab batches live entries per animation frame, bounds pending/display history, and follows the latest line without repeated smooth-scroll animations.
+- A fresh request to `/api/v1/system/logs/stream` seeks to configured recent lines, then follows appended bytes; `tail=0` starts at EOF. The allowlisted `file` basename defaults to `master.log`; tail, scan size, idle backoff and heartbeat values are owned by `backend/config/system.yaml`.
+- Existing `identity:offset` SSE event IDs, `Last-Event-ID` reconnects and `reset` events remain byte-exact. The Next.js proxy preserves query/header forwarding, disables buffering and keeps cancellation attached until the stream ends.
+- Admin Logs uses SSE only; the dead WebSocket attempt and polling fallback are retired. The UI opens on recent history, resumes from the last consumed byte, batches appends per animation frame, and caps displayed history.
+- ponytail: `master.log` remains non-rotating because multiple Uvicorn workers write to the same file and Clear truncates it in place. If disk growth becomes an issue, use external log rotation with `copytruncate` or a multi-process-safe log handler.
 
 ### 6.4 Shutdown (`scripts/stop.sh`)
 - Gracefully terminates Next.js, Uvicorn, and Redis processes.

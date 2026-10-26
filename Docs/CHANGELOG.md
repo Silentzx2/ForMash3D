@@ -1,3 +1,9 @@
+## 2026-10-26 — Real-time log tail: SSE-only, tail-first and bounded display
+
+- Fresh Admin Logs connections seek to the configured recent lines before following new writes; resume retains byte offsets, file identity and reset events.
+- Removed the dead WebSocket attempt and duplicate polling path, bounded terminal history, added capped reconnect backoff, and corrected proxy cancellation lifetime.
+- Added focused tests for tail offsets, filename confinement, config requirements and frontend/backend tail-window parity. Runtime timing and full application startup remain unverified in this source-only environment.
+
 ## 2026-10-26 — Unique3D max geometric detail push and untextured raw output
 
 - **Unique3D maximum geometry resolution & detail preservation**:
@@ -21,42 +27,3 @@
   - `multiprocess_scheduler.py`: Added `get_idle_workers_vram_by_gpu()` and `get_freeable_vram_by_gpu()`. Eviction logic now properly unloads idle workers across single- and multi-GPU configurations, strips unnecessary idle time gates, and destroys corrupt workers on fatal CUDA errors.
 - **Hunyuan3D decoder profile typing**:
   - `hunyuan3d_decoder_profile.py`: Added missing `Optional` import to fix `NameError: name 'Optional' is not defined`.
-
-## 2026-10-26 — Raw mesh fidelity preservation, scheduler timeouts and geometry repairs
-
-- **Raw mesh detail preservation across AI models**:
-  - `MeshProcessor.save_mesh`: Set default `crease_angle_deg=None` so raw GLB export preserves native sharp geometric normals rather than overwriting vertices with angle-weighted smoothed clusters.
-  - Hunyuan3D-2.1 (`hunyuan3d_decoder_profile.py`, `hunyuan3d_shape_v21.py`, `hunyuan3d_dit_v2_mini_turbo.py`): Restored `FlashVDM` decoder support with dynamic `dmc` (Dual Marching Cubes via `diso`) / `mc` fallback; disabled automatic normal smoothing.
-  - Unique3D (`scripts/multiview_inference.py`): Disabled `apply_smooth` (Laplacian smoothing) and `apply_sub_divide` (Loop subdivision) in `simple_clean_mesh` to prevent melting hard features.
-  - Pixal3D (`pixal3d_adapter.py`): Set `remesh=False` in raw GLB export to avoid surface relaxation.
-  - TRELLIS.2 (`trellis2_adapter.py`, `trellis2_utils.py`): Enforced `max_num_tokens=524288` to prevent cascade resolution from silently falling back from 1536 to 512.
-- **TRELLIS 1 geometry repair and subtle smoothing**:
-  - `trellis_adapter.py`: Added automatic topological hole filling (`trimesh.repair.fill_holes`, winding, normal fixes) and two iterations of volume-preserving Taubin smoothing (`filter_taubin(lamb=0.3, nu=-0.34, iterations=2)`) to eliminate sparse-voxel needle spikes and boundary cracks while keeping sharp details intact.
-- **Worker initialization timeout extension**:
-  - `multiprocess_scheduler.py`: Increased `max_load_timeout` default from 600s to 1800s (30m) for heavy models (`trellis`, `hunyuan`, `unique3d`, `pixal`, `taoflow`) to prevent premature worker SIGKILL during large weight downloads and Kaggle/cloud disk initialization.
-
-## 2026-10-24 — Postprocess texture, retopo fidelity and viewer shading guards
-
-- Auto-rig job scheduling now uses the canonical streaming SHA-256 helper instead of importing a deleted private pipeline symbol.
-- Textured GLBs receive safe metallic/roughness defaults only when omitted for albedo-only materials; UVs and degenerate base-colour atlases are checked before the texture stage is marked complete. Final game-ready export preserves the painter's original GLB scene/material bindings instead of flattening and re-exporting it.
-- Auto-retopology now rejects candidates that exceed the configured normalized surface-drift gate, allowing pipeline callers to retain the previous valid derivative. Invalid imported vertex normals are recomputed, and wireframe shading uses a depth-writing surface so rear edges do not masquerade as internal duplicate geometry.
-- Regression tests cover the hash import contract, retopo drift rejection, GLB JSON chunk preservation, and invalid viewport normals. Tests are added; runtime/CI results must be checked separately.
-
-## 2026-10-23 — Production readiness verification
-
-- All test gates green: backend `pytest` 40 passed / 6 skipped, Bun frontend 54 passed / 0 failed, `npx tsc --noEmit` zero errors; no mock data is served by production API paths.
-- Auth removed entirely from backend + frontend (personal/self-hosted use, no paid SaaS).
-- Feature improvements: quad topology, multi-variant candidates (1-4), part segmentation presets (3-6/6-15/15+), rig types, export formats, 3D print slicer handoff, quad-compatible smart UV.
-- `dev` verified ahead of `upstream/dev` and pushed to `origin/dev`.
-
-## 2026-10-22 — Quality, topology and artifact contracts
-
-- Final topology and master-drift checks now affect production status; missing required comparisons do not silently pass. Auto-Repair OFF preserves geometry, safe hole repair uses configured limits, and remaining defects are reported.
-- Collision decomposition failures preserve render geometry and expose the convex-hull fallback method/reason. Artifact hashing uses the canonical streaming helper.
-- Added regression coverage for topology, quality gates, collision artifact isolation, configured limits and artifact hashes.
-
-## 2026-10-22 — Generation request and adapter ownership
-
-- Sample SVGs now rasterize to PNG and use the existing upload path. Explicit model choice is retained, seed zero is preserved, and production controls remain separate from adapter-owned inference profiles.
-- Adapter profile filtering/schema alignment and request-isolation tests were added without retuning active inference schedules. The unresolved TRELLIS requested/effective step mismatch remains approval-gated.
-- Removed the disconnected jiggle/deformation control; documentation now distinguishes collision preparation from live simulation.

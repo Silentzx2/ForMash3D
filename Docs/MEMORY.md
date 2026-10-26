@@ -1,3 +1,12 @@
+## 2026-10-26 — Admin real-time logs tail
+
+- Admin Logs starts with configured recent `master.log` history and follows new bytes through one SSE stream; fresh-start seek cost is bounded by the configured scan window.
+- Reconnect uses file identity and byte offsets; reset events handle truncation or replacement. The browser view is line-capped, the dead WebSocket attempt and duplicate polling path are removed, and proxy cancellation is kept alive until the body stream ends.
+- The canonical log remains non-rotating. Automatic rotation stays out of scope because multiple Uvicorn workers share the file and Clear truncates it in place; use external `copytruncate` rotation or a multi-process-safe handler if disk growth needs addressing.
+- Tests, startup timing, append latency, 200 MB file timing and multi-tab CPU checks must be reported from actual execution; they were not available during source editing.
+
+---
+
 ## 2026-10-25 — Candidate Count Override Fix, Sharpness Tuning, Unique3D Path Resolution & Import Cleanups
 
 - **Explicit Candidate Count Priority**:

@@ -6,6 +6,7 @@ import logging
 import mimetypes
 import os
 import platform
+import re
 import shutil
 import tempfile
 import time
@@ -16,11 +17,11 @@ except ImportError:
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, BinaryIO, Dict, List, Optional
 from pydantic import BaseModel
 
 import psutil
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from starlette.background import BackgroundTask
 
@@ -637,22 +638,78 @@ def _format_log_chunk(data: bytes, offset: int, identity: str) -> tuple[str, int
     return f"id: {identity}:{next_offset}\ndata: {payload}\n\n", next_offset
 
 
-@router.get("/logs/stream", summary="Stream the complete master.log via SSE")
+def _resolve_log_path(logs_dir: Path, filename: str, *, create_master: bool = False) -> Path:
+    """Resolve an allowlisted log basename without permitting paths outside logs/."""
+    if not re.fullmatch(r"[A-Za-z0-9._-]+\.log", filename):
+        raise HTTPException(status_code=404, detail="Log file not found")
+
+    root = logs_dir.resolve()
+    candidate = root / filename
+    if create_master and filename == "master.log" and not candidate.exists() and not candidate.is_symlink():
+        candidate.touch(exist_ok=True)
+
+    try:
+        resolved = candidate.resolve(strict=True)
+        resolved.relative_to(root)
+    except (OSError, RuntimeError, ValueError):
+        raise HTTPException(status_code=404, detail="Log file not found") from None
+    if not resolved.is_file():
+        raise HTTPException(status_code=404, detail="Log file not found")
+    return candidate
+
+
+def _tail_start_offset(file_handle: BinaryIO, n_lines: int, max_scan_bytes: int) -> int:
+    """Return a line-boundary byte offset for the last N lines without scanning the entire file."""
+    file_handle.seek(0, os.SEEK_END)
+    file_size = file_handle.tell()
+    if n_lines <= 0:
+        return file_size
+    if file_size == 0:
+        return 0
+
+    scan_start = max(0, file_size - max_scan_bytes)
+    file_handle.seek(file_size - 1)
+    target_newlines = n_lines + int(file_handle.read(1) == b"\n")
+    cursor = file_size
+    found_newlines = 0
+
+    # A line-feed byte cannot be a UTF-8 continuation byte, so a match starts on a safe line boundary.
+    while cursor > scan_start:
+        block_start = max(scan_start, cursor - (64 * 1024))
+        file_handle.seek(block_start)
+        block = file_handle.read(cursor - block_start)
+        for index in range(len(block) - 1, -1, -1):
+            if block[index] == 10:
+                found_newlines += 1
+                if found_newlines == target_newlines:
+                    return block_start + index + 1
+        cursor = block_start
+
+    # ponytail: a single line larger than max_scan_bytes can force a byte-0 fallback.
+    # Upgrade path: add an explicit long-line truncation policy only if this appears in real logs.
+    return 0
+
+
+@router.get("/logs/stream", summary="Tail and stream a log file via SSE")
 async def stream_logs(
     request: Request,
-    offset: Optional[int] = Query(None, ge=0, description="Byte offset used to resume a stream"),
+    offset: Optional[int] = Query(None, description="Byte offset used to resume a stream"),
     identity: Optional[str] = Query(None, description="Log-file identity used to resume a stream"),
+    tail: Optional[int] = Query(None, description="Initial tail line count; zero starts at EOF"),
+    file: str = Query("master.log", description="Allowlisted log basename"),
+    settings=Depends(get_current_settings),
     _: bool = Depends(verify_api_key),
 ):
-    """Stream master.log from its beginning, then forward every appended byte in order."""
+    """Tail recent lines on a fresh connection, then forward appended bytes in order."""
     from fastapi.responses import StreamingResponse
 
     project_root = Path(__file__).resolve().parents[3]
-    log_path = project_root / "logs" / "master.log"
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    log_path.touch(exist_ok=True)
-
+    logs_dir = project_root / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    log_path = _resolve_log_path(logs_dir, file, create_master=True)
+    stream_config = settings.logging.stream
     last_event_id = request.headers.get("last-event-id")
+    fresh_connection = not last_event_id and offset is None
 
     async def event_generator():
         log_file = log_path.open("rb", buffering=0)
@@ -663,8 +720,7 @@ async def stream_logs(
             cursor = 0
             reset_required = False
 
-            # IDs include both inode identity and byte offset. This lets a
-            # reconnect detect log rotation even when the new file is larger.
+            # IDs preserve file identity plus byte offset for exact reconnects.
             if last_event_id:
                 parts = last_event_id.split(":")
                 if len(parts) == 3 and all(part.isdigit() for part in parts):
@@ -683,13 +739,26 @@ async def stream_logs(
                 else:
                     cursor = offset
 
-            if path_stat.st_size == 0:
+            if file == "master.log" and path_stat.st_size == 0:
                 try:
-                    with log_path.open("a", encoding="utf-8") as f:
-                        f.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - system - INFO - Master log attached. Services connected.\n")
+                    with log_path.open("a", encoding="utf-8") as seed_file:
+                        seed_file.write(
+                            f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - "
+                            "system - INFO - Master log attached. Services connected.\n"
+                        )
                     path_stat = log_path.stat()
                 except Exception:
                     pass
+
+            if fresh_connection and not reset_required:
+                requested_tail = stream_config["default_tail_lines"] if tail is None else tail
+                tail_lines = min(max(requested_tail, 0), stream_config["max_tail_lines"])
+                cursor = _tail_start_offset(
+                    log_file,
+                    tail_lines,
+                    stream_config["max_tail_scan_bytes"],
+                )
+                path_stat = log_path.stat()
 
             if cursor > path_stat.st_size:
                 cursor = 0
@@ -706,10 +775,12 @@ async def stream_logs(
             pending = b""
             loop = asyncio.get_running_loop()
             last_heartbeat = loop.time()
+            idle_wait_ms = stream_config["idle_poll_min_ms"]
 
             while not await request.is_disconnected():
                 chunk = log_file.read(16 * 1024)
                 if chunk:
+                    idle_wait_ms = stream_config["idle_poll_min_ms"]
                     complete, pending = _complete_utf8_prefix(pending + chunk)
                     if complete:
                         frame, emitted_offset = _format_log_chunk(
@@ -718,8 +789,7 @@ async def stream_logs(
                         yield frame
                     continue
 
-                # Follow the current canonical path if the log is rotated or
-                # truncated. A reset event tells the UI to discard the old file.
+                # Follow the selected path if replaced or truncated; notify the client to reset.
                 try:
                     path_stat = log_path.stat()
                     file_stat = os.fstat(log_file.fileno())
@@ -736,17 +806,20 @@ async def stream_logs(
                         current_identity = f"{file_stat.st_dev}:{file_stat.st_ino}"
                         pending = b""
                         emitted_offset = 0
+                        idle_wait_ms = stream_config["idle_poll_min_ms"]
                         yield f"id: {current_identity}:0\nevent: reset\ndata: {{}}\n\n"
                         last_heartbeat = loop.time()
                         continue
                 except FileNotFoundError:
-                    await asyncio.sleep(0.02)
+                    await asyncio.sleep(idle_wait_ms / 1000)
+                    idle_wait_ms = min(idle_wait_ms * 2, stream_config["idle_poll_max_ms"])
                     continue
 
-                if loop.time() - last_heartbeat >= 15:
+                if loop.time() - last_heartbeat >= stream_config["heartbeat_seconds"]:
                     yield ": heartbeat\n\n"
                     last_heartbeat = loop.time()
-                await asyncio.sleep(0.02)
+                await asyncio.sleep(idle_wait_ms / 1000)
+                idle_wait_ms = min(idle_wait_ms * 2, stream_config["idle_poll_max_ms"])
         finally:
             log_file.close()
 
@@ -759,61 +832,6 @@ async def stream_logs(
             "X-Accel-Buffering": "no",
         },
     )
-
-
-@router.websocket("/logs/ws")
-async def websocket_logs(websocket: WebSocket):
-    """Direct real-time WebSocket stream of master.log with zero buffering."""
-    await websocket.accept()
-    project_root = Path(__file__).resolve().parents[3]
-    log_path = project_root / "logs" / "master.log"
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    log_path.touch(exist_ok=True)
-
-    try:
-        log_file = log_path.open("rb", buffering=0)
-        try:
-            file_stat = os.fstat(log_file.fileno())
-            size = file_stat.st_size
-            # Send initial tail (last 64KB) if file is large
-            initial_seek = max(0, size - 65536)
-            log_file.seek(initial_seek)
-            if initial_seek > 0:
-                log_file.readline()  # skip partial first line
-            initial_data = log_file.read(65536)
-            if initial_data:
-                await websocket.send_text(json.dumps({
-                    "type": "initial",
-                    "chunk": initial_data.decode("utf-8", errors="replace"),
-                }))
-
-            pending = b""
-            while True:
-                chunk = log_file.read(16384)
-                if chunk:
-                    complete, pending = _complete_utf8_prefix(pending + chunk)
-                    if complete:
-                        await websocket.send_text(json.dumps({
-                            "type": "chunk",
-                            "chunk": complete.decode("utf-8", errors="replace"),
-                        }))
-                    continue
-
-                path_stat = log_path.stat()
-                file_stat = os.fstat(log_file.fileno())
-                if path_stat.st_ino != file_stat.st_ino or path_stat.st_size < log_file.tell():
-                    log_file.close()
-                    log_file = log_path.open("rb", buffering=0)
-                    await websocket.send_text(json.dumps({"type": "reset"}))
-                    pending = b""
-                    continue
-                await asyncio.sleep(0.02)
-        finally:
-            log_file.close()
-    except (WebSocketDisconnect, ConnectionResetError, asyncio.CancelledError):
-        pass
-    except Exception as e:
-        logger.debug(f"Logs WebSocket disconnected: {e}")
 
 
 def _tail_file_lines(file_path: Path, max_lines: int) -> list:

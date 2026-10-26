@@ -531,8 +531,8 @@ ForMesh3D exports standard **GLB / glTF 2.0**, **OBJ**, **STL**, and **FBX** (vi
 
 All project-managed runtime output is consolidated in `logs/master.log`: Python/API logging, scheduler and worker events, jobs, Next.js server/build output, startup scripts, and Redis when ForMesh3D manages or can reconfigure the local Redis instance. The file is append-only while the app runs and does not rotate into numbered sibling logs.
 
-Use `./manager.sh logs` or `tail -f logs/master.log`. The Admin Logs tab and `/api/v1/system/logs/stream` read this same file. Docker and Docker Compose persist it through the repository-root `logs/` mount. A separately managed remote Redis service keeps its own logs on its host.
-Live streaming emits both newline- and carriage-return-delimited output (including sampling progress) without waiting for a newline. The SSE proxy disables buffering, while the Admin Logs tab batches UI updates per animation frame and keeps a bounded rolling window under high log volume.
+Use `./manager.sh logs` or `tail -f logs/master.log`. The Admin Logs tab and `/api/v1/system/logs/stream` read this same file. The tab opens on configured recent lines and follows new writes via SSE, similar to `tail -f`; reconnects resume by file identity and byte offset. Docker and Docker Compose persist the file through the repository-root `logs/` mount. A separately managed remote Redis service keeps its own logs on its host.
+The stream preserves newline- and carriage-return-delimited progress output, partial lines, and Unicode without parsing records. The Next.js proxy disables buffering and propagates cancellation; the browser batches DOM appends and bounds displayed history. `master.log` remains non-rotating until a multi-process-safe rotation strategy is introduced.
 
 ---
 
@@ -548,7 +548,7 @@ Live streaming emits both newline- and carriage-return-delimited output (includi
 | 🧪 **[Experimental Model Settings](Docs/EXPERIMENTAL-MODEL-SETTINGS.md)** | Dated upstream/community evidence, active max-detail profiles, compatibility limits and user-confirmation policy |
 | 🧠 **[Project Memory & Status](Docs/MEMORY.md)** | Active state, hardware prerequisites, and verified milestones |
 | 📜 **[Change Log](Docs/CHANGELOG.md)** | Chronological history of releases, fixes, and optimizations |
-| 🎯 **[Task Tracker](Docs/TASKS.md)** | Completed features, active development items, and future roadmap |
+| 📋 **[Task Tracker](Docs/TASKS.md)** | Future tasks and follow-ups; new tasks will be added here |
 | ⚡ **[Physics Runtime Specification](Docs/SYSTEM-BLUEPRINT.md#physics-path)** | Rigid-body simulation, mass properties, and Rapier3D integration |
 | 🔌 **[API Documentation](Docs/api-documentation.md)** | Complete endpoint schemas, request payloads, and status codes |
 | ⚖️ **[Third-Party Model Licenses](backend/thirdparty/LICENSE)** | Upstream terms and attributions for all integrated model weights |

@@ -92,6 +92,36 @@ class LoggingConfig(BaseSettings):
     use_dict_config: bool = False
     dict_config_path: Optional[str] = None
     dict_config: Optional[Dict] = None
+    stream: Optional[Dict[str, int]] = None
+
+
+def _validate_log_stream_config(config: Optional[Dict[str, int]]) -> Dict[str, int]:
+    """Fail at config load if any SSE/tail tuning key is missing or invalid."""
+    required = (
+        "default_tail_lines",
+        "max_tail_lines",
+        "max_tail_scan_bytes",
+        "idle_poll_min_ms",
+        "idle_poll_max_ms",
+        "heartbeat_seconds",
+    )
+    if not isinstance(config, dict):
+        raise ValueError("logging.stream must be configured in backend/config/system.yaml")
+    missing = [key for key in required if key not in config]
+    if missing:
+        raise ValueError(f"Missing logging.stream keys: {', '.join(missing)}")
+    if any(type(config[key]) is not int for key in required):
+        raise ValueError("logging.stream values must all be integers")
+    if (
+        config["default_tail_lines"] < 0
+        or config["max_tail_lines"] < config["default_tail_lines"]
+        or config["max_tail_scan_bytes"] <= 0
+        or config["idle_poll_min_ms"] <= 0
+        or config["idle_poll_max_ms"] < config["idle_poll_min_ms"]
+        or config["heartbeat_seconds"] <= 0
+    ):
+        raise ValueError("Invalid logging.stream bounds in backend/config/system.yaml")
+    return config
 
 
 class SecurityConfig(BaseSettings):
@@ -367,6 +397,7 @@ def get_settings() -> Settings:
         models_config = config_dir / "models.yaml"
 
         settings = load_config_from_file(str(system_config))
+        _validate_log_stream_config(settings.logging.stream)
 
         # Static API credentials come only from the runtime environment, never YAML.
         configured_api_key = os.getenv("P3D_API_KEY")

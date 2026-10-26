@@ -1,9 +1,21 @@
 # Architecture Decisions — ForMesh 3D
 
 > **Version**: 0.1.0
-> **Last Updated**: September 2026
+> **Last Updated**: October 2026
 
 ---
+
+## ADR-100: Logs — SSE-Only, Tail-First Start (2026-10-26)
+
+**Context:** The Admin Logs page replayed the full, non-rotating `master.log` from byte zero on each fresh open, attempted a WebSocket transport that could not upgrade through the Next.js catch-all route, raced SSE against a polling overwrite, allowed the DOM to grow without bound, and did not retry after an `EventSource.CLOSED` failure.
+
+**Decision:**
+1. Fresh SSE connections seek backward to the configured last N lines; `tail=0` starts at EOF. A strict `file` basename allowlist prevents paths from escaping the repository `logs/` directory.
+2. Preserve `identity:offset` event IDs, `Last-Event-ID` resume, UTF-8-safe chunks and `reset` events. One SSE transport replaces the dead WebSocket attempt and the redundant poll/overwrite path.
+3. Adapt idle polling using stream settings in `backend/config/system.yaml`; retain the configured heartbeat and avoid new dependencies or startup changes.
+4. Bound terminal history, reconnect closed streams with capped backoff, and keep the existing Clear operation on the canonical log.
+
+**Consequences:** History before the initial tail is not auto-replayed when the Logs tab opens; the query `tail` can request a larger configured window, and the existing log-file endpoint remains available for recent parsed entries. `master.log` still has no automatic rotation: multiple Uvicorn workers append to the same file and Clear truncates it in place. If disk growth becomes a concern, upgrade to external `copytruncate` rotation or a multi-process-safe handler.
 
 ## ADR-099: Raw Mesh Fidelity Preservation and Worker Load Timeout Extension (2026-10-26)
 

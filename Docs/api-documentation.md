@@ -88,6 +88,28 @@ Rate limiting is controlled by `security.rate_limit_enabled` and `security.rate_
 
 ## System APIs
 
+### Live Log Stream (SSE)
+
+```http
+GET /api/v1/system/logs/stream?file=master.log&tail=<N>
+Accept: text/event-stream
+```
+
+The Admin Logs tab consumes this endpoint as raw UTF-8 text. On a fresh connection, `tail` selects recent lines and is clamped to the configured range; omitting it uses `logging.stream.default_tail_lines` from `backend/config/system.yaml`. `tail=0` seeks to EOF and only follows new writes. The initial seek scans backward up to `logging.stream.max_tail_scan_bytes`, so normal first-paint cost does not depend on older file history.
+
+Query parameters:
+
+- `file` (string, default `master.log`): a strict allowlisted `.log` basename inside the repository `logs/` directory. Missing or invalid files return `404`.
+- `tail` (integer, optional): initial line count; bounded by `logging.stream.max_tail_lines`. Applied only to a fresh connection.
+- `offset` (integer, optional): byte offset used when starting or resuming explicitly.
+- `identity` (string, optional): file identity paired with `offset` to detect replacement.
+- `Last-Event-ID` (request header): automatically sent by `EventSource` on reconnect and takes precedence over query offsets.
+
+Each message carries a JSON payload with `identity`, the next byte `offset`, and unmodified `chunk` text. SSE event IDs retain the `device:inode:offset` form. A named `reset` event tells the client to clear its view after truncation or replacement; the client then resumes from the new file identity. Partial lines, CR/CRLF progress output, blank lines and Unicode are not parsed into records.
+
+The transport is SSE-only and uses the non-buffering Next.js proxy. The legacy WebSocket transport is not exposed. Existing `GET /api/v1/system/logs/files`, `GET /api/v1/system/logs/files/{filename}?lines=...`, and `DELETE /api/v1/system/logs/files/master.log` endpoints remain available; Clear truncates the active file in place.
+
+
 ### Health Check
 
 ```http

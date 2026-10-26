@@ -373,20 +373,16 @@ async function createProxyResponse(response: Response, request?: NextRequest): P
 async function streamResponse(targetUrl: string, request: NextRequest): Promise<NextResponse> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 1800000); // 30 min safety timeout; jobs can run longer than 5 min
-  
-  // Track if client has disconnected
-  let clientDisconnected = false;
-  
-  // Listen for client disconnect
+
   const onDisconnect = () => {
-    clientDisconnected = true;
     controller.abort();
   };
-  
-  // NextRequest doesn't have a direct abort signal, but we can detect disconnect
-  // by wrapping the response body
+  const cleanup = () => {
+    clearTimeout(timeoutId);
+    request.signal?.removeEventListener('abort', onDisconnect);
+  };
   request.signal?.addEventListener('abort', onDisconnect);
-  
+
   try {
     const sseHeaders: Record<string, string> = {
       accept: 'text/event-stream',
@@ -402,18 +398,16 @@ async function streamResponse(targetUrl: string, request: NextRequest): Promise<
       headers: sseHeaders,
       signal: controller.signal,
     });
-    
-    clearTimeout(timeoutId);
-    request.signal?.removeEventListener('abort', onDisconnect);
-    
+
     if (!response.ok) {
+      cleanup();
       return corsJson(
         { success: false, message: `SSE connection failed: ${response.status}` },
         { status: response.status },
         request
       );
     }
-    
+
     const origin = request.headers.get('origin');
     const headers = new Headers({
       'content-type': 'text/event-stream',
@@ -425,24 +419,26 @@ async function streamResponse(targetUrl: string, request: NextRequest): Promise<
       headers.set('access-control-allow-origin', origin);
       headers.set('access-control-allow-credentials', 'true');
     }
-    
-    // Pipe response body through TransformStream for immediate zero-buffering passthrough
+
     if (response.body) {
       const transform = new TransformStream();
-      response.body.pipeTo(transform.writable).catch(() => {});
+      response.body
+        .pipeTo(transform.writable, { signal: controller.signal })
+        .catch(() => {})
+        .finally(cleanup);
       return new NextResponse(transform.readable, {
         status: 200,
         headers,
       });
     }
-    
+
+    cleanup();
     return new NextResponse(null, {
       status: 200,
       headers,
     });
   } catch (error) {
-    clearTimeout(timeoutId);
-    request.signal?.removeEventListener('abort', onDisconnect);
+    cleanup();
     controller.abort();
     console.error('[API Proxy] SSE stream failed:', error);
     return corsJson(

@@ -4,6 +4,13 @@ logging:
   level: "INFO"
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
   file: null  # Runtime logging is centralized at repository-root logs/master.log
+  stream:
+    default_tail_lines: 200
+    max_tail_lines: 2000
+    max_tail_scan_bytes: 8388608
+    idle_poll_min_ms: 10
+    idle_poll_max_ms: 80
+    heartbeat_seconds: 15
 
 # Security configuration
 security:
