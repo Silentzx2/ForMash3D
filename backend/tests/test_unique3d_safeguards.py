@@ -308,3 +308,47 @@ def test_reconstruct_stage1_backward_under_outer_no_grad(sample_rgbs):
             assert out_faces is not None
 
 
+def test_calc_w_over_h_clamping():
+    """Verify calc_w_over_h prevents wafer collapse by clamping scale to [0.25, 0.85]."""
+    import numpy as np
+    from scripts.mesh_init import calc_w_over_h
+
+    # Very thin image (ratio 0.05) should be clamped to at least 0.25
+    thin_arr = np.zeros((400, 400, 4), dtype=np.uint8)
+    thin_arr[50:350, 195:205, 3] = 255  # 10px wide by 300px tall
+    scale_thin = calc_w_over_h(thin_arr)
+    assert scale_thin >= 0.25
+
+    # Very wide image (ratio 2.0) should be clamped to at most 0.85
+    wide_arr = np.zeros((400, 400, 4), dtype=np.uint8)
+    wide_arr[190:210, 50:350, 3] = 255
+    scale_wide = calc_w_over_h(wide_arr)
+    assert scale_wide <= 0.85
+
+
+def test_save_py3dmesh_untextured_raw(tmp_path):
+    """Verify save_py3dmesh_with_trimesh_fast produces clean untextured raw geometry when requested."""
+    from scripts.utils import save_py3dmesh_with_trimesh_fast
+    import trimesh
+
+    verts = torch.tensor([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=torch.float32)
+    faces = torch.tensor([[0, 1, 2]], dtype=torch.int64)
+
+    mock_mesh = MagicMock()
+    mock_mesh.verts_packed.return_value = verts
+    mock_mesh.faces_packed.return_value = faces
+    mock_mesh.verts_normals_packed.return_value = torch.empty(0)
+    mock_mesh.textures = None
+
+    out_file = str(tmp_path / "raw_mesh.glb")
+    save_py3dmesh_with_trimesh_fast(mock_mesh, out_file, include_vertex_color=False)
+
+    loaded = trimesh.load(out_file, force="mesh", process=False)
+    assert isinstance(loaded, trimesh.Trimesh)
+    assert len(loaded.vertices) == 3
+    assert len(loaded.faces) == 1
+    # Verify no vertex colors are forced onto raw untextured geometry
+    assert not hasattr(loaded.visual, "vertex_colors") or loaded.visual.vertex_colors is None or loaded.visual.kind != "vertex"
+
+
+
