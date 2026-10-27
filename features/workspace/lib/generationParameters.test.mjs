@@ -355,6 +355,24 @@ test('candidate count remains bounded when a malformed non-finite value is suppl
   }).body.candidate_count, 1);
 });
 
+test('texture generation is controlled by generateTexture, not the legacy generatePBR flag', () => {
+  const disabled = buildGenerationParameters({
+    imageFileId: 'file-texture-disabled',
+    generateTexture: false,
+    generatePBR: true,
+  });
+  assert.equal(disabled.body.texture_enabled, false);
+  assert.equal(disabled.body.generate_texture, false);
+
+  const enabled = buildGenerationParameters({
+    imageFileId: 'file-texture-enabled',
+    generateTexture: true,
+    generatePBR: false,
+  });
+  assert.equal(enabled.body.texture_enabled, true);
+  assert.equal(enabled.body.generate_texture, true);
+});
+
 test('parseModelParameterOverrides enforces object safety', () => {
   assert.deepEqual(parseModelParameterOverrides(undefined), {});
   assert.deepEqual(parseModelParameterOverrides(null), {});
@@ -401,20 +419,20 @@ test('production part/rig/export/slicer options are dropped when post-processing
   assert.equal(result.body.slicer_handoff, undefined);
 });
 
-test('low_vram setting forwards to both body and model_parameters for Trellis 2', () => {
+test('low_vram setting is not serialized as an adapter inference override', () => {
   const lowVramOn = buildGenerationParameters({
     imageFileId: 'file-trellis2-low-vram-on',
     aiModel: 'trellis2_image_to_raw_mesh',
     low_vram: true,
   });
-  assert.equal(lowVramOn.body.low_vram, true);
-  assert.equal(lowVramOn.modelParameters.low_vram, true);
+  assert.equal(lowVramOn.body.low_vram, undefined);
+  assert.equal(lowVramOn.modelParameters.low_vram, undefined);
 
   const lowVramOff = buildGenerationParameters({
     imageFileId: 'file-trellis2-low-vram-off',
     aiModel: 'trellis2_image_to_raw_mesh',
     low_vram: false,
   });
-  assert.equal(lowVramOff.body.low_vram, false);
-  assert.equal(lowVramOff.modelParameters.low_vram, false);
+  assert.equal(lowVramOff.body.low_vram, undefined);
+  assert.equal(lowVramOff.modelParameters.low_vram, undefined);
 });

@@ -69,6 +69,11 @@ _ADAPTER_MAP = {
     "Pixal3DImageToRawMeshAdapter": ("pixal3d_adapter", "Pixal3DImageToRawMeshAdapter"),
     # TaoFlowForge
     "TaoFlowForgeImageToRawMeshAdapter": ("taoflowforge_adapter", "TaoFlowForgeImageToRawMeshAdapter"),
+    # Hi3D (Experimental)
+    "Hi3DAdapter": ("hi3d_adapter", "Hi3DAdapter"),
+    "Hi3DImageToRawMeshAdapter": ("hi3d_adapter", "Hi3DImageToRawMeshAdapter"),
+    "Hi3DImageToTexturedMeshAdapter": ("hi3d_adapter", "Hi3DImageToTexturedMeshAdapter"),
+    "Hi3DImageToMeshAdapter": ("hi3d_adapter", "Hi3DImageToMeshAdapter"),
 }
 
 __all__ = list(_ADAPTER_MAP.keys())

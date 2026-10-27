@@ -193,14 +193,12 @@ async def smart_generation(
             queued = await image_to_textured_mesh(
                 payload,
                 scheduler=scheduler,
-                current_user=current_user,
                 file_store=file_store,
             )
         else:
             queued = await image_to_raw_mesh(
                 payload,
                 scheduler=scheduler,
-                current_user=current_user,
                 file_store=file_store,
             )
         return {

@@ -31,6 +31,7 @@ import {
   resolveGenerationModelCapabilities,
   resolveGenerationModelChoice,
 } from '../utils/buildGenerationParameters';
+import { buildTextureGenerationParameters } from '../utils/buildTextureGenerationParameters';
 import { DEFAULT_PHYSICS_SETTINGS } from '../utils/physicsSettings';
 import { taskPersistence } from '@/services/taskPersistence';
 
@@ -549,7 +550,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const dismissActiveTask = useCallback(() => setActiveTask(null), []);
 
-    const [generationSettings, setGenerationSettings] = useState<GenerationSettings>({
+    const [generationSettings, setGenerationSettings] = useState<GenerationSettings>(() => ({
       mode: 'image-to-3d',
       image: null,
       aiModel: '',
@@ -578,9 +579,8 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       rigType: 'none',
       exportFormats: ['glb'],
       slicerHandoff: false,
-      low_vram: true,
       physics: { ...DEFAULT_PHYSICS_SETTINGS },
-    });
+    }));
  
    const [comparisonGroupId, setComparisonGroupId] = useState<string | null>(null);
  
@@ -595,9 +595,6 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     prompt: '',
     modelId: '',
     maps: { albedo: true, normal: true, roughness: true, metallic: true, ao: true, height: false },
-    maxNumView: 9,
-    generatePBR: true,
-    quadCompatibleUv: false,
   });
 
   const [sculptSettings, setSculptSettings] = useState<SculptSettings>({
@@ -1799,81 +1796,22 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
   }, [remeshSettings, currentAsset, startTask]);
 
     const runTextureGeneration = useCallback(async () => {
-      const resolution = textureSettings.resolution || '2K';
-      const isHighRes = resolution === '4K' || resolution === '8K';
-      const modelPreference = isHighRes
+      const modelPreference = textureSettings.resolution === '4K' || textureSettings.resolution === '8K'
         ? 'hunyuan3d_paint_v21_image_mesh_painting'
         : 'paint3d';
 
       const localTaskId = startTask('texture', 'Texture generation', undefined, modelPreference, undefined, undefined, comparisonGroupId ?? undefined);
     try {
       const meshRef = resolveMeshReference(currentAsset);
-
-      const isTextPaintingModel = (modelPreference as string) === 'trellis_text_mesh_painting';
-      const hasTexturePrompt = Boolean(textureSettings.prompt?.trim());
-      const endpoint = isTextPaintingModel
-        ? '/api/v1/mesh-generation/text-mesh-painting'
-        : '/api/v1/mesh-generation/image-mesh-painting';
-
-      const numericResolution =
-        resolution === '1K' ? 1024 :
-        resolution === '2K' ? 2048 :
-        resolution === '4K' ? 4096 :
-        resolution === '8K' ? 8192 :
-        resolution === '512' ? 512 :
-        2048;
-
-      const body: Record<string, unknown> = {
-        texture_resolution: numericResolution,
-        texture_resolution_preset: resolution,
-        ...(textureSettings.quadCompatibleUv
-          ? { topology_mode: 'quad', quad_topology: true }
-          : {}),
-        output_format: 'glb',
-        model_preference: modelPreference,
-        enable_postprocess: false,
-        postprocess_mode: 'manual_mesh_tool',
-        ...meshRef,
-      };
-
-      if (modelPreference.includes('paint_v21') || isHighRes) {
-        body.model_parameters = {
-          // EXPERIMENTAL_MAX_DETAIL: Hunyuan3D-Paint upstream supports 6-9 views; default to 9.
-          // Ask the user once before changing this locked quality profile in a later task.
-          max_num_view: textureSettings.maxNumView ?? 9,
-          // EXPERIMENTAL_MAX_DETAIL: use the supported 768 per-view inference profile for both 4K and 8K atlas outputs.
-          // Atlas resolution remains selected independently below; ask the user before changing this locked quality default.
-          resolution: 768,
-        };
-      } else {
-        body.model_parameters = {};
-      }
-
-      if (textureSettings.generatePBR !== false) {
-        body.generate_pbr = true;
-      }
-
-      if (hasTexturePrompt && isTextPaintingModel) {
-        body.text_prompt = textureSettings.prompt;
-      } else {
-        const originalRefImage = currentAsset?.referenceImage || currentAsset?.inputImage || (currentAsset?.category === 'generation' ? currentAsset?.thumbnail : undefined);
-        const refImageUrl = textureSettings.referenceImage || originalRefImage;
-        if (!refImageUrl) {
-          throw new Error('No texture prompt or reference image provided. Please supply one.');
-        }
-        const refFileId = textureSettings.referenceImageFileId || currentAsset?.referenceImageFileId || (currentAsset as any)?.fileId;
-        if (refFileId) {
-          body.image_file_id = refFileId;
-        } else if (refImageUrl.startsWith('data:')) {
-          // Backend expects base64 WITHOUT the data-URL prefix
-          body.image_base64 = refImageUrl.replace(/^data:image\/[a-z0-9.+-]+;base64,/, '');
-        } else {
-          body.image_path = refImageUrl;
-        }
-        if (hasTexturePrompt) {
-          body.text_prompt = textureSettings.prompt;
-        }
-      }
+      const originalRefImage = currentAsset?.referenceImage || currentAsset?.inputImage || (currentAsset?.category === 'generation' ? currentAsset?.thumbnail : undefined);
+      const { endpoint, body } = buildTextureGenerationParameters(
+        textureSettings,
+        meshRef,
+        {
+          url: originalRefImage,
+          fileId: currentAsset?.referenceImageFileId || (currentAsset as any)?.fileId,
+        },
+      );
 
       const res = await fetch(endpoint, {
         method: 'POST',
@@ -1900,7 +1838,7 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
        setActiveTask(prev => prev ? { ...prev, status: 'failed', currentStep: message, errorMessage: message, diagnostic } : null);
        toast.error('Texture generation failed', { description: message });
      }
-   }, [textureSettings, currentAsset, startTask]);
+    }, [textureSettings, currentAsset, startTask]);
 
     const runUVUnwrapGeneration = useCallback(async (customSettings?: {
      distortionThreshold?: number;

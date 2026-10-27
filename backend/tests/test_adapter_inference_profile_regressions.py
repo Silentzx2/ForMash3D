@@ -7,6 +7,7 @@ ADAPTERS = ROOT / "backend" / "adapters"
 FACTORY = ROOT / "backend" / "core" / "scheduler" / "model_factory.py"
 
 PROFILE_MODULES = {
+    "hi3d_adapter.py",
     "hunyuan3d_adapter_v21.py",
     "hunyuan3d_dit_v2_mini_turbo.py",
     "hunyuan3d_paint_v21.py",

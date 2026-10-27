@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 
 import { HugeiconsIcon } from '@hugeicons/react';
-import { AlertCircle, Box, BrushIcon, Cancel, CheckIcon, ChevronDown, DownloadIcon, GaugeIcon, ImageIcon, LayersIcon, LoaderCircle, PackageIcon, PaletteIcon, SlidersHorizontalIcon, SparklesIcon, TriangleAlertIcon, UploadIcon } from '@hugeicons/core-free-icons';
+import { AlertCircle, Box, BrushIcon, Cancel, CheckIcon, ChevronDown, DownloadIcon, ImageIcon, LayersIcon, LoaderCircle, PackageIcon, PaletteIcon, SlidersHorizontalIcon, SparklesIcon, TriangleAlertIcon, UploadIcon } from '@hugeicons/core-free-icons';
 import {
   PaintBrushToolIcon,
   AirbrushIcon,
@@ -27,15 +27,11 @@ interface DiscoveredTextureModel {
   installed: boolean;
   status: string;
   vram_required_mb: number;
-  low_vram_supported: boolean;
   supports_flashvdm?: boolean;
 }
 
 function formatTextureModel(id: string, modelData: AvailableModels | null): DiscoveredTextureModel {
    const def = getModelDefinition(id);
-   const isTrellis = id.includes('trellis');
-   const isHunyuan = id.includes('hunyuan');
-
    // Authoritative model runtime details from backend /system/models
    const modelDetails = modelData?.model_details?.[id];
    const isRegistered = Boolean(modelDetails);
@@ -44,7 +40,6 @@ function formatTextureModel(id: string, modelData: AvailableModels | null): Disc
    const status = modelDetails?.status || (isRegistered ? (weightsAvailable ? 'ready' : 'weights_missing') : 'unavailable');
 
    const vramRequiredMb = modelDetails?.vram_requirement ?? (def?.vramMb || 11776);
-   const lowVramSupported = def?.lowVramSupported ?? (isTrellis || isHunyuan);
    const supportsFlashVdm = def?.supportsFlashVDM ?? id.includes('dit_v2_mini_turbo');
 
    return {
@@ -54,8 +49,7 @@ function formatTextureModel(id: string, modelData: AvailableModels | null): Disc
      installed: weightsAvailable,
      status,
      vram_required_mb: vramRequiredMb,
-     low_vram_supported: lowVramSupported,
-     supports_flashvdm: supportsFlashVdm,
+      supports_flashvdm: supportsFlashVdm,
    };
 }
 
@@ -235,7 +229,7 @@ export const TexturePanel: React.FC = () => {
   // Resolution routing is authoritative: do not replace a required engine with a different
   // available model, or the UI can display one provider while submitting another.
   const activeTextureModel = textureCapableModels.find(m => m.id === textureSettings.modelId);
-  const supportsLowVram = Boolean(activeTextureModel?.low_vram_supported);
+  const isHighResolutionTexture = textureSettings.resolution === '4K' || textureSettings.resolution === '8K';
 
   // VRAM eligibility check
   const getVRAMStatus = () => {
@@ -571,7 +565,7 @@ export const TexturePanel: React.FC = () => {
                </button>
              </div>
 
-            {/* Output Atlas Resolution & Auto-routed Texture Engine */}
+             {/* Output Atlas Resolution & Auto-routed Texture Engine */}
             <div className="rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] p-2 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-bold text-white uppercase tracking-wider">Atlas Resolution</span>
@@ -603,30 +597,7 @@ export const TexturePanel: React.FC = () => {
                 ))}
               </div>
 
-              {/* Quad-compatible smart UV (wired to the texture-generation request) */}
-              <div className="rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] p-2 space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold text-white uppercase tracking-wider">UV Layout</span>
-                  <span className="text-[9px] text-zinc-400">Quad-compatible unwrapping</span>
-                </div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={Boolean(textureSettings.quadCompatibleUv)}
-                  onClick={() => setTextureSettings(prev => ({ ...prev, quadCompatibleUv: !prev.quadCompatibleUv }))}
-                  className={`w-full p-1.5 rounded-lg border text-left flex items-center justify-between transition-all ${textureSettings.quadCompatibleUv ? 'bg-primary/10 border-primary/30 text-white' : 'bg-[hsl(var(--surface-1))] border-white/[0.06] text-zinc-400 cursor-pointer hover:border-white/[0.15]'}`}
-                >
-                  <div className="flex flex-col min-w-0 pr-1">
-                    <span className="text-xs font-bold text-white">Quad-compatible smart UV</span>
-                    <span className="text-[9px] text-zinc-400">Preserve quad-friendly UV charts on quad-topology meshes</span>
-                  </div>
-                  <div className={`w-8 h-4.5 rounded-full transition-colors relative cursor-pointer ${textureSettings.quadCompatibleUv ? 'bg-primary' : 'bg-zinc-700'}`}>
-                    <div className={`absolute top-0.5 w-3.5 h-3.5 rounded-full bg-black transition-transform ${textureSettings.quadCompatibleUv ? 'translate-x-4' : 'translate-x-0.5'}`} />
-                  </div>
-                </button>
-              </div>
-
-              {/* High VRAM Warning for 4K / 8K */}
+               {/* High VRAM Warning for 4K / 8K */}
               {(textureSettings.resolution === '4K' || textureSettings.resolution === '8K') && (
                 <div className="flex items-start gap-1.5 p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[8.5px] leading-tight">
                   <span>{textureSettings.resolution} atlas uses Hunyuan3D-Paint and can require substantially more GPU memory and processing time.</span>
@@ -666,65 +637,7 @@ export const TexturePanel: React.FC = () => {
               </div>
             </div>
 
-             {/* Essential Quick Toggle: Low VRAM Mode */}
-             {supportsLowVram && (
-               <div className="p-2 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08] flex items-center justify-between">
-                 <span className="text-zinc-300 flex items-center gap-1.5 text-[10px] font-semibold">
-                   <HugeiconsIcon icon={GaugeIcon} size={16} className="w-3.5 h-3.5 text-primary" />
-                   <span>Low VRAM Mode (&lt;8GB)</span>
-                 </span>
-                 <button
-                   id="btn-texture-toggle-low-vram"
-                   type="button"
-                   role="switch"
-                   aria-checked={Boolean(textureSettings.lowVram)}
-                   onClick={() => setTextureSettings(prev => ({ ...prev, lowVram: !prev.lowVram }))}
-                   disabled
-                   title="Low VRAM mode is not supported by the current backend"
-                   className={`w-7 h-3.5 rounded-full p-0.5 transition-colors relative cursor-not-allowed ${
-                     textureSettings.lowVram ? 'bg-primary opacity-50' : 'bg-[hsl(var(--surface-2))] opacity-50'
-                   }`}
-                 >
-                   <div
-                     className={`w-2.5 h-2.5 rounded-full bg-black transition-transform ${
-                       textureSettings.lowVram ? 'translate-x-3.5' : 'translate-x-0'
-                     }`}
-                   />
-                 </button>
-               </div>
-             )}
-
-             {/* PBR & Texture Features (Raw hyperparameters like Max Views removed) */}
-             <div className="p-2 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08] space-y-1.5">
-               <div className="flex items-center justify-between">
-                 <span className="text-[10px] font-bold text-white uppercase tracking-wider">Texture Features</span>
-               </div>
-               <div className="p-1.5 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.06] flex items-center justify-between">
-                 <span className="text-zinc-300 flex items-center gap-1.5 text-[10px] font-semibold">
-                   <HugeiconsIcon icon={PackageIcon} size={16} className="w-3.5 h-3.5 text-primary" />
-                   <span>PBR Texture Maps</span>
-                 </span>
-                 <button
-                   type="button"
-                   role="switch"
-                   aria-checked={Boolean(textureSettings.generatePBR)}
-                   onClick={() => setTextureSettings(prev => ({ ...prev, generatePBR: !prev.generatePBR }))}
-                   disabled
-                   title="Generate PBR toggle is not supported by the current backend"
-                   className={`w-7 h-3.5 rounded-full p-0.5 transition-colors relative cursor-not-allowed ${
-                     textureSettings.generatePBR ? 'bg-primary opacity-50' : 'bg-[hsl(var(--surface-2))] opacity-50'
-                   }`}
-                 >
-                   <div
-                     className={`w-2.5 h-2.5 rounded-full bg-black transition-transform ${
-                       textureSettings.generatePBR ? 'translate-x-3.5' : 'translate-x-0'
-                     }`}
-                   />
-                 </button>
-               </div>
-             </div>
-
-             {/* Style Selector Chips */}
+              {/* Style Selector Chips */}
              <div className="space-y-1">
                <div className="flex items-center justify-between">
                  <span className="font-bold text-white text-[10px] uppercase tracking-wider">Style</span>
@@ -830,18 +743,21 @@ export const TexturePanel: React.FC = () => {
                <div className="space-y-1.5 pt-1 border-t border-white/[0.06]">
                  <div className="flex items-center justify-between">
                    <span className="text-[9px] text-zinc-400 font-medium">Material Presets</span>
-                   <span className="text-[8px] text-zinc-500">Click to pre-fill prompt</span>
+                    <span className="text-[8px] text-zinc-500">
+                      {isHighResolutionTexture ? 'Paint3D 1K/2K only' : 'Click to pre-fill prompt'}
+                    </span>
                  </div>
                  <div className="grid grid-cols-4 gap-1">
                    {MATERIAL_PRESETS.map((preset) => {
                      const isSelected = textureSettings.prompt === preset.prompt;
                      return (
                        <button
-                         key={preset.id}
-                         type="button"
-                         onClick={() => setTextureSettings(prev => ({ ...prev, prompt: preset.prompt }))}
-                         title={`${preset.name}: ${preset.description}`}
-                         className={`group flex items-center gap-1.5 px-1.5 py-1 rounded-md border text-left transition-all cursor-pointer ${
+                          key={preset.id}
+                          type="button"
+                          onClick={() => setTextureSettings(prev => ({ ...prev, prompt: preset.prompt }))}
+                          disabled={isHighResolutionTexture}
+                          title={isHighResolutionTexture ? 'Material prompts are supported by Paint3D at 1K/2K only' : `${preset.name}: ${preset.description}`}
+                          className={`group flex items-center gap-1.5 px-1.5 py-1 rounded-md border text-left transition-all ${isHighResolutionTexture ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'} ${
                            isSelected
                              ? 'border-primary bg-primary/10 text-white shadow-[0_0_8px_rgba(255,204,0,0.2)]'
                              : 'border-white/[0.08] bg-[hsl(var(--surface-1))] hover:border-white/20 hover:bg-white/[0.04] text-zinc-300'
@@ -861,7 +777,9 @@ export const TexturePanel: React.FC = () => {
                {/* Text Guidance / Material Prompt */}
                <div className="space-y-1 pt-1 border-t border-white/[0.06]">
                  <div className="flex items-center justify-between">
-                   <span className="text-[9px] text-zinc-400 font-medium">Text Guidance / Material Prompt</span>
+                    <span className="text-[9px] text-zinc-400 font-medium">
+                      Text Guidance / Material Prompt {isHighResolutionTexture ? '(Paint3D 1K/2K only)' : ''}
+                    </span>
                    {textureSettings.prompt && (
                      <span className="text-[8px] text-primary font-mono">{textureSettings.prompt.length} chars</span>
                    )}
@@ -869,10 +787,12 @@ export const TexturePanel: React.FC = () => {
                  <div className="relative">
                    <input
                      type="text"
-                     placeholder="Describe materials or details (e.g. brushed metal, worn leather)..."
-                     value={textureSettings.prompt}
-                     onChange={(e) => setTextureSettings(prev => ({ ...prev, prompt: e.target.value }))}
-                     className="w-full py-1.5 px-2.5 pr-8 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.08] focus:border-primary text-[10px] text-white placeholder-zinc-500 focus:outline-none transition-colors"
+                      placeholder="Describe materials or details (e.g. brushed metal, worn leather)..."
+                      value={textureSettings.prompt}
+                      onChange={(e) => setTextureSettings(prev => ({ ...prev, prompt: e.target.value }))}
+                      disabled={isHighResolutionTexture}
+                      title={isHighResolutionTexture ? 'Text guidance is supported by Paint3D at 1K/2K only' : undefined}
+                      className="w-full py-1.5 px-2.5 pr-8 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.08] focus:border-primary text-[10px] text-white placeholder-zinc-500 focus:outline-none transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                    />
                    {textureSettings.prompt && (
                      <button

@@ -105,7 +105,7 @@ VERIFY_ONLY=false
 FORCE_DOWNLOAD=false
 
 # Available models
-AVAILABLE_MODELS=("hunyuan2mini" "hunyuan21" "hunyuan3d_shape_v21" "hunyuan3d_paint_v21" "hunyuan3d_dit_v2_mini_turbo" "trellis" "trellis-text" "trellis2" "unirig" "partuv" "fastmesh" "triposg" "ardy" "unique3d" "paint3d" "pixal3d" "taoflowforge" "misc" "all")
+AVAILABLE_MODELS=("hunyuan2mini" "hunyuan21" "hunyuan3d_shape_v21" "hunyuan3d_paint_v21" "hunyuan3d_dit_v2_mini_turbo" "trellis" "trellis-text" "trellis2" "unirig" "partuv" "fastmesh" "triposg" "ardy" "unique3d" "paint3d" "pixal3d" "taoflowforge" "hi3d" "misc" "all")
 
 show_help() {
     cat << EOF
@@ -138,6 +138,7 @@ Available models:
     paint3d            - Paint3D 1K/2K UV texture diffusion model
     pixal3d            - Pixal3D pixel-aligned image to 3D generation model
     taoflowforge       - TaoFlowForge progressive native mesh generation model (Alibaba)
+    hi3d               - Hi3D v1.0 high-resolution refinement model (Experimental)
     misc               - Miscellaneous utility models (RealESRGAN, DINOv2)
     all                - All core models (excluding optional normal ControlNet)
 
@@ -898,6 +899,36 @@ download_taoflowforge() {
     fi
 }
 
+# Function to download Hi3D model
+download_hi3d() {
+    print_info "========================================"
+    print_info "Downloading Hi3D Model (Experimental)"
+    print_info "========================================"
+
+    local model_dir="$PRETRAINED_DIR/Hi3D"
+
+    if [ "$FORCE_DOWNLOAD" = false ] && \
+       verify_directory "$model_dir" 1 && \
+       verify_file "$model_dir/model_index.json" 100 && \
+       verify_file "$model_dir/vae/model.safetensors" 1000000; then
+        print_info "Hi3D model already exists and verified"
+        return 0
+    fi
+
+    mkdir -p "$model_dir" 2>/dev/null || true
+    ensure_writable_model_dir "$model_dir" || return 1
+
+    print_info "Downloading Hi3D model from Hugging Face (hi3d-official/Hi3Dv1.0)..."
+    if ! hf_download hi3d-official/Hi3Dv1.0 \
+        --local-dir "$model_dir"; then
+        print_error "Failed to download Hi3D model"
+        print_warning "Hi3D requires ~25GB of weights. Check your disk space and network connection."
+        return 1
+    fi
+
+    print_success "Hi3D model downloaded successfully"
+}
+
 # Function to download miscellaneous models
 download_misc() {
     print_info "========================================"
@@ -1095,6 +1126,9 @@ for model in "${MODELS_ARRAY[@]}"; do
             ;;
         "taoflowforge")
             download_taoflowforge
+            ;;
+        "hi3d")
+            download_hi3d
             ;;
         "misc")
             download_misc

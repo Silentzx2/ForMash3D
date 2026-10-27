@@ -30,6 +30,7 @@ export interface ModelDefinition {
   enabled: boolean;
   status: 'available' | 'loaded' | 'offline';
   description: string;
+  experimental?: boolean;
 }
 
 export const CANONICAL_MODELS: ModelDefinition[] = [
@@ -67,6 +68,24 @@ export const CANONICAL_MODELS: ModelDefinition[] = [
     enabled: true,
     status: 'available',
     description: 'Ultra-high-definition image-to-3D pipeline with 2K texture baking and crisp geometry.',
+  },
+  {
+    id: 'hi3d_image_to_textured_mesh',
+    name: 'Hi3D [Experimental] (Image → Refined 3D)',
+    category: 'mesh_generation',
+    feature: 'image_to_textured_mesh',
+    featureLabel: 'Image to Refined 3D',
+    vramMb: 16384,
+    lowVramSupported: true,
+    lowVramMb: 12288,
+    supportsTexture: false,
+    supportedInputs: ['image', 'mesh'],
+    supportedOutputs: ['glb', 'obj'],
+    modelPath: 'backend/pretrained/Hi3D',
+    enabled: true,
+    status: 'available',
+    experimental: true,
+    description: 'Experimental progressive flow refinement pipeline for high-resolution 3D geometry from image conditioning.',
   },
   // ── MESH GENERATION (Image to Raw Geometry) ──────────────────────────
   {
@@ -168,6 +187,24 @@ export const CANONICAL_MODELS: ModelDefinition[] = [
     enabled: true,
     status: 'available',
     description: 'High-quality single-image to 3D generation with pixel-aligned projection, MoGe camera estimation, and PBR texture synthesis.',
+  },
+  {
+    id: 'hi3d_image_to_raw_mesh',
+    name: 'Hi3D [Experimental] (High-Res Geometry Refinement)',
+    category: 'mesh_generation',
+    feature: 'image_to_raw_mesh',
+    featureLabel: 'Image to Geometry',
+    vramMb: 16384,
+    lowVramSupported: true,
+    lowVramMb: 12288,
+    supportsTexture: false,
+    supportedInputs: ['image', 'mesh'],
+    supportedOutputs: ['glb', 'obj'],
+    modelPath: 'backend/pretrained/Hi3D',
+    enabled: true,
+    status: 'available',
+    experimental: true,
+    description: 'Experimental 3-rung progressive sparse-flow geometry refinement (up to 1536^3) using Sparc3D.',
   },
 
   // ── TEXTURE STUDIO / MESH PAINTING ───────────────────────────────────────

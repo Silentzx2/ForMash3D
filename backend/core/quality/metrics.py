@@ -45,6 +45,32 @@ def _triangle_aspect_ratios(vertices: np.ndarray, faces: np.ndarray) -> np.ndarr
     return np.clip(aspect, 0.0, 1.0)
 
 
+def _geometry_integrity(mesh: trimesh.Trimesh) -> Tuple[bool, bool, int]:
+    """Return finite-coordinate and face-index validity for a mesh."""
+    vertices = np.asarray(mesh.vertices)
+    faces = np.asarray(mesh.faces)
+
+    try:
+        finite_vertices = bool(
+            vertices.ndim == 2
+            and vertices.shape[1] == 3
+            and np.isfinite(vertices).all()
+        )
+    except (TypeError, ValueError):
+        finite_vertices = False
+
+    if faces.ndim == 2 and faces.shape[1] == 3 and np.issubdtype(faces.dtype, np.integer):
+        valid_face_mask = np.all(
+            (faces >= 0) & (faces < len(vertices)),
+            axis=1,
+        )
+        invalid_face_count = int(np.count_nonzero(~valid_face_mask))
+    else:
+        invalid_face_count = int(len(faces)) if faces.ndim > 0 else 1
+
+    return finite_vertices, invalid_face_count == 0, invalid_face_count
+
+
 def _count_non_manifold_vertices(mesh: trimesh.Trimesh) -> int:
     """Count non-manifold vertices.
     
@@ -308,14 +334,22 @@ def compute_mesh_metrics(
         non_manifold_vertices, hole_count, boundary_loop_sizes,
         connected_components, floater_ratio, degenerate_faces,
         aspect_ratio_p1, aspect_ratio_p5, uv_island_count,
-        feature_edge_retention
+        feature_edge_retention, finite_vertices, valid_face_indices,
+        invalid_face_count
     """
     face_count = int(len(mesh.faces))
     vertex_count = int(len(mesh.vertices))
+    finite_vertices, valid_face_indices, invalid_face_count = _geometry_integrity(mesh)
+    valid_face_shape = (
+        np.asarray(mesh.faces).ndim == 2
+        and np.asarray(mesh.faces).shape[1] == 3
+        and np.issubdtype(np.asarray(mesh.faces).dtype, np.integer)
+    )
 
-    is_watertight = bool(mesh.is_watertight) if face_count > 0 else False
+    topology_geometry_valid = finite_vertices and valid_face_indices and valid_face_shape
+    is_watertight = bool(mesh.is_watertight) if topology_geometry_valid and face_count > 0 else False
 
-    if face_count == 0:
+    if not topology_geometry_valid or face_count == 0:
         non_manifold_edges = 0
         degenerate_faces = 0
     else:
@@ -327,11 +361,20 @@ def compute_mesh_metrics(
         kept = int(nondeg.sum()) if nondeg.dtype == bool else int(len(nondeg))
         degenerate_faces = max(0, face_count - kept)
 
-    non_manifold_vertices = _count_non_manifold_vertices(mesh)
-    hole_count, boundary_loop_sizes = _extract_boundary_loops(mesh)
-    connected_components, floater_ratio = _compute_components_and_floaters(mesh)
+    if topology_geometry_valid:
+        non_manifold_vertices = _count_non_manifold_vertices(mesh)
+        hole_count, boundary_loop_sizes = _extract_boundary_loops(mesh)
+        connected_components, floater_ratio = _compute_components_and_floaters(mesh)
+    else:
+        non_manifold_vertices = 0
+        hole_count, boundary_loop_sizes = 0, []
+        connected_components, floater_ratio = 0, 0.0
 
-    ratios = _triangle_aspect_ratios(mesh.vertices, mesh.faces)
+    ratios = (
+        _triangle_aspect_ratios(mesh.vertices, mesh.faces)
+        if topology_geometry_valid
+        else np.zeros(0, dtype=np.float64)
+    )
     if len(ratios) == 0:
         aspect_ratio_p1 = 0.0
         aspect_ratio_p5 = 0.0
@@ -339,12 +382,19 @@ def compute_mesh_metrics(
         aspect_ratio_p1 = float(np.percentile(ratios, 1))
         aspect_ratio_p5 = float(np.percentile(ratios, 5))
 
-    uv_island_count = _count_uv_islands(mesh)
-    feature_edge_retention = _compute_feature_edge_retention(mesh, reference_master)
+    uv_island_count = _count_uv_islands(mesh) if topology_geometry_valid else 0
+    feature_edge_retention = (
+        _compute_feature_edge_retention(mesh, reference_master)
+        if topology_geometry_valid and finite_vertices
+        else 0.0
+    )
 
     return {
         "triangle_count": face_count,
         "vertex_count": vertex_count,
+        "finite_vertices": finite_vertices,
+        "valid_face_indices": valid_face_indices,
+        "invalid_face_count": invalid_face_count,
         "is_watertight": is_watertight,
         "non_manifold_edges": non_manifold_edges,
         "non_manifold_vertices": non_manifold_vertices,

@@ -464,11 +464,10 @@ async def save_base64_file(
             file_ext = Path(filename).suffix
             if not file_ext:
                 # Try to detect from decoded data
-                temp_path = Path(tempfile.mktemp())
-                with open(temp_path, "wb") as f:
-                    f.write(decoded_data or b"")
-                detected_type = detect_file_type_from_content(str(temp_path))
-                temp_path.unlink()
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    temp_path = Path(temp_dir) / "content_probe"
+                    temp_path.write_bytes(decoded_data or b"")
+                    detected_type = detect_file_type_from_content(str(temp_path))
                 if detected_type.startswith("image/"):
                     file_ext = ".png"  # Default to PNG for images
                 else:

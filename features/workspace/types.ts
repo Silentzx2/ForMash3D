@@ -440,10 +440,6 @@ export interface TextureSettings {
     ao: boolean;
     height: boolean;
   };
-  lowVram?: boolean;
-  maxNumView?: number;
-  generatePBR?: boolean;
-  quadCompatibleUv?: boolean;
 }
 
 export interface AutoOptimizeSettings {
@@ -510,8 +506,6 @@ export interface GenerationSettings {
   rigType?: 'none' | 'generic' | 'humanoid' | 'quadruped' | 'bird' | 'insect' | 'custom';
   exportFormats?: string[];
   slicerHandoff?: boolean;
-  low_vram?: boolean;
-  lowVram?: boolean;
 }
 
 
@@ -547,4 +541,3 @@ export interface PaintBrushSettings {
   shape: 'round' | 'square' | 'spray' | 'chalk';
   blendMode: string;
 }
-

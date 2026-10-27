@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from api.dependencies import get_file_store, get_scheduler
 from api.routers.file_upload import resolve_file_id_async
@@ -72,13 +72,13 @@ class TextMeshEditingRequest(BaseModel):
             raise ValueError(f"Output format must be one of: {allowed_formats}")
         return v
     
-    @field_validator("mask_ellipsoid")
-    @classmethod
-    def validate_mask(cls, v, info):
-        mesh_path = info.data.get("mesh_path")
-        mesh_base64 = info.data.get("mesh_base64")
-        mesh_file_id = info.data.get("mesh_file_id")
-        mask_bbox = info.data.get("mask_bbox")
+    @model_validator(mode="after")
+    def validate_mask(self):
+        mesh_path = self.mesh_path
+        mesh_base64 = self.mesh_base64
+        mesh_file_id = self.mesh_file_id
+        mask_bbox = self.mask_bbox
+        mask_ellipsoid = self.mask_ellipsoid
         
         # Validate mesh input
         mesh_inputs = sum(bool(x) for x in [mesh_path, mesh_base64, mesh_file_id])
@@ -88,13 +88,13 @@ class TextMeshEditingRequest(BaseModel):
             raise ValueError("Only one of mesh_path, mesh_base64, or mesh_file_id should be provided")
         
         # Validate mask input
-        mask_inputs = sum(bool(x) for x in [mask_bbox, v])
+        mask_inputs = sum(bool(x) for x in [mask_bbox, mask_ellipsoid])
         if mask_inputs == 0:
             raise ValueError("One of mask_bbox or mask_ellipsoid must be provided")
         if mask_inputs > 1:
             raise ValueError("Only one of mask_bbox or mask_ellipsoid should be provided")
         
-        return v
+        return self
 
 
 class ImageMeshEditingRequest(BaseModel):
@@ -139,27 +139,26 @@ class ImageMeshEditingRequest(BaseModel):
             raise ValueError(f"Output format must be one of: {allowed_formats}")
         return v
     
-    @field_validator("mask_ellipsoid")
-    @classmethod
-    def validate_inputs(cls, v, info):
+    @model_validator(mode="after")
+    def validate_inputs(self):
         # Validate all inputs
-        mesh_path = info.data.get("mesh_path")
-        mesh_base64 = info.data.get("mesh_base64")
-        mesh_file_id = info.data.get("mesh_file_id")
+        mesh_path = self.mesh_path
+        mesh_base64 = self.mesh_base64
+        mesh_file_id = self.mesh_file_id
         
-        source_image_path = info.data.get("source_image_path")
-        source_image_base64 = info.data.get("source_image_base64")
-        source_image_file_id = info.data.get("source_image_file_id")
+        source_image_path = self.source_image_path
+        source_image_base64 = self.source_image_base64
+        source_image_file_id = self.source_image_file_id
         
-        target_image_path = info.data.get("target_image_path")
-        target_image_base64 = info.data.get("target_image_base64")
-        target_image_file_id = info.data.get("target_image_file_id")
+        target_image_path = self.target_image_path
+        target_image_base64 = self.target_image_base64
+        target_image_file_id = self.target_image_file_id
         
-        mask_image_path = info.data.get("mask_image_path")
-        mask_image_base64 = info.data.get("mask_image_base64")
-        mask_image_file_id = info.data.get("mask_image_file_id")
+        mask_image_path = self.mask_image_path
+        mask_image_base64 = self.mask_image_base64
+        mask_image_file_id = self.mask_image_file_id
         
-        mask_bbox = info.data.get("mask_bbox")
+        mask_bbox = self.mask_bbox
         
         # Validate mesh input
         mesh_inputs = sum(bool(x) for x in [mesh_path, mesh_base64, mesh_file_id])
@@ -179,11 +178,11 @@ class ImageMeshEditingRequest(BaseModel):
             raise ValueError("Exactly one mask image input must be provided")
         
         # Validate 3D mask input
-        mask_inputs_3d = sum(bool(x) for x in [mask_bbox, v])
+        mask_inputs_3d = sum(bool(x) for x in [mask_bbox, self.mask_ellipsoid])
         if mask_inputs_3d != 1:
             raise ValueError("Exactly one 3D mask (bbox or ellipsoid) must be provided")
         
-        return v
+        return self
 
 
 # Response model
@@ -424,4 +423,3 @@ async def get_supported_masks():
             "radii_range": "[0.1, 5.0] (positive values)",
         },
     }
-

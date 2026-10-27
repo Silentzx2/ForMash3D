@@ -33,6 +33,10 @@ DEFAULT_ADAPTER_CLASS_MAP = {
     "pixal3d_image_to_raw_mesh": "Pixal3DImageToRawMeshAdapter",
     "pixal3d_image_to_3d": "Pixal3DImageToRawMeshAdapter",
     "taoflowforge_image_to_raw_mesh": "TaoFlowForgeImageToRawMeshAdapter",
+    # Hi3D (Experimental)
+    "hi3d_image_to_raw_mesh": "Hi3DImageToRawMeshAdapter",
+    "hi3d_image_to_textured_mesh": "Hi3DImageToTexturedMeshAdapter",
+    "hi3d": "Hi3DImageToRawMeshAdapter",
     # Painting
     "hunyuan3d_paint_v21_image_mesh_painting": "Hunyuan3DPaintV21ImageMeshPaintingAdapter",
     "trellis_image_mesh_painting": "TrellisImageMeshPaintingAdapter",

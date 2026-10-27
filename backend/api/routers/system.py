@@ -382,7 +382,7 @@ def _model_supports_download(model_id: str) -> bool:
         token in model_id
         for token in (
             "trellis", "triposg",
-            "hunyuan", "fastmesh", "unique3d"
+            "hunyuan", "fastmesh", "unique3d", "hi3d"
         )
     )
 
@@ -1766,12 +1766,15 @@ async def download_job_result(
         if not output_path:
             raise HTTPException(status_code=404, detail="No output file path found in job result")
 
-        output_path = str(Path(output_path).resolve())
-        if asset_root:
-            try:
-                Path(output_path).resolve().relative_to(models_root)
-            except ValueError:
-                raise HTTPException(status_code=400, detail="Invalid artifact path")
+        storage_root = get_storage_base_dir().resolve()
+        resolved_output_path = Path(output_path).resolve()
+        try:
+            resolved_output_path.relative_to(storage_root)
+            if asset_root_path:
+                resolved_output_path.relative_to(asset_root_path)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid artifact path")
+        output_path = str(resolved_output_path)
         if not os.path.exists(output_path):
             raise HTTPException(status_code=404, detail=f"Output file not found: {output_path}")
 
