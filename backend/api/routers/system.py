@@ -768,7 +768,18 @@ async def stream_logs(
                 cursor = 0
                 yield f"id: {current_identity}:0\nevent: reset\ndata: {{}}\n\n"
 
-            yield ": connected\n\n"
+            # 2KB comment padding guarantees intermediate reverse proxies / tunnels (Cloudflare, ngrok, Kaggle)
+            # flush their response buffer immediately rather than holding the first event.
+            yield f": connected\n: {' ' * 2048}\n\n"
+
+            sync_payload = json.dumps(
+                {
+                    "offset": cursor,
+                    "identity": current_identity,
+                    "empty": path_stat.st_size == 0,
+                }
+            )
+            yield f"id: {current_identity}:{cursor}\nevent: sync\ndata: {sync_payload}\n\n"
 
             log_file.seek(cursor)
             emitted_offset = cursor
@@ -932,15 +943,17 @@ async def get_log_file(
     log_file = Path(__file__).resolve().parents[3] / "logs" / "master.log"
     log_file.parent.mkdir(parents=True, exist_ok=True)
     log_file.touch(exist_ok=True)
+    raw_lines = _tail_file_lines(log_file, lines)
     entries = [
         _parse_log_line(line.strip())
-        for line in _tail_file_lines(log_file, lines)
+        for line in raw_lines
         if line.strip()
     ]
     stat = log_file.stat()
     return {
         "filename": log_file.name,
         "logs": entries,
+        "raw_text": "\n".join(raw_lines) + ("\n" if raw_lines else ""),
         "total_entries": len(entries),
         "file_info": {
             "size_bytes": stat.st_size,

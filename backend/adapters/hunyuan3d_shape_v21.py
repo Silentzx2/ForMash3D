@@ -374,7 +374,7 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
             except ImportError:
                 pass
             configure_native_dense_decoder(self.pipeline_shapegen, "Hunyuan3D-Shape-v2.1", mc_algo=algo)
-            mesh_result = self.pipeline_shapegen(
+            mesh_outputs = self.pipeline_shapegen(
                 image=image,
                 octree_resolution=octree_res,
                 num_inference_steps=num_steps,
@@ -382,7 +382,54 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
                 num_chunks=num_chunks,
                 mc_algo=algo,
                 generator=generator,
-            )[0]
+            )
+            mesh_result = mesh_outputs[0] if mesh_outputs and len(mesh_outputs) > 0 else None
+
+            # Fallback 1: If DMC produced None, retry with standard marching cubes ('mc')
+            if mesh_result is None and algo != "mc":
+                logger.warning(
+                    f"Hunyuan3D surface extraction produced None with '{algo}'. "
+                    "Falling back to standard Marching Cubes ('mc')..."
+                )
+                algo = "mc"
+                configure_native_dense_decoder(self.pipeline_shapegen, "Hunyuan3D-Shape-v2.1", mc_algo=algo)
+                mesh_outputs = self.pipeline_shapegen(
+                    image=image,
+                    octree_resolution=octree_res,
+                    num_inference_steps=num_steps,
+                    guidance_scale=guidance_scale,
+                    num_chunks=num_chunks,
+                    mc_algo=algo,
+                    generator=generator,
+                )
+                mesh_result = mesh_outputs[0] if mesh_outputs and len(mesh_outputs) > 0 else None
+
+            # Fallback 2: If still None, disable FlashVDM and use vanilla volume decoder
+            if mesh_result is None:
+                logger.warning(
+                    "Hunyuan3D surface extraction produced None with FlashVDM. "
+                    "Falling back to vanilla volume decoder with standard MC..."
+                )
+                vae = getattr(self.pipeline_shapegen, "vae", None)
+                if vae and hasattr(vae, "enable_flashvdm_decoder"):
+                    vae.enable_flashvdm_decoder(enabled=False)
+                if hasattr(self.pipeline_shapegen, "set_surface_extractor"):
+                    self.pipeline_shapegen.set_surface_extractor("mc")
+                mesh_outputs = self.pipeline_shapegen(
+                    image=image,
+                    octree_resolution=octree_res,
+                    num_inference_steps=num_steps,
+                    guidance_scale=guidance_scale,
+                    num_chunks=num_chunks,
+                    generator=generator,
+                )
+                mesh_result = mesh_outputs[0] if mesh_outputs and len(mesh_outputs) > 0 else None
+
+            if mesh_result is None:
+                raise RuntimeError(
+                    "Hunyuan3D-Shape-v2.1 generation failed: Pipeline returned no extractable surface mesh (mesh_result is None). "
+                    "The volume field did not contain an isosurface for the given input image."
+                )
 
             base_name = f"{self.model_id}_{image_path.stem}"
             output_path = self._generate_output_path(base_name, output_format)
@@ -410,7 +457,7 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
                     "effective_geometry_resolution_status": "upstream exposes configured octree_resolution, not scalar achieved resolution",
                     "geometry_resolution_source": "verified VanillaVolumeDecoder + MCSurfaceExtractor; mc_algo=mc",
                     "voxel_size": 2.02 / octree_res,
-                    "mc_algo": inputs["mc_algo"],
+                    "mc_algo": inputs.get("mc_algo", algo),
                     "mesh_operations": [],
                     "octree_resolution": octree_res,
                     "num_chunks": num_chunks,
