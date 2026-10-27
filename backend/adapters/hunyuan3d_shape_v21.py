@@ -36,6 +36,173 @@ _LOCKED_INFERENCE_PROFILE = {
 }
 
 
+def _patch_conditioner_for_cuda_compatibility():
+    """Ensure ImageEncoder uses CPU image transform and CPU backbone fallback to prevent torchvision/DINO CUDA kernel arch mismatches on T4/P100."""
+    try:
+        from hy3dshape.models import conditioner
+        targets = []
+        for name in ("ImageEncoder", "DinoImageEncoder", "CLIPImageEncoder"):
+            cls = getattr(conditioner, name, None)
+            if cls is not None and not getattr(cls, "_arch_safe_patched", False):
+                targets.append(cls)
+
+        def _safe_forward(cond_self, image, mask=None, value_range=(-1, 1), **kwargs):
+            if value_range is not None:
+                low, high = value_range
+                image = (image - low) / (high - low)
+            target_device = getattr(cond_self, "target_device", None)
+            if target_device is None:
+                dev = next(cond_self.model.parameters()).device
+                target_device = dev if dev.type != "cpu" else (torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"))
+                cond_self.target_device = target_device
+            target_dtype = getattr(cond_self, "target_dtype", None)
+            if target_dtype is None:
+                dt = next(cond_self.model.parameters()).dtype
+                target_dtype = dt if dt != torch.float32 else torch.float16
+                cond_self.target_dtype = target_dtype
+
+            inputs_cpu = cond_self.transform(image.cpu().to(torch.float32))
+
+            run_on_cpu = False
+            if target_device.type == "cuda":
+                try:
+                    if torch.cuda.get_device_capability(target_device)[0] < 8:
+                        run_on_cpu = True
+                except Exception:
+                    pass
+
+            if run_on_cpu:
+                orig_dev = next(cond_self.model.parameters()).device
+                if orig_dev.type != "cpu":
+                    cond_self.model = cond_self.model.to("cpu", dtype=torch.float32)
+                outputs = cond_self.model(inputs_cpu)
+                last_hidden_state = outputs.last_hidden_state.to(device=target_device, dtype=target_dtype)
+            else:
+                try:
+                    inputs = inputs_cpu.to(target_device, dtype=target_dtype)
+                    outputs = cond_self.model(inputs)
+                    last_hidden_state = outputs.last_hidden_state
+                except RuntimeError as err:
+                    err_str = str(err)
+                    if "no kernel image is available" in err_str or "CUDA error" in err_str:
+                        logger.warning("CUDA vision backbone execution failed (%s). Retrying on CPU.", err)
+                        cond_self.model = cond_self.model.to("cpu", dtype=torch.float32)
+                        outputs = cond_self.model(inputs_cpu)
+                        last_hidden_state = outputs.last_hidden_state.to(device=target_device, dtype=target_dtype)
+                    else:
+                        raise
+
+            if not getattr(cond_self, "use_cls_token", True):
+                last_hidden_state = last_hidden_state[:, 1:, :]
+            return last_hidden_state
+
+        def _safe_unconditional(cond_self, batch_size, **kwargs):
+            device = getattr(cond_self, "target_device", None) or next(cond_self.model.parameters()).device
+            dtype = getattr(cond_self, "target_dtype", None) or next(cond_self.model.parameters()).dtype
+            return torch.zeros(
+                batch_size,
+                cond_self.num_patches,
+                cond_self.model.config.hidden_size,
+                device=device,
+                dtype=dtype,
+            )
+
+        for cls in targets:
+            cls.forward = _safe_forward
+            cls.unconditional_embedding = _safe_unconditional
+            cls._arch_safe_patched = True
+
+        mv_cls = getattr(conditioner, "DinoImageEncoderMV", None)
+        if mv_cls is not None and not getattr(mv_cls, "_arch_safe_patched", False):
+            def _safe_mv_forward(cond_self, image, mask=None, value_range=(-1, 1), view_idxs=None):
+                if value_range is not None:
+                    low, high = value_range
+                    image = (image - low) / (high - low)
+                target_device = getattr(cond_self, "target_device", None)
+                if target_device is None:
+                    dev = next(cond_self.model.parameters()).device
+                    target_device = dev if dev.type != "cpu" else (torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"))
+                    cond_self.target_device = target_device
+                target_dtype = getattr(cond_self, "target_dtype", None)
+                if target_dtype is None:
+                    dt = next(cond_self.model.parameters()).dtype
+                    target_dtype = dt if dt != torch.float32 else torch.float16
+                    cond_self.target_dtype = target_dtype
+
+                bs, num_views, c, h, w = image.shape
+                image = image.view(bs * num_views, c, h, w)
+                inputs_cpu = cond_self.transform(image.cpu().to(torch.float32))
+
+                run_on_cpu = False
+                if target_device.type == "cuda":
+                    try:
+                        if torch.cuda.get_device_capability(target_device)[0] < 8:
+                            run_on_cpu = True
+                    except Exception:
+                        pass
+
+                if run_on_cpu:
+                    orig_dev = next(cond_self.model.parameters()).device
+                    if orig_dev.type != "cpu":
+                        cond_self.model = cond_self.model.to("cpu", dtype=torch.float32)
+                    outputs = cond_self.model(inputs_cpu)
+                    last_hidden_state = outputs.last_hidden_state.to(device=target_device, dtype=target_dtype)
+                else:
+                    try:
+                        inputs = inputs_cpu.to(target_device, dtype=target_dtype)
+                        outputs = cond_self.model(inputs)
+                        last_hidden_state = outputs.last_hidden_state
+                    except RuntimeError as err:
+                        err_str = str(err)
+                        if "no kernel image is available" in err_str or "CUDA error" in err_str:
+                            logger.warning("CUDA vision backbone execution failed (%s). Retrying on CPU.", err)
+                            cond_self.model = cond_self.model.to("cpu", dtype=torch.float32)
+                            outputs = cond_self.model(inputs_cpu)
+                            last_hidden_state = outputs.last_hidden_state.to(device=target_device, dtype=target_dtype)
+                        else:
+                            raise
+
+                last_hidden_state = last_hidden_state.view(
+                    bs, num_views, last_hidden_state.shape[-2],
+                    last_hidden_state.shape[-1]
+                )
+                view_embedding = cond_self.view_embed.to(last_hidden_state.dtype).to(last_hidden_state.device)
+                if view_idxs is not None:
+                    assert len(view_idxs) == bs
+                    view_embeddings = []
+                    for i in range(bs):
+                        view_idx = view_idxs[i]
+                        assert num_views == len(view_idx)
+                        view_embeddings.append(cond_self.view_embed[:, view_idx, ...])
+                    view_embedding = torch.cat(view_embeddings, 0).to(last_hidden_state.dtype).to(last_hidden_state.device)
+                if num_views != cond_self.view_num:
+                    view_embedding = view_embedding[:, :num_views, ...]
+                last_hidden_state = last_hidden_state + view_embedding
+                last_hidden_state = last_hidden_state.view(bs, num_views * last_hidden_state.shape[-2],
+                                                           last_hidden_state.shape[-1])
+                return last_hidden_state
+
+            def _safe_mv_unconditional(cond_self, batch_size, view_idxs=None, **kwargs):
+                device = getattr(cond_self, "target_device", None) or next(cond_self.model.parameters()).device
+                dtype = getattr(cond_self, "target_dtype", None) or next(cond_self.model.parameters()).dtype
+                num_views = len(view_idxs[0]) if view_idxs is not None and len(view_idxs) > 0 else cond_self.view_num
+                return torch.zeros(
+                    batch_size,
+                    cond_self.num_patches * num_views,
+                    cond_self.model.config.hidden_size,
+                    device=device,
+                    dtype=dtype,
+                )
+
+            mv_cls.forward = _safe_mv_forward
+            mv_cls.unconditional_embedding = _safe_mv_unconditional
+            mv_cls._arch_safe_patched = True
+
+        logger.info("Applied arch-safe transform and backbone patch to hy3dshape.models.conditioner: %s", [t.__name__ for t in targets])
+    except Exception as e:
+        logger.debug("Conditioner patch skipped or not applicable yet: %s", e)
+
+
 class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
     """
     Adapter for Hunyuan3D-Shape-v2-1 image-to-raw-mesh generation.
@@ -155,6 +322,7 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
                 pass
 
             from hy3dshape.pipelines import Hunyuan3DDiTFlowMatchingPipeline
+            _patch_conditioner_for_cuda_compatibility()
             try:
                 from hy3dshape.rembg import BackgroundRemover
             except RuntimeError as err:
@@ -210,6 +378,16 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
                 logger.info("Hunyuan3D-Shape-v2-1 dispatched across GPUs %s", self.gpu_ids)
             try:
                 if not multi_gpu_applied and hasattr(self.pipeline_shapegen, "enable_model_cpu_offload"):
+                    if not hasattr(self.pipeline_shapegen, "components"):
+                        self.pipeline_shapegen.__class__.components = property(
+                            lambda p: {
+                                "vae": getattr(p, "vae", None),
+                                "model": getattr(p, "model", None),
+                                "scheduler": getattr(p, "scheduler", None),
+                                "conditioner": getattr(p, "conditioner", None),
+                                "image_processor": getattr(p, "image_processor", None),
+                            }
+                        )
                     self.pipeline_shapegen.enable_model_cpu_offload(device=device)
                     logger.info("Enabled model CPU offload for shape pipeline")
             except Exception as offload_err:
@@ -374,7 +552,7 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
             except ImportError:
                 pass
             configure_native_dense_decoder(self.pipeline_shapegen, "Hunyuan3D-Shape-v2.1", mc_algo=algo)
-            mesh_result = self.pipeline_shapegen(
+            mesh_outputs = self.pipeline_shapegen(
                 image=image,
                 octree_resolution=octree_res,
                 num_inference_steps=num_steps,
@@ -382,7 +560,54 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
                 num_chunks=num_chunks,
                 mc_algo=algo,
                 generator=generator,
-            )[0]
+            )
+            mesh_result = mesh_outputs[0] if mesh_outputs and len(mesh_outputs) > 0 else None
+
+            # Fallback 1: If DMC produced None, retry with standard marching cubes ('mc')
+            if mesh_result is None and algo != "mc":
+                logger.warning(
+                    f"Hunyuan3D surface extraction produced None with '{algo}'. "
+                    "Falling back to standard Marching Cubes ('mc')..."
+                )
+                algo = "mc"
+                configure_native_dense_decoder(self.pipeline_shapegen, "Hunyuan3D-Shape-v2.1", mc_algo=algo)
+                mesh_outputs = self.pipeline_shapegen(
+                    image=image,
+                    octree_resolution=octree_res,
+                    num_inference_steps=num_steps,
+                    guidance_scale=guidance_scale,
+                    num_chunks=num_chunks,
+                    mc_algo=algo,
+                    generator=generator,
+                )
+                mesh_result = mesh_outputs[0] if mesh_outputs and len(mesh_outputs) > 0 else None
+
+            # Fallback 2: If still None, disable FlashVDM and use vanilla volume decoder
+            if mesh_result is None:
+                logger.warning(
+                    "Hunyuan3D surface extraction produced None with FlashVDM. "
+                    "Falling back to vanilla volume decoder with standard MC..."
+                )
+                vae = getattr(self.pipeline_shapegen, "vae", None)
+                if vae and hasattr(vae, "enable_flashvdm_decoder"):
+                    vae.enable_flashvdm_decoder(enabled=False)
+                if hasattr(self.pipeline_shapegen, "set_surface_extractor"):
+                    self.pipeline_shapegen.set_surface_extractor("mc")
+                mesh_outputs = self.pipeline_shapegen(
+                    image=image,
+                    octree_resolution=octree_res,
+                    num_inference_steps=num_steps,
+                    guidance_scale=guidance_scale,
+                    num_chunks=num_chunks,
+                    generator=generator,
+                )
+                mesh_result = mesh_outputs[0] if mesh_outputs and len(mesh_outputs) > 0 else None
+
+            if mesh_result is None:
+                raise RuntimeError(
+                    "Hunyuan3D-Shape-v2.1 generation failed: Pipeline returned no extractable surface mesh (mesh_result is None). "
+                    "The volume field did not contain an isosurface for the given input image."
+                )
 
             base_name = f"{self.model_id}_{image_path.stem}"
             output_path = self._generate_output_path(base_name, output_format)
@@ -410,7 +635,7 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
                     "effective_geometry_resolution_status": "upstream exposes configured octree_resolution, not scalar achieved resolution",
                     "geometry_resolution_source": "verified VanillaVolumeDecoder + MCSurfaceExtractor; mc_algo=mc",
                     "voxel_size": 2.02 / octree_res,
-                    "mc_algo": inputs["mc_algo"],
+                    "mc_algo": inputs.get("mc_algo", algo),
                     "mesh_operations": [],
                     "octree_resolution": octree_res,
                     "num_chunks": num_chunks,

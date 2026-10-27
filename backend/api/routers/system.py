@@ -382,7 +382,7 @@ def _model_supports_download(model_id: str) -> bool:
         token in model_id
         for token in (
             "trellis", "triposg",
-            "hunyuan", "fastmesh", "unique3d"
+            "hunyuan", "fastmesh", "unique3d", "hi3d"
         )
     )
 
@@ -768,7 +768,18 @@ async def stream_logs(
                 cursor = 0
                 yield f"id: {current_identity}:0\nevent: reset\ndata: {{}}\n\n"
 
-            yield ": connected\n\n"
+            # 2KB comment padding guarantees intermediate reverse proxies / tunnels (Cloudflare, ngrok, Kaggle)
+            # flush their response buffer immediately rather than holding the first event.
+            yield f": connected\n: {' ' * 2048}\n\n"
+
+            sync_payload = json.dumps(
+                {
+                    "offset": cursor,
+                    "identity": current_identity,
+                    "empty": path_stat.st_size == 0,
+                }
+            )
+            yield f"id: {current_identity}:{cursor}\nevent: sync\ndata: {sync_payload}\n\n"
 
             log_file.seek(cursor)
             emitted_offset = cursor
@@ -898,6 +909,63 @@ def _parse_log_line(line: str) -> dict:
         }
 
 
+@router.get("/logs/tail", summary="Get appended log bytes since an offset")
+async def get_logs_tail(
+    offset: Optional[int] = Query(None, description="Byte offset to read from"),
+    lines: Optional[int] = Query(None, description="If offset is not provided, tail last N lines"),
+    file: str = Query("master.log", description="Allowlisted log basename"),
+    identity: Optional[str] = Query(None, description="Current log-file identity"),
+    settings=Depends(get_current_settings),
+    _: bool = Depends(verify_api_key),
+):
+    """High-frequency low-latency log tail endpoint for smooth real-time polling."""
+    project_root = Path(__file__).resolve().parents[3]
+    logs_dir = project_root / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    log_path = _resolve_log_path(logs_dir, file, create_master=True)
+
+    stream_config = settings.logging.stream
+    path_stat = log_path.stat()
+    current_identity = f"{path_stat.st_dev}:{path_stat.st_ino}"
+    truncated = False
+
+    if identity and identity != current_identity:
+        offset = None
+        truncated = True
+
+    if offset is not None and offset > path_stat.st_size:
+        offset = None
+        truncated = True
+
+    with log_path.open("rb") as f:
+        if offset is None:
+            requested_lines = lines or stream_config.get("default_tail_lines", 1000)
+            start_offset = _tail_start_offset(
+                f, requested_lines, stream_config.get("max_tail_scan_bytes", 8388608)
+            )
+            f.seek(start_offset)
+            data = f.read()
+            new_offset = f.tell()
+            return {
+                "offset": new_offset,
+                "identity": current_identity,
+                "chunk": data.decode("utf-8", errors="replace"),
+                "truncated": truncated,
+                "total_bytes": path_stat.st_size,
+            }
+        else:
+            f.seek(offset)
+            data = f.read(512 * 1024)
+            new_offset = f.tell()
+            return {
+                "offset": new_offset,
+                "identity": current_identity,
+                "chunk": data.decode("utf-8", errors="replace"),
+                "truncated": truncated,
+                "total_bytes": path_stat.st_size,
+            }
+
+
 @router.get("/logs/files", summary="List the master log")
 async def list_log_files(_: bool = Depends(verify_api_key)):
     """Return the single canonical runtime log file."""
@@ -932,15 +1000,17 @@ async def get_log_file(
     log_file = Path(__file__).resolve().parents[3] / "logs" / "master.log"
     log_file.parent.mkdir(parents=True, exist_ok=True)
     log_file.touch(exist_ok=True)
+    raw_lines = _tail_file_lines(log_file, lines)
     entries = [
         _parse_log_line(line.strip())
-        for line in _tail_file_lines(log_file, lines)
+        for line in raw_lines
         if line.strip()
     ]
     stat = log_file.stat()
     return {
         "filename": log_file.name,
         "logs": entries,
+        "raw_text": "\n".join(raw_lines) + ("\n" if raw_lines else ""),
         "total_entries": len(entries),
         "file_info": {
             "size_bytes": stat.st_size,
@@ -1766,12 +1836,15 @@ async def download_job_result(
         if not output_path:
             raise HTTPException(status_code=404, detail="No output file path found in job result")
 
-        output_path = str(Path(output_path).resolve())
-        if asset_root:
-            try:
-                Path(output_path).resolve().relative_to(models_root)
-            except ValueError:
-                raise HTTPException(status_code=400, detail="Invalid artifact path")
+        storage_root = get_storage_base_dir().resolve()
+        resolved_output_path = Path(output_path).resolve()
+        try:
+            resolved_output_path.relative_to(storage_root)
+            if asset_root_path:
+                resolved_output_path.relative_to(asset_root_path)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid artifact path")
+        output_path = str(resolved_output_path)
         if not os.path.exists(output_path):
             raise HTTPException(status_code=404, detail=f"Output file not found: {output_path}")
 

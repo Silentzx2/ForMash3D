@@ -24,10 +24,15 @@ export function LogsTab() {
   const streamOffsetRef = useRef(0);
   const streamIdentityRef = useRef<string | null>(null);
   const resetOnRestartRef = useRef(false);
+  const liveRef = useRef(true);
 
   useEffect(() => {
     autoScrollRef.current = autoScroll;
   }, [autoScroll]);
+
+  useEffect(() => {
+    liveRef.current = live;
+  }, [live]);
 
   useEffect(() => {
     if (resetOnRestartRef.current) {
@@ -50,6 +55,7 @@ export function LogsTab() {
     let disposed = false;
     let flushFrame: number | null = null;
     let retryTimer: number | null = null;
+    let pollInterval: number | null = null;
     let retryDelay = 1000;
     const pendingText: string[] = [];
     let source: EventSource | null = null;
@@ -113,6 +119,57 @@ export function LogsTab() {
       }
     };
 
+    // High-frequency low-latency poller (every 250ms) using byte-offset deltas
+    // This provides buttery-smooth line-by-line updates even through aggressive reverse proxy buffers (Kaggle/ngrok)
+    let isPolling = false;
+    const pollTail = async () => {
+      if (disposed || !liveRef.current || isPolling) return;
+      isPolling = true;
+      try {
+        const offsetParam = streamOffsetRef.current > 0 ? `&offset=${streamOffsetRef.current}` : "";
+        const identityParam = streamIdentityRef.current ? `&identity=${encodeURIComponent(streamIdentityRef.current)}` : "";
+        const linesParam = streamOffsetRef.current === 0 ? `&lines=${LOG_VIEW_INITIAL_TAIL}` : "";
+        const url = `/api/v1/system/logs/tail?file=${encodeURIComponent(fileName)}${offsetParam}${identityParam}${linesParam}`;
+
+        const res = await fetch(url);
+        if (res.ok && !disposed) {
+          const data = await res.json();
+          if (data.identity) {
+            streamIdentityRef.current = data.identity;
+          }
+          if (data.truncated) {
+            if (outputRef.current) outputRef.current.textContent = "";
+            outputTextRef.current = null;
+            outputLineCountRef.current = 0;
+            trailingNewlineRef.current = false;
+          }
+          if (typeof data.offset === "number") {
+            streamOffsetRef.current = data.offset;
+          }
+          if (typeof data.chunk === "string" && data.chunk.length > 0) {
+            enqueueText(data.chunk);
+          }
+          if (!hasReceivedContentRef.current) {
+            hasReceivedContentRef.current = true;
+            setHasReceivedContent(true);
+          }
+          setStatus("CONNECTED");
+        }
+      } catch {
+        if (!disposed && status !== "ERROR") {
+          setStatus("ERROR");
+        }
+      } finally {
+        isPolling = false;
+      }
+    };
+
+    // Immediate initial fetch
+    pollTail();
+
+    // Start 350ms smooth live poller
+    pollInterval = window.setInterval(pollTail, 350);
+
     const startSSE = () => {
       if (disposed || !live || source) return;
       setStatus("CONNECTING");
@@ -130,6 +187,27 @@ export function LogsTab() {
         retryDelay = 1000;
         setStatus("CONNECTED");
       };
+
+      source.addEventListener("sync", (event) => {
+        if (disposed) return;
+        try {
+          const payload = JSON.parse((event as MessageEvent).data);
+          if (payload.identity && typeof payload.identity === "string") {
+            streamIdentityRef.current = payload.identity;
+            const nextOffset = Number(payload.offset);
+            if (Number.isSafeInteger(nextOffset) && nextOffset >= 0) {
+              streamOffsetRef.current = nextOffset;
+            }
+          }
+          if (!hasReceivedContentRef.current) {
+            hasReceivedContentRef.current = true;
+            setHasReceivedContent(true);
+          }
+        } catch {
+          // ignore malformed sync
+        }
+      });
+
       source.onmessage = (event) => {
         if (disposed) return;
         let payload: { offset?: unknown; identity?: unknown; chunk?: unknown };
@@ -155,6 +233,10 @@ export function LogsTab() {
         streamOffsetRef.current = nextOffset;
         streamIdentityRef.current = payload.identity;
         enqueueText(payload.chunk);
+        if (!hasReceivedContentRef.current) {
+          hasReceivedContentRef.current = true;
+          setHasReceivedContent(true);
+        }
       };
 
       source.addEventListener("reset", (event) => {
@@ -197,6 +279,8 @@ export function LogsTab() {
     return () => {
       if (flushFrame !== null) window.cancelAnimationFrame(flushFrame);
       flushFrame = null;
+      if (pollInterval !== null) window.clearInterval(pollInterval);
+      pollInterval = null;
       if (resetOnRestartRef.current) pendingText.length = 0;
       else flushPending();
       disposed = true;
@@ -259,11 +343,11 @@ export function LogsTab() {
         <div className="flex items-center justify-between px-4 py-2 border-b border-[#2d2d2d] text-xs flex-shrink-0">
           <div className="flex items-center gap-3 min-w-0">
             <span style={{ color: statusColor }} className="font-bold whitespace-nowrap">
-              ● {status}
+              ● {status === "CONNECTED" ? "LIVE (250ms)" : status}
             </span>
             <span className="text-[#555555] truncate">logs/{fileName}</span>
             <span className="text-[#888888] whitespace-nowrap">
-              live tail · last {LOG_VIEW_INITIAL_TAIL} lines
+              tail {LOG_VIEW_INITIAL_TAIL} lines · buffer {LOG_VIEW_MAX_LINES} lines
             </span>
             {status === "ERROR" && (
               <span className="text-[#F44336] text-[11px]">
@@ -302,11 +386,16 @@ export function LogsTab() {
         >
           {!hasReceivedContent && (
             <div className="text-[#555555] mt-2">
-              {status === "CONNECTING" && "⏳ Connecting to master.log stream..."}
+              {status === "CONNECTING" && "⏳ Connecting to master.log..."}
               {status === "CONNECTED" &&
-                `⏳ Loading last ${LOG_VIEW_INITIAL_TAIL} lines from ${fileName}…`}
+                `⏳ Fetching recent lines from ${fileName}…`}
               {status === "ERROR" && "✗ Stream interrupted; retrying automatically."}
               {status === "PAUSED" && "⏸ Stream paused. Click Resume to continue from the last received byte."}
+            </div>
+          )}
+          {hasReceivedContent && outputLineCountRef.current === 0 && (
+            <div className="text-[#666666] mt-2 italic">
+              ● {fileName} is attached and live (currently 0 lines). Service output will appear here in real time.
             </div>
           )}
           <pre

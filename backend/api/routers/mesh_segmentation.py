@@ -13,7 +13,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.concurrency import run_in_threadpool
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from api.dependencies import get_file_store, get_scheduler
 from api.routers.file_upload import resolve_file_id_async, resolve_input_reference_async
@@ -83,13 +83,11 @@ class MeshSegmentationRequest(BaseModel):
         description="Model-specific parameters (query /system/models/{model_id}/parameters for schema)"
     )
 
-    @field_validator("mesh_file_id")
-    @classmethod
-    def validate_inputs(cls, v, info):
-        mesh_path = info.data.get("mesh_path")
-        mesh_base64 = info.data.get("mesh_base64")
-
-        inputs_provided = sum(bool(x) for x in [mesh_path, mesh_base64, v])
+    @model_validator(mode="after")
+    def validate_inputs(self):
+        inputs_provided = sum(
+            bool(x) for x in [self.mesh_path, self.mesh_base64, self.mesh_file_id]
+        )
 
         if inputs_provided == 0:
             raise ValueError(
@@ -99,7 +97,7 @@ class MeshSegmentationRequest(BaseModel):
             raise ValueError(
                 "Only one of mesh_path, mesh_base64, or mesh_file_id should be provided"
             )
-        return v
+        return self
 
     model_config = ConfigDict(protected_namespaces=("settings_",))
 
@@ -290,4 +288,3 @@ async def get_available_models(
         raise HTTPException(
             status_code=500, detail=f"Failed to get available models: {str(e)}"
         )
-

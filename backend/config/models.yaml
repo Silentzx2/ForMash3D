@@ -406,6 +406,41 @@ image_to_raw_mesh:
     enabled: false
     max_workers: 1
 
+  # Hi3D v1.0 Experimental High-Resolution Geometry Refinement
+  hi3d_image_to_raw_mesh:
+    model_name: "Hi3D [Experimental] — Image to Raw Mesh"
+    checkpoint_license: "LicenseRef-Hi3D-1.0"
+    experimental: true
+    capabilities:
+      native_topology: false
+      output_resolution: 1024
+      text_to_3d: false
+      image_to_3d: true
+      multiview: false
+      texture_generation: false
+      raw_mesh: true
+      high_fidelity_geometry: true
+      mesh_quality_characteristics: [high_resolution_refinement, progressive_sparse_flow]
+      preferred_preprocessing: high_fidelity
+      preferred_extraction: flexicubes
+      preferred_resolution: 1024
+      preferred_face_budget: high
+      recommended_postprocess_profile: high_fidelity
+      latency_class: quality
+      quality_priority: 95
+      multi_gpu: true
+      multi_gpu_strategy: accelerate_component_dispatch
+      low_vram_supported: true
+      paint_autochain: false
+      experimental: true
+    vram_requirement: 16384  # MB (16GB VRAM, supports sequential CPU offload)
+    low_vram_requirement: 8192
+    supported_inputs: ["image", "mesh"]
+    supported_outputs: ["glb", "obj"]
+    model_path: "backend/pretrained/Hi3D"
+    enabled: true
+    max_workers: 1
+
 # image-conditioned geometry+texture generation (legacy aliases routing to raw geometry)
 image_to_textured_mesh:
   # EXPERIMENTAL_MAX_DETAIL: deprecated alias of the TRELLIS profile; 50-step source configuration, shared CFG=7.5, simplify=0.0.
@@ -473,6 +508,43 @@ image_to_textured_mesh:
     supported_inputs: ["image"]
     supported_outputs: ["glb", "obj"]
     model_path: "backend/pretrained/TRELLIS.2"
+    enabled: true
+    max_workers: 1
+
+  # Hi3D v1.0 Experimental Textured Mesh Route (clean untextured raw geometry export when apply_texture=false)
+  hi3d_image_to_textured_mesh:
+    model_name: "Hi3D [Experimental] — Image to Textured Mesh"
+    checkpoint_license: "LicenseRef-Hi3D-1.0"
+    experimental: true
+    alias_of: "hi3d_image_to_raw_mesh"
+    capabilities:
+      native_topology: false
+      output_resolution: 1024
+      text_to_3d: false
+      image_to_3d: true
+      multiview: false
+      texture_generation: false
+      raw_mesh: true
+      high_fidelity_geometry: true
+      mesh_quality_characteristics: [high_resolution_refinement, progressive_sparse_flow]
+      preferred_preprocessing: high_fidelity
+      preferred_extraction: flexicubes
+      preferred_resolution: 1024
+      preferred_face_budget: high
+      recommended_postprocess_profile: high_fidelity
+      latency_class: quality
+      quality_priority: 95
+      multi_gpu: true
+      multi_gpu_strategy: accelerate_component_dispatch
+      low_vram_supported: true
+      paint_autochain: false
+      experimental: true
+      alias_of: "hi3d_image_to_raw_mesh"
+    vram_requirement: 16384  # MB
+    low_vram_requirement: 8192
+    supported_inputs: ["image", "mesh"]
+    supported_outputs: ["glb", "obj"]
+    model_path: "backend/pretrained/Hi3D"
     enabled: true
     max_workers: 1
 

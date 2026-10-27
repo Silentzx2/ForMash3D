@@ -85,9 +85,17 @@ def evaluate_topology_gate(
     degenerate_faces = int(metrics.get("degenerate_faces", 0))
     aspect_ratio_p1 = float(metrics.get("aspect_ratio_p1", 0.0))
     aspect_ratio_p5 = float(metrics.get("aspect_ratio_p5", 0.0))
+    finite_vertices = bool(metrics.get("finite_vertices", False))
+    valid_face_indices = bool(metrics.get("valid_face_indices", False))
 
     violations: List[str] = []
 
+    if not finite_vertices:
+        violations.append("vertex coordinates are not finite")
+    if not valid_face_indices:
+        violations.append(
+            f"invalid face indices ({metrics.get('invalid_face_count', 0)})"
+        )
     if non_manifold_edges > thresholds["max_non_manifold_edges"]:
         violations.append(
             f"non_manifold_edges ({non_manifold_edges}) > {thresholds['max_non_manifold_edges']}"

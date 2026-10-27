@@ -128,7 +128,10 @@ class ResourcePlanner:
         required = max(1, int(model_config.get("vram_requirement", 1024)))
         snapshot = self.gpu_capacity_snapshot()
         if not snapshot:
-            return False
+            # A non-CPU model cannot be placed without a visible CUDA device.
+            # Returning False here leaves the scheduler requeueing the job until
+            # its one-hour wait timeout instead of classifying it as impossible.
+            return True
         max_total = max((g["total_mb"] for g in snapshot), default=0)
         if max_total >= required:
             return False

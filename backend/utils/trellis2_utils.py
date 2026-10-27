@@ -199,14 +199,23 @@ class Trellis2Runner:
             resolved_path = None
             for c in candidates:
                 if (c / "pipeline.json").is_file():
-                    resolved_path = str(c.resolve())
-                    break
+                    ckpts_dir = c / "ckpts"
+                    if (ckpts_dir.is_dir() and any(ckpts_dir.iterdir())) or any(c.glob("*.safetensors")):
+                        resolved_path = str(c.resolve())
+                        break
 
             pretrained_path = resolved_path or "microsoft/TRELLIS.2-4B"
             logger.info(f"Loading TRELLIS.2 image-to-3D pipeline from: {pretrained_path}")
             self.image_to_3d_pipeline = Trellis2ImageTo3DPipeline.from_pretrained(
                 pretrained_path
             )
+
+            # Auto-align sparse structure decoder input dtype with weights (guards BFloat16/Float32 mismatch)
+            try:
+                from utils.torchvision_fix import fix_trellis2_sparse_vae_dtype
+                fix_trellis2_sparse_vae_dtype()
+            except Exception as patch_err:
+                logger.debug(f"fix_trellis2_sparse_vae_dtype notice: {patch_err}")
 
             if self.low_vram:
                 self.image_to_3d_pipeline.low_vram = True
@@ -277,8 +286,10 @@ class Trellis2Runner:
             resolved_path = None
             for c in candidates:
                 if (c / "texturing_pipeline.json").is_file():
-                    resolved_path = str(c.resolve())
-                    break
+                    ckpts_dir = c / "ckpts"
+                    if (ckpts_dir.is_dir() and any(ckpts_dir.iterdir())) or any(c.glob("*.safetensors")):
+                        resolved_path = str(c.resolve())
+                        break
 
             tex_model_path = resolved_path or "microsoft/TRELLIS.2-4B"
             self.texturing_pipeline = Trellis2TexturingPipeline.from_pretrained(

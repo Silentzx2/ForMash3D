@@ -854,6 +854,32 @@ else
     echo "[WARN] TaoFlowForge thirdparty directory not found, skipping"
 fi
 
+### Hi3D Experimental Dependencies ###
+echo ""
+echo "========================================"
+echo "Installing Hi3D Dependencies (Experimental)"
+echo "========================================"
+if [ -d "$THIRDPARTY_DIR/Hi3D" ]; then
+    echo "[INFO] Found thirdparty/Hi3D directory..."
+    echo "[INFO] Installing Hi3D/Sparc3D requirements..."
+    $UV_PIP install --find-links="$WHEEL_DIR" \
+        ninja \
+        psutil \
+        triton>=3.1.0 \
+        einops || true
+
+    if [ "$COMPUTE_MODE" = "cuda" ] && command -v nvcc >/dev/null 2>&1; then
+        echo "[INFO] CUDA detected; checking flash-attn for Hi3D..."
+        if ! python3 -c "import flash_attn" >/dev/null 2>&1; then
+            $UV_PIP install --find-links="$WHEEL_DIR" flash-attn-*.whl || true
+        fi
+    fi
+    echo "[SUCCESS] Hi3D experimental dependencies processed"
+else
+    echo "[WARN] Hi3D thirdparty directory not found, skipping"
+fi
+### Hi3D end ###
+
 # huggingface_hub is managed centrally by backend/requirements.txt.
 
 # Older installer runs installed Gradio only for Unique3D's standalone demo.

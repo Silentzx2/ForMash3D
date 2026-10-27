@@ -318,8 +318,15 @@ def fix_huggingface_repo_redirects():
                 return None
 
             def _redirected_hf_hub_download(repo_id, *args, **kwargs):
-                if isinstance(repo_id, str) and repo_id.startswith("lambdalabs/"):
-                    repo_id = "lambda/" + repo_id[len("lambdalabs/"):]
+                if isinstance(repo_id, str):
+                    if repo_id.startswith("lambdalabs/"):
+                        repo_id = "lambda/" + repo_id[len("lambdalabs/"):]
+                    elif repo_id.startswith("/") or repo_id.startswith(".") or "\\" in repo_id or repo_id in ("kaggle", "root", "home"):
+                        filename = args[0] if args else kwargs.get("filename")
+                        if "TRELLIS" in str(repo_id) or (filename and "ckpts" in str(filename)):
+                            repo_id = "microsoft/TRELLIS.2-4B"
+                        else:
+                            repo_id = "microsoft/TRELLIS.2-4B"
 
                 filename = args[0] if args else kwargs.get("filename")
 
@@ -723,6 +730,93 @@ def fix_torch_cluster():
     return True
 
 
+def fix_trellis2_sparse_vae_dtype():
+    """Ensure TRELLIS.2 SparseStructureDecoder/Encoder align input tensor dtype with conv3d weights (prevents BFloat16/Float32 mismatch)."""
+    try:
+        from trellis2.models.sparse_structure_vae import SparseStructureDecoder, SparseStructureEncoder
+
+        orig_decoder_forward = SparseStructureDecoder.forward
+        if not getattr(orig_decoder_forward, "_dtype_aligned", False):
+            def patched_decoder_forward(self, x: torch.Tensor) -> torch.Tensor:
+                in_dtype = next(self.input_layer.parameters()).dtype if hasattr(self.input_layer, "parameters") else self.dtype
+                if x.dtype != in_dtype:
+                    x = x.to(in_dtype)
+                h = self.input_layer(x)
+                h = h.type(self.dtype)
+                h = self.middle_block(h)
+                for block in self.blocks:
+                    h = block(h)
+                out_dtype = next(self.out_layer.parameters()).dtype if hasattr(self.out_layer, "parameters") else self.dtype
+                h = h.type(out_dtype)
+                h = self.out_layer(h)
+                return h
+
+            patched_decoder_forward._dtype_aligned = True
+            SparseStructureDecoder.forward = patched_decoder_forward
+
+        orig_encoder_forward = SparseStructureEncoder.forward
+        if not getattr(orig_encoder_forward, "_dtype_aligned", False):
+            def patched_encoder_forward(self, x: torch.Tensor, sample_posterior: bool = False, return_raw: bool = False) -> torch.Tensor:
+                in_dtype = next(self.input_layer.parameters()).dtype if hasattr(self.input_layer, "parameters") else self.dtype
+                if x.dtype != in_dtype:
+                    x = x.to(in_dtype)
+                h = self.input_layer(x)
+                h = h.type(self.dtype)
+                for block in self.blocks:
+                    h = block(h)
+                h = self.middle_block(h)
+                out_dtype = next(self.out_layer.parameters()).dtype if hasattr(self.out_layer, "parameters") else self.dtype
+                h = h.type(out_dtype)
+                h = self.out_layer(h)
+                mean, logvar = h.chunk(2, dim=1)
+                if sample_posterior:
+                    std = torch.exp(0.5 * logvar)
+                    z = mean + std * torch.randn_like(std)
+                else:
+                    z = mean
+                if return_raw:
+                    return z, mean, logvar
+                return z
+
+            patched_encoder_forward._dtype_aligned = True
+            SparseStructureEncoder.forward = patched_encoder_forward
+
+        try:
+            from trellis2.modules.sparse.basic import SparseTensor
+            if not getattr(SparseTensor, "_empty_coords_patched", False):
+                def patched_cal_shape(self, feats, coords):
+                    shape = []
+                    if coords.shape[0] == 0:
+                        shape.append(0)
+                    else:
+                        shape.append(coords[:, 0].max().item() + 1)
+                    shape.extend([*feats.shape[1:]])
+                    return torch.Size(shape)
+                def patched_cal_layout(self, coords, batch_size):
+                    if coords.shape[0] == 0:
+                        return [slice(0, 0) for _ in range(batch_size)]
+                    seq_len = torch.bincount(coords[:, 0], minlength=batch_size)
+                    offset = torch.cumsum(seq_len, dim=0)
+                    layout = [slice((offset[i] - seq_len[i]).item(), offset[i].item()) for i in range(batch_size)]
+                    return layout
+                def patched_cal_spatial_shape(self, coords):
+                    if coords.shape[0] == 0:
+                        return torch.Size([0, 0, 0])
+                    return torch.Size((coords[:, 1:].max(0)[0] + 1).tolist())
+
+                setattr(SparseTensor, "_SparseTensor__cal_shape", patched_cal_shape)
+                setattr(SparseTensor, "_SparseTensor__cal_layout", patched_cal_layout)
+                setattr(SparseTensor, "_SparseTensor__cal_spatial_shape", patched_cal_spatial_shape)
+                SparseTensor._empty_coords_patched = True
+        except Exception:
+            pass
+
+        return True
+    except Exception as e:
+        logger.debug(f"fix_trellis2_sparse_vae_dtype notice: {e}")
+        return False
+
+
 def apply_fix():
     """Apply compatibility fixes (torchvision, transformers, torch.load, hf redirects, numba, dinov3, flex_gemm, flash_attn, and torch_cluster)."""
     load_dotenv_into_environ()
@@ -742,6 +836,7 @@ def apply_fix():
     fix_flash_attention_hardware()
     fix_pixal3d_modules()
     fix_torch_cluster()
+    fix_trellis2_sparse_vae_dtype()
     return True
 
 

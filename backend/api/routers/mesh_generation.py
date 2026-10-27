@@ -326,13 +326,11 @@ class TextMeshPaintingRequest(BaseModel):
             raise ValueError(f"Output format must be one of: {allowed_formats}")
         return v
 
-    @field_validator("mesh_file_id")
-    @classmethod
-    def validate_inputs(cls, v, info):
-        mesh_path = info.data.get("mesh_path")
-        mesh_base64 = info.data.get("mesh_base64")
-
-        inputs_provided = sum(bool(x) for x in [mesh_path, mesh_base64, v])
+    @model_validator(mode="after")
+    def validate_inputs(self):
+        inputs_provided = sum(
+            bool(x) for x in [self.mesh_path, self.mesh_base64, self.mesh_file_id]
+        )
 
         if inputs_provided == 0:
             raise ValueError(
@@ -342,7 +340,7 @@ class TextMeshPaintingRequest(BaseModel):
             raise ValueError(
                 "Only one of mesh_path, mesh_base64, or mesh_file_id should be provided"
             )
-        return v
+        return self
 
     model_config = ConfigDict(protected_namespaces=("settings_",))
 
@@ -706,13 +704,11 @@ class ImageToTexturedMeshRequest(BaseModel):
             raise ValueError(f"Output format must be one of: {allowed_formats}")
         return v
 
-    @field_validator("image_file_id")
-    @classmethod
-    def validate_inputs(cls, v, info):
-        image_path = info.data.get("image_path")
-        image_base64 = info.data.get("image_base64")
-
-        inputs_provided = sum(bool(x) for x in [image_path, image_base64, v])
+    @model_validator(mode="after")
+    def validate_inputs(self):
+        inputs_provided = sum(
+            bool(x) for x in [self.image_path, self.image_base64, self.image_file_id]
+        )
 
         if inputs_provided == 0:
             raise ValueError(
@@ -722,7 +718,7 @@ class ImageToTexturedMeshRequest(BaseModel):
             raise ValueError(
                 "Only one of image_path, image_base64, or image_file_id should be provided"
             )
-        return v
+        return self
 
     model_config = ConfigDict(protected_namespaces=("settings_",))
 
@@ -818,19 +814,15 @@ class ImageMeshPaintingRequest(BaseModel):
             raise ValueError(f"Output format must be one of: {allowed_formats}")
         return v
 
-    @field_validator("mesh_file_id")
-    @classmethod
-    def validate_inputs(cls, v, info):
-        image_path = info.data.get("image_path")
-        image_base64 = info.data.get("image_base64")
-        image_file_id = info.data.get("image_file_id")
-        mesh_path = info.data.get("mesh_path")
-        mesh_base64 = info.data.get("mesh_base64")
+    @model_validator(mode="after")
+    def validate_inputs(self):
 
         image_inputs_provided = sum(
-            bool(x) for x in [image_path, image_base64, image_file_id]
+            bool(x) for x in [self.image_path, self.image_base64, self.image_file_id]
         )
-        mesh_inputs_provided = sum(bool(x) for x in [mesh_path, mesh_base64, v])
+        mesh_inputs_provided = sum(
+            bool(x) for x in [self.mesh_path, self.mesh_base64, self.mesh_file_id]
+        )
 
         if image_inputs_provided == 0:
             raise ValueError(
@@ -848,7 +840,7 @@ class ImageMeshPaintingRequest(BaseModel):
             raise ValueError(
                 "Only one of mesh_path, mesh_base64, or mesh_file_id should be provided"
             )
-        return v
+        return self
 
     model_config = ConfigDict(protected_namespaces=("settings_",))
 

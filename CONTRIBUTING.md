@@ -121,7 +121,7 @@ Never commit credentials, model checkpoints, private URLs, or generated secrets.
 
 ## Security
 
-Do not disclose security vulnerabilities in public issues. Follow [Docs/SECURITY.md](SECURITY.md).
+Do not disclose security vulnerabilities in public issues. Follow [Docs/SECURITY.md](Docs/SECURITY.md).
 
 ## Documentation
 

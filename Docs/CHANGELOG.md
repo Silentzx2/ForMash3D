@@ -1,3 +1,30 @@
+## 2026-10-27 — Hi3D experimental model integration
+
+- **Explicit User Authorization:** Integrated Hi3D v1.0 as an experimental model following explicit owner approval.
+- **Vendored Upstream Source:** Pinned `https://github.com/hi3d-official/Hi3Dv1.0` at reviewed commit `13657ad09afaa92e350b461a1cd66399e44a59c4` in `backend/thirdparty/Hi3D`, stripping upstream `.git` metadata cleanly while preserving `LICENSE`, `NOTICE`, and attribution.
+- **Hi3D Adapter (`backend/adapters/hi3d_adapter.py`):**
+  - Inherits from `BaseAdapter` / `ImageToMeshModel`.
+  - Supports `hi3d_image_to_raw_mesh` (raw geometry refinement) and `hi3d_image_to_textured_mesh` (alias).
+  - Explicitly marked with `experimental: true`.
+  - Enforces `_LOCKED_INFERENCE_PROFILE` (resolution=1024, num_inference_steps=25, seed=42, sequential_cpu_offload=False, fp16=True, apply_texture=False).
+  - Graceful hardware validation requiring NVIDIA GPU with CUDA compute capability >= 8.0 (Ampere+), reporting clear diagnostics when unavailable.
+  - Lazy loading of pretrained weights from `backend/pretrained/Hi3D` with FP16 and sequential CPU offload support.
+  - Clean untextured raw mesh export when `apply_texture=False`.
+- **Model Registry & Routing:**
+  - Registered in `backend/core/scheduler/model_factory.py`, `backend/adapters/__init__.py`, `backend/core/planner.py`, and `backend/core/scheduler/multiprocess_scheduler.py`.
+  - Added catalog entries in `backend/config/models.yaml` with 16 GB VRAM reservation, license `LicenseRef-Hi3D-1.0`, and `experimental: true`.
+  - Added UI model entries with `[Experimental]` badges in `constants/models.ts`, `GeneratePanel.tsx`, and `app/page.tsx`.
+- **Verification:**
+  - Added comprehensive test suite `backend/tests/test_hi3d_adapter.py`.
+  - Verified with pytest regression suite and TypeScript/Next.js builds.
+
+## 2026-10-27 — Adapter-owned resource controls and contract documentation
+
+- Removed disconnected Low-VRAM controls from active generation and texture panels.
+- Stopped serializing legacy `low_vram` request overrides and added scheduler-side filtering before adapter execution; automatic resource plans remain authoritative.
+- Restored the five first-party documentation guides referenced by the project architecture and rules.
+- Verification: focused frontend and backend contract tests, TypeScript, Python compilation, and shell checks passed; GPU/model/browser validation remains not run.
+
 ## 2026-10-26 — Real-time log tail: SSE-only, tail-first and bounded display
 
 - Fresh Admin Logs connections seek to the configured recent lines before following new writes; resume retains byte offsets, file identity and reset events.

@@ -1,3 +1,12 @@
+## 2026-10-27 — Adapter-owned resource controls and documentation repair
+
+- Root cause: the active Generate UI exposed Low-VRAM toggles and the request builder forwarded `low_vram` into adapter inputs even though resource placement is selected by the scheduler.
+- Fix: removed the active Generate and Texture low-VRAM controls, removed the generation-state/request serialization, and added scheduler filtering for legacy `low_vram` and `low_vram_mode` keys before adapter execution. The resource planner and adapter resource plans remain authoritative.
+- Added the previously referenced first-party contract guides: `Docs/SECURITY.md`, `Docs/GENERATION-UI-CONTRACT.md`, `Docs/GENERATION-CONTROL-AUDIT.md`, `Docs/EXPERIMENTAL-MODEL-SETTINGS.md`, and `Docs/ROUTE-MOUNT-AUDIT.md`.
+- Verification: focused frontend contract tests, TypeScript, Python compilation, shell audit, and targeted backend contracts pass in this session. Full GPU/checkpoint inference, Blender, and browser interaction remain unverified.
+
+---
+
 ## 2026-10-26 — Admin real-time logs tail
 
 - Admin Logs starts with configured recent `master.log` history and follows new bytes through one SSE stream; fresh-start seek cost is bounded by the configured scan window.

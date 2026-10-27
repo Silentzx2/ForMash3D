@@ -139,6 +139,7 @@ _POSTPROCESS_ONLY_INPUTS = frozenset({
     "texture_resolution_preset", "production_texture_resolution",
     "enable_realesrgan", "enableRealESRGAN", "realeg",
     "faces", "num_faces", "simplify", "decimation_target", "remesh", "remesh_band", "remesh_project",
+    "low_vram", "low_vram_mode",
     "bake_normal_maps", "bake_high_to_low", "bake_textures",
     "intent", "preprocessing_artifact_id", "enhancement_enabled", "preprocessing_metadata",
     "enable_printability_check", "enable_auto_repair", "enable_auto_rig", "auto_rig_mode",
@@ -171,6 +172,9 @@ _ADAPTER_OWNED_INFERENCE_PROFILE_MODEL_IDS = frozenset({
     "unique3d_image_to_raw_mesh",
     "taoflowforge_image_to_raw_mesh",
     "hunyuan3d_paint_v21_image_mesh_painting",
+    "hi3d_image_to_raw_mesh",
+    "hi3d_image_to_textured_mesh",
+    "hi3d",
 })
 _ADAPTER_OWNED_INFERENCE_INPUTS = frozenset({
     "source_quality", "requested_quality", "quality", "meshQuality", "mesh_quality",

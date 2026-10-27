@@ -18,6 +18,12 @@ coverage/
 # Python
 .venv/
 backend/run/
+backend/venv/
+backend/.venv/
+backend/output/
+backend/outputs/
+output/
+outputs/
 venv/
 *.pyc
 __pycache__/

@@ -645,6 +645,9 @@ class MeshProcessor:
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
+        if mesh is None:
+            raise ValueError(f"Cannot save None mesh to {output_path}: model generation produced a null mesh object.")
+
         try:
             if do_normalise:
                 mesh = MeshProcessor.normalise_mesh(mesh)
@@ -667,6 +670,9 @@ class MeshProcessor:
         """Save a scene to file."""
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if mesh is None:
+            raise ValueError(f"Cannot save None mesh to {output_path}: model generation produced a null mesh object.")
 
         try:
             if do_normalise:

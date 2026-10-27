@@ -177,6 +177,19 @@ class ModelFactory:
             "module": "adapters.taoflowforge_adapter",
             "class": "TaoFlowForgeImageToRawMeshAdapter",
         },
+        # Hi3D experimental adapters
+        "hi3d_image_to_raw_mesh": {
+            "module": "adapters.hi3d_adapter",
+            "class": "Hi3DImageToRawMeshAdapter",
+        },
+        "hi3d_image_to_textured_mesh": {
+            "module": "adapters.hi3d_adapter",
+            "class": "Hi3DImageToTexturedMeshAdapter",
+        },
+        "hi3d": {
+            "module": "adapters.hi3d_adapter",
+            "class": "Hi3DImageToRawMeshAdapter",
+        },
     }
 
     LEGACY_IMAGE_TO_RAW_ALIASES = {
@@ -312,6 +325,8 @@ class ModelFactory:
                 model_instance.model_id = model_id
             if not hasattr(model_instance, "feature_type") and "feature_type" in config:
                 model_instance.feature_type = config["feature_type"]
+            if config.get("experimental") or getattr(model_instance, "experimental", False):
+                model_instance.experimental = True
 
             logger.info(f"Successfully created model {model_id}")
             return model_instance

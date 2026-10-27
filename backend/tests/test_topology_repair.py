@@ -126,6 +126,32 @@ def test_gate_rejects_disconnected_floater_components():
     assert result["repair_decision"] == "full_repair"
 
 
+def test_gate_rejects_non_finite_unreferenced_vertices():
+    mesh = trimesh.creation.box()
+    mesh.vertices = np.vstack((mesh.vertices, (np.nan, 0.0, 0.0)))
+
+    result = evaluate_topology_gate(mesh)
+
+    assert result["metrics"]["finite_vertices"] is False
+    assert any("finite" in violation for violation in result["violations"])
+    assert result["repair_decision"] == "full_repair"
+
+
+def test_gate_rejects_invalid_face_indices_without_crashing():
+    mesh = trimesh.Trimesh(
+        vertices=((0, 0, 0), (1, 0, 0), (0, 1, 0)),
+        faces=((0, 1, 3),),
+        process=False,
+    )
+
+    result = evaluate_topology_gate(mesh)
+
+    assert result["metrics"]["valid_face_indices"] is False
+    assert result["metrics"]["invalid_face_count"] == 1
+    assert result["repair_decision"] == "full_repair"
+    assert any("invalid face indices" in violation for violation in result["violations"])
+
+
 def test_targeted_hole_repair_preserves_uvs_and_native_material():
     mesh = _open_prism(((0, 0), (0.1, 0), (0.1, 0.1), (0, 0.1)))
     uv = np.arange(len(mesh.vertices) * 2, dtype=float).reshape(-1, 2) / 10

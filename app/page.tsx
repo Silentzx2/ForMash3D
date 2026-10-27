@@ -566,6 +566,7 @@ export default function HomePage() {
                       <option value="hunyuan3d_shape_v21_image_to_raw_mesh">Hunyuan3D 2.1 (Sharp Solids)</option>
                       <option value="unique3d_image_to_raw_mesh">Unique3D (Clean Geometry)</option>
                       <option value="triposg_image_to_raw_mesh">TripoSG (Fast Mesh)</option>
+                      <option value="hi3d_image_to_raw_mesh">Hi3D [Experimental] (Refined Geometry)</option>
                     </select>
                   </div>
                 </div>
