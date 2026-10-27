@@ -51,7 +51,12 @@ class PollingEndpointFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         msg = record.getMessage()
         return not (
-            ("GET /api/v1/system/jobs/" in msg or "GET /health" in msg or "GET /api/v1/system/status" in msg)
+            (
+                "GET /api/v1/system/jobs" in msg
+                or "GET /health" in msg
+                or "GET /api/v1/system/status" in msg
+                or "/api/v1/system/logs" in msg
+            )
             and (" 200" in msg or " 304" in msg)
         )
 
@@ -227,7 +232,12 @@ async def log_requests(request: Request, call_next):
     """Log requests with suppression of routine successful status polling"""
     start_time = time.time()
     path = request.url.path
-    is_poll = path.startswith(("/health", "/api/v1/system/jobs", "/api/v1/system/status"))
+    is_poll = path.startswith((
+        "/health",
+        "/api/v1/system/jobs",
+        "/api/v1/system/status",
+        "/api/v1/system/logs",
+    ))
 
     if not is_poll:
         logger.info(f"Request: {request.method} {request.url}")
