@@ -167,8 +167,8 @@ export function LogsTab() {
     // Immediate initial fetch
     pollTail();
 
-    // Start 250ms smooth live poller
-    pollInterval = window.setInterval(pollTail, 250);
+    // Start 350ms smooth live poller
+    pollInterval = window.setInterval(pollTail, 350);
 
     const startSSE = () => {
       if (disposed || !live || source) return;

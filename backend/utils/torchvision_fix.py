@@ -781,6 +781,36 @@ def fix_trellis2_sparse_vae_dtype():
             patched_encoder_forward._dtype_aligned = True
             SparseStructureEncoder.forward = patched_encoder_forward
 
+        try:
+            from trellis2.modules.sparse.basic import SparseTensor
+            if not getattr(SparseTensor, "_empty_coords_patched", False):
+                def patched_cal_shape(self, feats, coords):
+                    shape = []
+                    if coords.shape[0] == 0:
+                        shape.append(0)
+                    else:
+                        shape.append(coords[:, 0].max().item() + 1)
+                    shape.extend([*feats.shape[1:]])
+                    return torch.Size(shape)
+                def patched_cal_layout(self, coords, batch_size):
+                    if coords.shape[0] == 0:
+                        return [slice(0, 0) for _ in range(batch_size)]
+                    seq_len = torch.bincount(coords[:, 0], minlength=batch_size)
+                    offset = torch.cumsum(seq_len, dim=0)
+                    layout = [slice((offset[i] - seq_len[i]).item(), offset[i].item()) for i in range(batch_size)]
+                    return layout
+                def patched_cal_spatial_shape(self, coords):
+                    if coords.shape[0] == 0:
+                        return torch.Size([0, 0, 0])
+                    return torch.Size((coords[:, 1:].max(0)[0] + 1).tolist())
+
+                setattr(SparseTensor, "_SparseTensor__cal_shape", patched_cal_shape)
+                setattr(SparseTensor, "_SparseTensor__cal_layout", patched_cal_layout)
+                setattr(SparseTensor, "_SparseTensor__cal_spatial_shape", patched_cal_spatial_shape)
+                SparseTensor._empty_coords_patched = True
+        except Exception:
+            pass
+
         return True
     except Exception as e:
         logger.debug(f"fix_trellis2_sparse_vae_dtype notice: {e}")
