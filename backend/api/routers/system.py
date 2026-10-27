@@ -909,6 +909,63 @@ def _parse_log_line(line: str) -> dict:
         }
 
 
+@router.get("/logs/tail", summary="Get appended log bytes since an offset")
+async def get_logs_tail(
+    offset: Optional[int] = Query(None, description="Byte offset to read from"),
+    lines: Optional[int] = Query(None, description="If offset is not provided, tail last N lines"),
+    file: str = Query("master.log", description="Allowlisted log basename"),
+    identity: Optional[str] = Query(None, description="Current log-file identity"),
+    settings=Depends(get_current_settings),
+    _: bool = Depends(verify_api_key),
+):
+    """High-frequency low-latency log tail endpoint for smooth real-time polling."""
+    project_root = Path(__file__).resolve().parents[3]
+    logs_dir = project_root / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    log_path = _resolve_log_path(logs_dir, file, create_master=True)
+
+    stream_config = settings.logging.stream
+    path_stat = log_path.stat()
+    current_identity = f"{path_stat.st_dev}:{path_stat.st_ino}"
+    truncated = False
+
+    if identity and identity != current_identity:
+        offset = None
+        truncated = True
+
+    if offset is not None and offset > path_stat.st_size:
+        offset = None
+        truncated = True
+
+    with log_path.open("rb") as f:
+        if offset is None:
+            requested_lines = lines or stream_config.get("default_tail_lines", 1000)
+            start_offset = _tail_start_offset(
+                f, requested_lines, stream_config.get("max_tail_scan_bytes", 8388608)
+            )
+            f.seek(start_offset)
+            data = f.read()
+            new_offset = f.tell()
+            return {
+                "offset": new_offset,
+                "identity": current_identity,
+                "chunk": data.decode("utf-8", errors="replace"),
+                "truncated": truncated,
+                "total_bytes": path_stat.st_size,
+            }
+        else:
+            f.seek(offset)
+            data = f.read(512 * 1024)
+            new_offset = f.tell()
+            return {
+                "offset": new_offset,
+                "identity": current_identity,
+                "chunk": data.decode("utf-8", errors="replace"),
+                "truncated": truncated,
+                "total_bytes": path_stat.st_size,
+            }
+
+
 @router.get("/logs/files", summary="List the master log")
 async def list_log_files(_: bool = Depends(verify_api_key)):
     """Return the single canonical runtime log file."""

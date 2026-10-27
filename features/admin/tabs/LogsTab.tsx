@@ -119,38 +119,56 @@ export function LogsTab() {
       }
     };
 
-    // 1. Fast Initial Fetch: immediately fetch recent lines on mount so the user never sees infinite loading
-    const fetchInitialLogs = async () => {
+    // High-frequency low-latency poller (every 250ms) using byte-offset deltas
+    // This provides buttery-smooth line-by-line updates even through aggressive reverse proxy buffers (Kaggle/ngrok)
+    let isPolling = false;
+    const pollTail = async () => {
+      if (disposed || !liveRef.current || isPolling) return;
+      isPolling = true;
       try {
-        const res = await fetch(
-          `/api/v1/system/logs/files/${encodeURIComponent(fileName)}?lines=${LOG_VIEW_INITIAL_TAIL}`
-        );
+        const offsetParam = streamOffsetRef.current > 0 ? `&offset=${streamOffsetRef.current}` : "";
+        const identityParam = streamIdentityRef.current ? `&identity=${encodeURIComponent(streamIdentityRef.current)}` : "";
+        const linesParam = streamOffsetRef.current === 0 ? `&lines=${LOG_VIEW_INITIAL_TAIL}` : "";
+        const url = `/api/v1/system/logs/tail?file=${encodeURIComponent(fileName)}${offsetParam}${identityParam}${linesParam}`;
+
+        const res = await fetch(url);
         if (res.ok && !disposed) {
           const data = await res.json();
-          let initialText = "";
-          if (typeof data.raw_text === "string" && data.raw_text.length > 0) {
-            initialText = data.raw_text;
-          } else if (Array.isArray(data.logs) && data.logs.length > 0) {
-            initialText =
-              data.logs
-                .map((l: any) => l.raw || l.message || JSON.stringify(l))
-                .join("\n") + "\n";
+          if (data.identity) {
+            streamIdentityRef.current = data.identity;
           }
-          if (initialText.length > 0 && !disposed) {
-            enqueueText(initialText);
+          if (data.truncated) {
+            if (outputRef.current) outputRef.current.textContent = "";
+            outputTextRef.current = null;
+            outputLineCountRef.current = 0;
+            trailingNewlineRef.current = false;
+          }
+          if (typeof data.offset === "number") {
+            streamOffsetRef.current = data.offset;
+          }
+          if (typeof data.chunk === "string" && data.chunk.length > 0) {
+            enqueueText(data.chunk);
+          }
+          if (!hasReceivedContentRef.current) {
             hasReceivedContentRef.current = true;
             setHasReceivedContent(true);
-          } else if (!disposed) {
-            // File is attached but currently 0 bytes
-            hasReceivedContentRef.current = true;
-            setHasReceivedContent(true);
           }
+          setStatus("CONNECTED");
         }
       } catch {
-        // Handled silently; SSE/polling will stream updates
+        if (!disposed && status !== "ERROR") {
+          setStatus("ERROR");
+        }
+      } finally {
+        isPolling = false;
       }
     };
-    fetchInitialLogs();
+
+    // Immediate initial fetch
+    pollTail();
+
+    // Start 250ms smooth live poller
+    pollInterval = window.setInterval(pollTail, 250);
 
     const startSSE = () => {
       if (disposed || !live || source) return;
@@ -258,49 +276,6 @@ export function LogsTab() {
     };
     startSSE();
 
-    // Fallback polling: if SSE is blocked by an upstream proxy/tunnel or interrupted, poll every 2s
-    pollInterval = window.setInterval(async () => {
-      if (disposed || !liveRef.current) return;
-      // If SSE is active and streaming content, skip polling
-      if (source && source.readyState === EventSource.OPEN && outputLineCountRef.current > 0) {
-        return;
-      }
-      try {
-        const res = await fetch(
-          `/api/v1/system/logs/files/${encodeURIComponent(fileName)}?lines=${LOG_VIEW_INITIAL_TAIL}`
-        );
-        if (res.ok && !disposed) {
-          const data = await res.json();
-          let text = "";
-          if (typeof data.raw_text === "string" && data.raw_text.length > 0) {
-            text = data.raw_text;
-          } else if (Array.isArray(data.logs) && data.logs.length > 0) {
-            text =
-              data.logs
-                .map((l: any) => l.raw || l.message || JSON.stringify(l))
-                .join("\n") + "\n";
-          }
-          if (text.length > 0 && !disposed) {
-            if (outputRef.current) {
-              outputRef.current.textContent = text;
-              outputTextRef.current = null;
-            }
-            outputLineCountRef.current = (text.match(/\n/g) || []).length;
-            trailingNewlineRef.current = text.endsWith("\n");
-            hasReceivedContentRef.current = true;
-            setHasReceivedContent(true);
-            if (status !== "CONNECTED") setStatus("CONNECTED");
-            const terminal = terminalRef.current;
-            if (autoScrollRef.current && terminal) {
-              terminal.scrollTop = terminal.scrollHeight;
-            }
-          }
-        }
-      } catch {
-        // Silently handled
-      }
-    }, 2000);
-
     return () => {
       if (flushFrame !== null) window.cancelAnimationFrame(flushFrame);
       flushFrame = null;
@@ -368,11 +343,11 @@ export function LogsTab() {
         <div className="flex items-center justify-between px-4 py-2 border-b border-[#2d2d2d] text-xs flex-shrink-0">
           <div className="flex items-center gap-3 min-w-0">
             <span style={{ color: statusColor }} className="font-bold whitespace-nowrap">
-              ● {status}
+              ● {status === "CONNECTED" ? "LIVE (250ms)" : status}
             </span>
             <span className="text-[#555555] truncate">logs/{fileName}</span>
             <span className="text-[#888888] whitespace-nowrap">
-              live tail · last {LOG_VIEW_INITIAL_TAIL} lines
+              tail {LOG_VIEW_INITIAL_TAIL} lines · buffer {LOG_VIEW_MAX_LINES} lines
             </span>
             {status === "ERROR" && (
               <span className="text-[#F44336] text-[11px]">

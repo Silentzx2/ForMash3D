@@ -36,6 +36,42 @@ _LOCKED_INFERENCE_PROFILE = {
 }
 
 
+def _patch_conditioner_for_cuda_compatibility():
+    """Ensure ImageConditioner uses CPU image transform to prevent torchvision CUDA kernel arch mismatches on T4/P100."""
+    try:
+        from hy3dshape.models.conditioner import ImageConditioner
+        if getattr(ImageConditioner, "_arch_safe_patched", False):
+            return
+
+        def _safe_forward(cond_self, image, mask=None, value_range=(-1, 1), **kwargs):
+            if value_range is not None:
+                low, high = value_range
+                image = (image - low) / (high - low)
+            target_device = cond_self.model.device
+            target_dtype = cond_self.model.dtype
+            try:
+                if not getattr(image, "is_cuda", False):
+                    inputs = cond_self.transform(image.to(torch.float32)).to(target_device, dtype=target_dtype)
+                else:
+                    inputs = cond_self.transform(image.to(target_device, dtype=target_dtype))
+            except Exception as e:
+                if "no kernel image is available" in str(e) or "CUDA error" in str(e) or "CUDA" in type(e).__name__:
+                    inputs = cond_self.transform(image.cpu().to(torch.float32)).to(target_device, dtype=target_dtype)
+                else:
+                    raise
+            outputs = cond_self.model(inputs)
+            last_hidden_state = outputs.last_hidden_state
+            if not cond_self.use_cls_token:
+                last_hidden_state = last_hidden_state[:, 1:, :]
+            return last_hidden_state
+
+        ImageConditioner.forward = _safe_forward
+        ImageConditioner._arch_safe_patched = True
+        logger.info("Applied arch-safe transform patch to hy3dshape.models.conditioner.ImageConditioner")
+    except Exception as e:
+        logger.debug("ImageConditioner patch skipped or not applicable yet: %s", e)
+
+
 class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
     """
     Adapter for Hunyuan3D-Shape-v2-1 image-to-raw-mesh generation.
@@ -155,6 +191,7 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
                 pass
 
             from hy3dshape.pipelines import Hunyuan3DDiTFlowMatchingPipeline
+            _patch_conditioner_for_cuda_compatibility()
             try:
                 from hy3dshape.rembg import BackgroundRemover
             except RuntimeError as err:
