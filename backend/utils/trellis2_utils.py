@@ -199,8 +199,10 @@ class Trellis2Runner:
             resolved_path = None
             for c in candidates:
                 if (c / "pipeline.json").is_file():
-                    resolved_path = str(c.resolve())
-                    break
+                    ckpts_dir = c / "ckpts"
+                    if (ckpts_dir.is_dir() and any(ckpts_dir.iterdir())) or any(c.glob("*.safetensors")):
+                        resolved_path = str(c.resolve())
+                        break
 
             pretrained_path = resolved_path or "microsoft/TRELLIS.2-4B"
             logger.info(f"Loading TRELLIS.2 image-to-3D pipeline from: {pretrained_path}")
@@ -284,8 +286,10 @@ class Trellis2Runner:
             resolved_path = None
             for c in candidates:
                 if (c / "texturing_pipeline.json").is_file():
-                    resolved_path = str(c.resolve())
-                    break
+                    ckpts_dir = c / "ckpts"
+                    if (ckpts_dir.is_dir() and any(ckpts_dir.iterdir())) or any(c.glob("*.safetensors")):
+                        resolved_path = str(c.resolve())
+                        break
 
             tex_model_path = resolved_path or "microsoft/TRELLIS.2-4B"
             self.texturing_pipeline = Trellis2TexturingPipeline.from_pretrained(

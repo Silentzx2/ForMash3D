@@ -318,8 +318,15 @@ def fix_huggingface_repo_redirects():
                 return None
 
             def _redirected_hf_hub_download(repo_id, *args, **kwargs):
-                if isinstance(repo_id, str) and repo_id.startswith("lambdalabs/"):
-                    repo_id = "lambda/" + repo_id[len("lambdalabs/"):]
+                if isinstance(repo_id, str):
+                    if repo_id.startswith("lambdalabs/"):
+                        repo_id = "lambda/" + repo_id[len("lambdalabs/"):]
+                    elif repo_id.startswith("/") or repo_id.startswith(".") or "\\" in repo_id or repo_id in ("kaggle", "root", "home"):
+                        filename = args[0] if args else kwargs.get("filename")
+                        if "TRELLIS" in str(repo_id) or (filename and "ckpts" in str(filename)):
+                            repo_id = "microsoft/TRELLIS.2-4B"
+                        else:
+                            repo_id = "microsoft/TRELLIS.2-4B"
 
                 filename = args[0] if args else kwargs.get("filename")
 
