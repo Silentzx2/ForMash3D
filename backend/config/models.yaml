@@ -434,6 +434,7 @@ image_to_raw_mesh:
       paint_autochain: false
       experimental: true
     vram_requirement: 16384  # MB (16GB VRAM, supports sequential CPU offload)
+    low_vram_requirement: 8192
     supported_inputs: ["image", "mesh"]
     supported_outputs: ["glb", "obj"]
     model_path: "backend/pretrained/Hi3D"
@@ -540,6 +541,7 @@ image_to_textured_mesh:
       experimental: true
       alias_of: "hi3d_image_to_raw_mesh"
     vram_requirement: 16384  # MB
+    low_vram_requirement: 8192
     supported_inputs: ["image", "mesh"]
     supported_outputs: ["glb", "obj"]
     model_path: "backend/pretrained/Hi3D"

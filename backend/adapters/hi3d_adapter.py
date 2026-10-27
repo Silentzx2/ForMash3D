@@ -201,8 +201,29 @@ class Hi3DAdapter(ImageToMeshModel):
             local_files_only=has_local_weights,
         )
 
-        if self.sequential_cpu_offload:
-            self.pipeline.enable_sequential_cpu_offload(device)
+        is_offload = bool(self.sequential_cpu_offload)
+        if hasattr(self, "resource_plan") and self.resource_plan:
+            strategy = str(self.resource_plan.get("strategy", ""))
+            if "low_vram" in strategy or "offload" in strategy:
+                is_offload = True
+        if not is_offload and torch.cuda.is_available():
+            try:
+                target_gpu = self.gpu_id if getattr(self, "gpu_id", None) is not None else 0
+                total_mb = torch.cuda.get_device_properties(target_gpu).total_memory / (1024 * 1024)
+                if total_mb < 20480:
+                    is_offload = True
+            except Exception:
+                pass
+
+        if is_offload:
+            if hasattr(self.pipeline, "enable_sequential_cpu_offload"):
+                self.pipeline.enable_sequential_cpu_offload(device)
+                logger.info("Hi3D enabled sequential CPU offload on %s", device)
+            elif hasattr(self.pipeline, "enable_model_cpu_offload"):
+                self.pipeline.enable_model_cpu_offload(device)
+                logger.info("Hi3D enabled model CPU offload on %s", device)
+            else:
+                self.pipeline.to(device)
         else:
             self.pipeline.to(device)
 
