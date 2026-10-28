@@ -683,12 +683,41 @@ def _fix_triton_semantic_or():
         pass
 
 
+def _fix_triton_chained_boolops():
+    """
+    Patch triton.compiler.code_generator.CodeGenerator.visit_BoolOp for Triton 3.x compatibility.
+    In Triton 3.x, chained boolean operators without explicit parentheses (e.g. A or B or C)
+    raise `UnsupportedLanguageConstruct: chained boolean operators (A or B or C) are not supported`.
+    This patch auto-folds N-ary BoolOp AST nodes into nested binary BoolOps: ((A or B) or C).
+    """
+    try:
+        import ast
+        from triton.compiler.code_generator import CodeGenerator
+        orig_visit_boolop = getattr(CodeGenerator, "visit_BoolOp", None)
+        if orig_visit_boolop is not None and not getattr(orig_visit_boolop, "_safe_patched", False):
+            def safe_visit_BoolOp(self, node):
+                if len(node.values) > 2:
+                    cur = node.values[0]
+                    for next_val in node.values[1:]:
+                        cur = ast.BoolOp(op=node.op, values=[cur, next_val])
+                        ast.copy_location(cur, node)
+                    return self.visit(cur)
+                return orig_visit_boolop(self, node)
+
+            safe_visit_BoolOp._safe_patched = True
+            CodeGenerator.visit_BoolOp = safe_visit_BoolOp
+            logger.debug("Patched triton CodeGenerator.visit_BoolOp for chained boolops")
+    except Exception:
+        pass
+
+
 def _patch_flex_gemm_sources():
     """
     Patch syntax incompatibilities directly in installed flex_gemm source files on disk.
     Fixes:
     1. `tl.tensor | None` in neighbor_map.py causing bitwise-OR ValueError in Triton AST visitor.
     2. `.itemsize` attribute removed in Triton 3.x -> `.primitive_bitwidth // 8`.
+    3. Chained boolean operators without parentheses in static_assert (hashmap.py).
     """
     try:
         import sys
@@ -714,6 +743,16 @@ def _patch_flex_gemm_sources():
                         new_text = new_text.replace("tl.tensor|None", "None")
                     if ".itemsize" in new_text:
                         new_text = new_text.replace(".itemsize", ".primitive_bitwidth // 8")
+
+                    # Fix chained boolean operators in static_assert: A or B or C -> ((A or B) or C)
+                    old_chain_itemsize = "vec.dtype.itemsize == 1 or vec.dtype.itemsize == 2 or vec.dtype.itemsize == 4"
+                    old_chain_bitwidth = "vec.dtype.primitive_bitwidth // 8 == 1 or vec.dtype.primitive_bitwidth // 8 == 2 or vec.dtype.primitive_bitwidth // 8 == 4"
+                    safe_chain = "((vec.dtype.primitive_bitwidth // 8 == 1) or (vec.dtype.primitive_bitwidth // 8 == 2)) or (vec.dtype.primitive_bitwidth // 8 == 4)"
+                    if old_chain_itemsize in new_text:
+                        new_text = new_text.replace(old_chain_itemsize, safe_chain)
+                    if old_chain_bitwidth in new_text:
+                        new_text = new_text.replace(old_chain_bitwidth, safe_chain)
+
                     if new_text != text:
                         with open(fpath, "w", encoding="utf-8") as f:
                             f.write(new_text)
@@ -784,12 +823,14 @@ def fix_flex_gemm():
       1. triton.language.dtype.itemsize (missing in Triton 3.x)
       2. triton.language.str_to_ty ('ier_type' KeyError in Triton 3.x)
       3. triton.language.core.tensor.__or__ (tl.tensor | None ValueError in Python 3.10)
-      4. flex_gemm source files on disk (tl.tensor | None -> None, itemsize -> bitwidth // 8)
-      5. flex_gemm Triton kernel parameter annotations
+      4. triton.compiler.code_generator.CodeGenerator.visit_BoolOp (chained boolops in Triton 3.x)
+      5. flex_gemm source files on disk (tl.tensor | None -> None, itemsize -> bitwidth // 8)
+      6. flex_gemm Triton kernel parameter annotations
     """
     _fix_triton_dtype_itemsize()
     _fix_triton_str_to_ty()
     _fix_triton_semantic_or()
+    _fix_triton_chained_boolops()
     _patch_flex_gemm_sources()
     _sanitize_flex_gemm_kernel_annotations()
     try:
