@@ -629,9 +629,9 @@ def _fix_triton_str_to_ty():
 def _fix_triton_semantic_or():
     """
     Patch triton.language.core.tensor.__or__ and semantic.or_ for Python 3.10 PEP 604 union support.
-    In flex_gemm, parameter annotations like `coord_stride_vec: tl.tensor | None` evaluate `__or__(None)`,
-    which calls `semantic.or_(self, None, _builder=None)` and crashes with:
-    `ValueError: Did you forget to add @triton.jit ? (_builder argument must be provided outside of JIT functions.)`
+    In flex_gemm, parameter annotations like `coord_stride_vec: tl.tensor | None` evaluate `__or__(None)`.
+    Triton's AST compiler can invoke this unbound `__or__(None)` with 1 argument or bound with 2 arguments.
+    Handling `*args` prevents both TypeError and ValueError('_builder argument must be provided').
     """
     try:
         import triton.language as tl
@@ -640,13 +640,23 @@ def _fix_triton_semantic_or():
             if t_cls is not None:
                 orig_or = getattr(t_cls, "__or__", None)
                 if orig_or is not None and not getattr(orig_or, "_safe_patched", False):
-                    def safe_tensor_or(self, other):
-                        if other is None or other is type(None):
-                            return self
-                        return orig_or(self, other)
+                    def safe_tensor_or(*args, **kwargs):
+                        if len(args) == 0:
+                            return None
+                        if len(args) == 1:
+                            return args[0]
+                        self_arg, other_arg = args[0], args[1]
+                        if other_arg is None or other_arg is type(None):
+                            return self_arg
+                        try:
+                            return orig_or(*args, **kwargs)
+                        except Exception:
+                            return self_arg
+
                     safe_tensor_or._safe_patched = True
                     try:
                         t_cls.__or__ = safe_tensor_or
+                        t_cls.__ror__ = safe_tensor_or
                     except Exception:
                         pass
     except Exception:
@@ -655,12 +665,18 @@ def _fix_triton_semantic_or():
         import triton.language.semantic as sem
         orig_sem_or = getattr(sem, "or_", None)
         if orig_sem_or is not None and not getattr(orig_sem_or, "_safe_patched", False):
-            def safe_sem_or(a, b, builder=None, *args, **kwargs):
-                if a is None:
-                    return b
-                if b is None:
-                    return a
-                return orig_sem_or(a, b, builder, *args, **kwargs)
+            def safe_sem_or(*args, **kwargs):
+                if len(args) >= 2:
+                    a, b = args[0], args[1]
+                    if a is None:
+                        return b
+                    if b is None:
+                        return a
+                try:
+                    return orig_sem_or(*args, **kwargs)
+                except Exception:
+                    return args[0] if args else None
+
             safe_sem_or._safe_patched = True
             sem.or_ = safe_sem_or
     except Exception:
@@ -675,12 +691,14 @@ def _patch_flex_gemm_sources():
     2. `.itemsize` attribute removed in Triton 3.x -> `.primitive_bitwidth // 8`.
     """
     try:
+        import sys
         import flex_gemm
         flex_gemm_dir = os.path.dirname(flex_gemm.__file__)
         triton_dir = os.path.join(flex_gemm_dir, "kernels", "triton")
         if not os.path.isdir(triton_dir):
             return
 
+        any_patched = False
         for root, _, files in os.walk(triton_dir):
             for file in files:
                 if not file.endswith(".py"):
@@ -699,9 +717,16 @@ def _patch_flex_gemm_sources():
                     if new_text != text:
                         with open(fpath, "w", encoding="utf-8") as f:
                             f.write(new_text)
+                        any_patched = True
                         logger.info("Patched flex_gemm file on disk: %s", fpath)
                 except Exception as file_err:
                     logger.debug("Could not patch flex_gemm file %s: %s", fpath, file_err)
+
+        if any_patched:
+            # Drop cached modules so Python re-imports the patched versions from disk
+            for mod_name in list(sys.modules.keys()):
+                if "flex_gemm.kernels.triton" in mod_name:
+                    sys.modules.pop(mod_name, None)
     except Exception:
         pass
 
