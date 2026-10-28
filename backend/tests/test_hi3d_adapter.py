@@ -5,6 +5,7 @@ Comprehensive tests for Hi3D experimental model adapter and factory integration.
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
+import json
 import numpy as np
 import pytest
 import torch
@@ -19,6 +20,7 @@ from adapters.hi3d_adapter import (
     Hi3DImageToTexturedMeshAdapter,
     _LOCKED_INFERENCE_PROFILE,
     _apply_hi3d_fp16_profile,
+    _has_local_hf_model_weights,
     export_untextured_raw_mesh,
 )
 from core.models.base import ModelStatus
@@ -320,3 +322,34 @@ def test_fp16_profile_casts_geometry_weights_and_keeps_high_res_lazy():
     loaded = pipeline._transformer_1024_loader()
     assert loaded is high_res
     assert high_res.converted is True
+
+
+
+def test_local_hf_encoder_requires_complete_weights(tmp_path: Path):
+    model_dir = tmp_path / "encoder"
+    model_dir.mkdir()
+    (model_dir / "config.json").write_text("{}", encoding="utf-8")
+    assert _has_local_hf_model_weights(model_dir) is False
+
+    (model_dir / "model.safetensors").write_bytes(b"weights")
+    assert _has_local_hf_model_weights(model_dir) is True
+
+
+def test_local_hf_encoder_checks_all_sharded_files(tmp_path: Path):
+    model_dir = tmp_path / "encoder"
+    model_dir.mkdir()
+    (model_dir / "config.json").write_text("{}", encoding="utf-8")
+    (model_dir / "model-00001-of-00002.safetensors").write_bytes(b"part1")
+    index = {
+        "weight_map": {
+            "layer.0.weight": "model-00001-of-00002.safetensors",
+            "layer.1.weight": "model-00002-of-00002.safetensors",
+        }
+    }
+    (model_dir / "model.safetensors.index.json").write_text(
+        json.dumps(index), encoding="utf-8"
+    )
+    assert _has_local_hf_model_weights(model_dir) is False
+
+    (model_dir / "model-00002-of-00002.safetensors").write_bytes(b"part2")
+    assert _has_local_hf_model_weights(model_dir) is True

@@ -188,9 +188,17 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
                 from pixal3d.modules.image_feature_extractor import DinoV3ProjFeatureExtractor
             import o_voxel
 
+            # When configured with a local absolute path, report an incomplete download clearly
+            # instead of letting the custom loader reinterpret that path as a Hugging Face repo ID.
+            if self.model_path.is_absolute() and not (self.model_path / "pipeline.json").is_file():
+                raise FileNotFoundError(
+                    f"Pixal3D checkpoint is missing pipeline.json at {self.model_path}. "
+                    "Download it with the project's model downloader before loading Pixal3D."
+                )
+
             # Initialize pipeline using from_pretrained
             logger.info("Initializing Pixal3D pipeline from pretrained...")
-            self.pipeline = Pixal3DImageTo3DPipeline.from_pretrained(self.model_path)
+            self.pipeline = Pixal3DImageTo3DPipeline.from_pretrained(str(self.model_path))
 
             # Build image conditioning models (same configs as in inference.py)
             logger.info("Building Pixal3D image conditioning models...")

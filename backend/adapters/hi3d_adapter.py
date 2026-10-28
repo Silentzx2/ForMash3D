@@ -7,6 +7,7 @@ refinement from image and coarse mesh inputs. Marked as experimental.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sys
@@ -31,6 +32,37 @@ BaseAdapter = ImageToMeshModel
 
 CHECKPOINT_LICENSE = "LicenseRef-Hi3D-1.0"
 DEFAULT_VRAM_REQUIREMENT = 16384  # 16 GB
+
+
+def _has_local_hf_model_weights(model_dir: Path) -> bool:
+    """Return true only when a local Transformers directory has its config and complete weights."""
+    if not (model_dir / "config.json").is_file():
+        return False
+
+    for filename in ("model.safetensors", "pytorch_model.bin"):
+        weight_file = model_dir / filename
+        if weight_file.is_file() and weight_file.stat().st_size > 0:
+            return True
+
+    # Sharded checkpoints must have their index and every referenced shard.
+    for index_name in ("model.safetensors.index.json", "pytorch_model.bin.index.json"):
+        index_path = model_dir / index_name
+        if not index_path.is_file():
+            continue
+        try:
+            index_data = json.loads(index_path.read_text(encoding="utf-8"))
+            weight_map = index_data.get("weight_map")
+            if isinstance(weight_map, dict) and weight_map:
+                shards = {str(name) for name in weight_map.values()}
+                if all(
+                    (model_dir / shard).is_file()
+                    and (model_dir / shard).stat().st_size > 0
+                    for shard in shards
+                ):
+                    return True
+        except (OSError, ValueError, TypeError):
+            continue
+    return False
 
 # SHORTCUT / PIPELINE STABILITY TEST: Low resolution (512) and 1 step for ultra-fast validation (~5s).
 # AFTER PIPELINE IS STABLE: Change "resolution" back to 1024 and "num_inference_steps" back to 25!
@@ -394,11 +426,14 @@ class Hi3DAdapter(ImageToMeshModel):
         # Vision encoders (DINOv2-large and CLIP-large) may reside in pretrained/ or be fetched from HF Hub
         dino_dir = self.model_path.parent / "dinov2-large"
         clip_dir = self.model_path.parent / "clip-vit-large-patch14"
-        dino_id = str(dino_dir.resolve()) if (dino_dir / "config.json").exists() else "facebook/dinov2-large"
-        clip_id = str(clip_dir.resolve()) if (clip_dir / "config.json").exists() else "openai/clip-vit-large-patch14"
+        has_local_dino = _has_local_hf_model_weights(dino_dir)
+        has_local_clip = _has_local_hf_model_weights(clip_dir)
+        dino_id = str(dino_dir.resolve()) if has_local_dino else "facebook/dinov2-large"
+        clip_id = str(clip_dir.resolve()) if has_local_clip else "openai/clip-vit-large-patch14"
 
-        # local_files_only should only be True if all required vision encoders exist on disk
-        local_only = bool(has_local_weights and (dino_dir / "config.json").exists() and (clip_dir / "config.json").exists())
+        # Never point Transformers at a half-downloaded local directory: use the Hub
+        # repository for any encoder whose config/weight set is incomplete.
+        local_only = bool(has_local_weights and has_local_dino and has_local_clip)
 
         self.pipeline = Sparc3DPipeline.from_pretrained(
             model_source,

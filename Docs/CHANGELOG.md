@@ -1,3 +1,9 @@
+## 2026-10-29 — Partial-checkpoint loading guards
+
+- Hi3D only selects local DINOv2/CLIP directories when a complete single-file or sharded Transformers weight set exists; config-only or incomplete downloads now fall back to the Hub using the writable cache.
+- Pixal3D fails early with an actionable checkpoint message when an absolute local model directory lacks pipeline.json, instead of letting the custom loader interpret that filesystem path as a Hub repository ID.
+- Added tests for config-only and partially downloaded sharded vision-encoder directories.
+
 ## 2026-10-29 — Model checkpoint verification and active resolutions
 
 - Pixal3D download validation checks all eight model configs and safetensors listed by the custom pipeline JSON, not only the sparse-structure checkpoint.
