@@ -39,7 +39,7 @@ jobs:
       - name: Run focused model adapter regression tests
         run: |
           cd backend
-          python -m pytest -q tests/test_pixal3d_adapter.py tests/test_hi3d_adapter.py tests/test_config_ssot.py
+          python -m pytest -q tests/test_pixal3d_adapter.py tests/test_pixal3d_device_placement.py tests/test_hi3d_adapter.py tests/test_config_ssot.py
 
       - name: Check model downloader shell syntax
         run: bash -n backend/scripts/download_models.sh

@@ -1,3 +1,10 @@
+## 2026-10-29 — Pixal3D multi-GPU conditioning fix
+
+- Updated the custom third-party Pixal3D encoders to put image tensors on the encoder's actual device instead of implicit `cuda:current_device`.
+- Projection/camera tensors and sparse coordinate indexing now follow each conditioner’s device; the adapter co-locates each conditioner with its corresponding flow stage after component dispatch.
+- Required NAF upsampler failures now stop model loading with a clear error instead of being swallowed and reappearing during mesh inference.
+- Added CPU-safe contract tests covering the main adapter ↔ custom third-party device-placement boundary.
+
 ## 2026-10-29 — Preserve Hi3D image transparency
 
 - Hi3D no longer converts the reference image to RGB before SPARC3D image preparation. The custom conditioner uses alpha to find and frame the subject, so the adapter now preserves the uploaded image mode/alpha and closes source files promptly.

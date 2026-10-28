@@ -292,20 +292,60 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
                         reason=str(rp.get("reason", "scheduler resource plan")),
                     ),
                 )
-                sec_gpus = [g for g in self.gpu_ids if g != self.gpu_ids[0]] or list(self.gpu_ids)
-                cond_models = [
-                    self.pipeline.image_cond_model_ss,
-                    self.pipeline.image_cond_model_shape_512,
-                    self.pipeline.image_cond_model_shape_1024,
-                    self.pipeline.image_cond_model_tex_1024,
-                ]
-                for idx, cm in enumerate(cond_models):
-                    if cm is not None and hasattr(cm, "to"):
-                        target_dev = f"cuda:{sec_gpus[idx % len(sec_gpus)]}"
+                # Keep each projector beside the flow model that consumes its output.
+                # The custom pipeline moves conditioning tensors between stage devices,
+                # while its projection grid/camera tensors must share the encoder device.
+                condition_stages = (
+                    ("sparse_structure_flow_model", "image_cond_model_ss"),
+                    ("shape_slat_flow_model_512", "image_cond_model_shape_512"),
+                    ("shape_slat_flow_model_1024", "image_cond_model_shape_1024"),
+                    ("tex_slat_flow_model_1024", "image_cond_model_tex_1024"),
+                )
+                models_by_name = getattr(self.pipeline, "models", {})
+                for idx, (flow_name, cond_attr) in enumerate(condition_stages):
+                    cond_model = getattr(self.pipeline, cond_attr, None)
+                    if cond_model is None or not callable(getattr(cond_model, "to", None)):
+                        raise RuntimeError(
+                            f"Pixal3D condition model {cond_attr!r} was not initialized"
+                        )
+
+                    fallback_device = f"cuda:{self.gpu_ids[idx % len(self.gpu_ids)]}"
+                    flow_model = (
+                        models_by_name.get(flow_name)
+                        if isinstance(models_by_name, dict)
+                        else None
+                    )
+                    target_device = fallback_device
+                    if flow_model is not None and callable(getattr(flow_model, "parameters", None)):
                         try:
-                            cm.to(target_dev)
-                        except Exception as ex:
-                            logger.debug("Failed moving cond model %s to %s: %s", idx, target_dev, ex)
+                            target_device = str(next(flow_model.parameters()).device)
+                        except StopIteration:
+                            pass
+
+                    if target_device != "cuda" and not target_device.startswith("cuda:"):
+                        raise RuntimeError(
+                            f"Pixal3D flow stage {flow_name!r} was not dispatched to CUDA "
+                            f"(device={target_device})"
+                        )
+                    try:
+                        cond_model.to(target_device)
+                    except Exception as ex:
+                        logger.exception(
+                            "Failed placing Pixal3D condition model %s beside %s on %s",
+                            cond_attr,
+                            flow_name,
+                            target_device,
+                        )
+                        raise RuntimeError(
+                            f"Could not place Pixal3D condition model {cond_attr!r} "
+                            f"on flow stage device {target_device}"
+                        ) from ex
+                    logger.info(
+                        "Placed Pixal3D condition model %s beside %s on %s",
+                        cond_attr,
+                        flow_name,
+                        target_device,
+                    )
                 for attr in [
                     "image_cond_model_ss",
                     "image_cond_model_shape_512",
@@ -317,7 +357,8 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
                         try:
                             m._load_naf()
                         except Exception as e:
-                            logger.debug("Could not pre-load NAF upsampler: %s", e)
+                            logger.exception("Pixal3D required NAF upsampler failed to load")
+                            raise RuntimeError("Pixal3D failed to load a required NAF upsampler") from e
                 logger.info("Pixal3D pipeline dispatched across GPUs %s", self.gpu_ids)
             elif use_low_vram:
                 self.pipeline._device = torch.device(device)
@@ -333,7 +374,8 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
                         try:
                             m._load_naf()
                         except Exception as e:
-                            logger.debug("Could not load NAF on CPU: %s", e)
+                            logger.exception("Pixal3D required NAF upsampler failed to pre-load in low-VRAM mode")
+                            raise RuntimeError("Pixal3D failed to pre-load a required NAF upsampler") from e
                 logger.info("Pixal3D loaded in low-VRAM mode on %s (peak VRAM ~10-12GB)", device)
             else:
                 self.pipeline.low_vram = False
@@ -352,7 +394,8 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
                             try:
                                 m._load_naf()
                             except Exception as e:
-                                logger.debug("Could not load NAF: %s", e)
+                                logger.exception("Pixal3D required NAF upsampler failed to load")
+                                raise RuntimeError("Pixal3D failed to load a required NAF upsampler") from e
                 logger.info("Pixal3D loaded in standard mode on %s", device)
 
             logger.info("Pixal3D models loaded successfully")
