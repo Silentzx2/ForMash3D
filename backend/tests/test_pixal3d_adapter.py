@@ -50,21 +50,25 @@ def test_process_request_preprocesses_and_centers_image(monkeypatch, tmp_path: P
         return str(generated_glb), 1536
 
     camera_calls = []
-    monkeypatch.setattr(
-        adapter,
-        "_estimate_camera_params",
-        lambda path, manual_fov: (
-            camera_calls.append((path, manual_fov))
-            or {"camera_angle_x": 0.8, "distance": 1.0, "mesh_scale": 1.0}
-        ),
-    )
+
+    def fake_camera_estimate(path, manual_fov):
+        with Image.open(path) as camera_image:
+            camera_calls.append((path, manual_fov, camera_image.mode, camera_image.size))
+        return {"camera_angle_x": 0.8, "distance": 1.0, "mesh_scale": 1.0}
+
+    monkeypatch.setattr(adapter, "_estimate_camera_params", fake_camera_estimate)
     monkeypatch.setattr(adapter, "_run_inference", fake_run)
 
     result = adapter._process_request({"image_path": str(image_path)})
 
     assert result["success"] is True
     assert pipeline_calls == [("RGBA", (1200, 300))]
-    assert camera_calls == [(str(image_path), None)]
+    assert len(camera_calls) == 1
+    camera_path, fov, camera_mode, camera_size = camera_calls[0]
+    assert camera_path != str(image_path)
+    assert fov is None
+    assert (camera_mode, camera_size) == ("RGB", (220, 100))
+    assert not Path(camera_path).exists()
     assert captured["image"].mode == "RGBA"
     assert captured["image"].size == (512, 512)
     assert result["generation_info"]["original_input_size"] == [1200, 300]
@@ -135,3 +139,40 @@ def test_run_inference_accepts_single_mesh_and_rejects_empty_output(monkeypatch,
             seed=42,
             camera_params={"camera_angle_x": 0.8, "distance": 1.0, "mesh_scale": 1.0},
         )
+
+
+
+def test_camera_helpers_load_from_custom_pixal3d_checkout(monkeypatch, tmp_path: Path):
+    """A generic top-level inference module must not shadow Pixal3D's helpers."""
+    adapter = _make_adapter(tmp_path)
+    custom_root = tmp_path / "Pixal3D"
+    custom_root.mkdir()
+    (custom_root / "inference.py").write_text(
+        "class FakeMoGe:\n"
+        "    def cpu(self):\n"
+        "        pass\n"
+        "def load_moge_model(device='cuda'):\n"
+        "    return FakeMoGe()\n"
+        "def get_camera_params_wild_moge(path, model, device='cuda', **kwargs):\n"
+        "    return {'camera_angle_x': 0.75, 'distance': 1.25, 'mesh_scale': 1.0}\n"
+        "def distance_from_fov(*args, **kwargs):\n"
+        "    return {'distance_from_x': 1.0}\n",
+        encoding="utf-8",
+    )
+    adapter.pixal3d_root = custom_root
+    monkeypatch.setattr(adapter, "_ensure_pixal3d_in_path", lambda: None)
+
+    wrong_module = ModuleType("inference")
+    wrong_module.load_moge_model = lambda **kwargs: (_ for _ in ()).throw(
+        AssertionError("unrelated inference module was used")
+    )
+    wrong_module.get_camera_params_wild_moge = lambda *args, **kwargs: {
+        "camera_angle_x": 1.5, "distance": 99.0, "mesh_scale": 7.0
+    }
+    monkeypatch.setitem(sys.modules, "inference", wrong_module)
+
+    image_path = tmp_path / "camera.png"
+    Image.new("RGB", (32, 32)).save(image_path)
+    result = adapter._estimate_camera_params(str(image_path))
+
+    assert result == {"camera_angle_x": 0.75, "distance": 1.25, "mesh_scale": 1.0}

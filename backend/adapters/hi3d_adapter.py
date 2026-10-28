@@ -356,7 +356,7 @@ class Hi3DAdapter(ImageToMeshModel):
                 "CUDA device is not available."
             )
 
-        major_cap, _ = torch.cuda.get_device_capability()
+        major_cap, _ = torch.cuda.get_device_capability(getattr(self, "gpu_id", None))
         if major_cap < 7:
             raise RuntimeError(
                 f"Hi3D requires compute capability >= 7.0 (Volta+), "
@@ -386,7 +386,9 @@ class Hi3DAdapter(ImageToMeshModel):
             )
 
         model_source = str(self.model_path) if has_local_weights else "hi3d-official/Hi3Dv1.0"
-        cache_dir = None if has_local_weights else str(self.model_path)
+        # If main weights are local but DINOv2/CLIP are not, cache Hub downloads in the
+        # writable pretrained tree instead of relying on ~/.cache being writable.
+        cache_dir = str(self.model_path.parent) if has_local_weights else str(self.model_path)
         logger.info("Loading Sparc3DPipeline from %s onto %s", model_source, device)
 
         # Vision encoders (DINOv2-large and CLIP-large) may reside in pretrained/ or be fetched from HF Hub

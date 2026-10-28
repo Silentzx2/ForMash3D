@@ -26,6 +26,38 @@ from core.utils.mesh_utils import MeshProcessor
 
 logger = logging.getLogger(__name__)
 
+
+_PIXAL_INFERENCE_MODULE_NAME = "_formesh3d_pixal3d_inference"
+
+
+def _load_pixal3d_inference_module(pixal3d_root: Path) -> Optional[Any]:
+    """Load camera helpers from the custom Pixal3D checkout under a collision-safe name."""
+    import importlib.util
+
+    inference_path = (Path(pixal3d_root) / "inference.py").resolve()
+    if not inference_path.is_file():
+        return None
+
+    cached = sys.modules.get(_PIXAL_INFERENCE_MODULE_NAME)
+    cached_path = getattr(cached, "__file__", None) if cached is not None else None
+    if cached_path and Path(cached_path).resolve() == inference_path:
+        return cached
+
+    spec = importlib.util.spec_from_file_location(
+        _PIXAL_INFERENCE_MODULE_NAME, str(inference_path)
+    )
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Unable to load Pixal3D inference helpers from {inference_path}")
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[_PIXAL_INFERENCE_MODULE_NAME] = module
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        sys.modules.pop(_PIXAL_INFERENCE_MODULE_NAME, None)
+        raise
+    return module
+
 # LOCKED / ACTIVE: values used by inference.
 # BASELINE: previous effective runtime values (source_quality="max", resolution=2048, pipeline_type="1536_cascade", sampler_overrides: sparse_structure/100/10.0/0.9/8.0, shape/100/10.0/0.8/8.0, texture/100/3.5/0.5/8.0, low_vram=false)
 # EXPERIMENTAL: selected experimental values, snapshot (2026-10-20) for stress-test; use only for benchmarking.
@@ -353,21 +385,18 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
             get_camera_params_wild_moge = None
             load_moge_model = None
             try:
-                from inference import distance_from_fov, get_camera_params_wild_moge, load_moge_model
-            except ImportError:
-                try:
-                    from pixal3d.inference import distance_from_fov, get_camera_params_wild_moge, load_moge_model
-                except ImportError:
-                    import importlib.util
-                    inf_file = self.pixal3d_root / "inference.py"
-                    if inf_file.exists():
-                        spec = importlib.util.spec_from_file_location("inference", str(inf_file))
-                        if spec and spec.loader:
-                            mod = importlib.util.module_from_spec(spec)
-                            spec.loader.exec_module(mod)
-                            distance_from_fov = getattr(mod, "distance_from_fov", None)
-                            get_camera_params_wild_moge = getattr(mod, "get_camera_params_wild_moge", None)
-                            load_moge_model = getattr(mod, "load_moge_model", None)
+                inference_module = _load_pixal3d_inference_module(self.pixal3d_root)
+                if inference_module is not None:
+                    distance_from_fov = getattr(inference_module, "distance_from_fov", None)
+                    get_camera_params_wild_moge = getattr(
+                        inference_module, "get_camera_params_wild_moge", None
+                    )
+                    load_moge_model = getattr(inference_module, "load_moge_model", None)
+            except Exception as helper_err:
+                logger.warning(
+                    "Unable to load camera helpers from the custom Pixal3D checkout: %s",
+                    helper_err,
+                )
 
             if manual_fov is not None and manual_fov > 0:
                 logger.info(f"Using manual FOV: {math.degrees(manual_fov):.2f} deg")
@@ -575,7 +604,6 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
             seed = inputs.get("seed", 42)
             manual_fov = inputs.get("manual_fov", None)
             # EXPERIMENTAL_MAX_DETAIL default follows official Pixal3D standard mode. Ask user before later profile changes.
-            resolution = _LOCKED_INFERENCE_PROFILE["resolution"]
             pipeline_type = _LOCKED_INFERENCE_PROFILE["pipeline_type"]
             low_vram = _LOCKED_INFERENCE_PROFILE["low_vram"]
 
@@ -586,12 +614,11 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
             output_dir = self.path_generator.base_output_dir / "pixal3d" / f"{image_path.stem}_{uuid.uuid4().hex}"
             output_dir.mkdir(parents=True, exist_ok=True)
 
-            # Load and preprocess the image; camera estimation still uses the original file.
+            # Load and preprocess the image using the custom vendored Pixal3D pipeline.
             with Image.open(image_path) as source_image:
                 input_image = source_image.convert("RGBA")
             original_input_size = [int(input_image.width), int(input_image.height)]
 
-            # Match the custom vendored Pixal3D preprocessing (background removal and object crop).
             try:
                 input_image = self.pipeline.preprocess_image(input_image)
             except Exception as bg_err:
@@ -599,6 +626,21 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
                     "Pixal3D image preprocessing failed (%s); using the source image as-is",
                     bg_err,
                 )
+
+            # The custom inference entry point estimates camera parameters from this same
+            # cropped/preprocessed image, not from the unprocessed upload.
+            camera_image_path = output_dir / ("_camera_input_" + uuid.uuid4().hex + ".png")
+            try:
+                input_image.save(camera_image_path)
+                camera_params = self._estimate_camera_params(
+                    str(camera_image_path), manual_fov
+                )
+            finally:
+                camera_image_path.unlink(missing_ok=True)
+                try:
+                    output_dir.rmdir()
+                except OSError:
+                    pass
 
             # Standardize model input to 512x512 without distorting the aspect ratio.
             input_image = input_image.convert("RGBA")
@@ -608,9 +650,6 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
             offset = ((512 - thumb.width) // 2, (512 - thumb.height) // 2)
             target.paste(thumb, offset, mask=thumb.getchannel("A"))
             input_image = target
-
-            # MoGe/camera estimation uses the original, unprocessed image path.
-            camera_params = self._estimate_camera_params(str(image_path), manual_fov)
 
             # Run Pixal3D pipeline
             glb_path, effective_geometry_resolution = self._run_inference(

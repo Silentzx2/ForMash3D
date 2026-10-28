@@ -1,3 +1,10 @@
+## 2026-10-29 — Pixal3D camera and Hi3D cache runtime corrections
+
+- Camera estimation now uses the custom Pixal3D-preprocessed image, matching the vendored inference flow; temporary camera images and empty working directories are cleaned up.
+- Pixal3D camera helper imports use a private module name to avoid collisions with other adapters' generic inference modules.
+- When Hi3D's main checkpoint is local but DINOv2/CLIP are missing, their Hub downloads now use the writable pretrained tree instead of relying on the default home cache.
+- Regression tests cover the camera crop passed to MoGe and import isolation for the custom Pixal3D tree.
+
 ## 2026-10-29 — Pixal3D custom pipeline contract correction
 
 - Removed the unsupported resolution keyword from the custom pipeline run call; the vendored pipeline selects actual resolution through pipeline_type and its token budget.
