@@ -626,6 +626,86 @@ def _fix_triton_str_to_ty():
         pass
 
 
+def _fix_triton_semantic_or():
+    """
+    Patch triton.language.core.tensor.__or__ and semantic.or_ for Python 3.10 PEP 604 union support.
+    In flex_gemm, parameter annotations like `coord_stride_vec: tl.tensor | None` evaluate `__or__(None)`,
+    which calls `semantic.or_(self, None, _builder=None)` and crashes with:
+    `ValueError: Did you forget to add @triton.jit ? (_builder argument must be provided outside of JIT functions.)`
+    """
+    try:
+        import triton.language as tl
+        import triton.language.core as tlc
+        for t_cls in (getattr(tl, "tensor", None), getattr(tlc, "tensor", None)):
+            if t_cls is not None:
+                orig_or = getattr(t_cls, "__or__", None)
+                if orig_or is not None and not getattr(orig_or, "_safe_patched", False):
+                    def safe_tensor_or(self, other):
+                        if other is None or other is type(None):
+                            return self
+                        return orig_or(self, other)
+                    safe_tensor_or._safe_patched = True
+                    try:
+                        t_cls.__or__ = safe_tensor_or
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+    try:
+        import triton.language.semantic as sem
+        orig_sem_or = getattr(sem, "or_", None)
+        if orig_sem_or is not None and not getattr(orig_sem_or, "_safe_patched", False):
+            def safe_sem_or(a, b, builder=None, *args, **kwargs):
+                if a is None:
+                    return b
+                if b is None:
+                    return a
+                return orig_sem_or(a, b, builder, *args, **kwargs)
+            safe_sem_or._safe_patched = True
+            sem.or_ = safe_sem_or
+    except Exception:
+        pass
+
+
+def _patch_flex_gemm_sources():
+    """
+    Patch syntax incompatibilities directly in installed flex_gemm source files on disk.
+    Fixes:
+    1. `tl.tensor | None` in neighbor_map.py causing bitwise-OR ValueError in Triton AST visitor.
+    2. `.itemsize` attribute removed in Triton 3.x -> `.primitive_bitwidth // 8`.
+    """
+    try:
+        import flex_gemm
+        flex_gemm_dir = os.path.dirname(flex_gemm.__file__)
+        triton_dir = os.path.join(flex_gemm_dir, "kernels", "triton")
+        if not os.path.isdir(triton_dir):
+            return
+
+        for root, _, files in os.walk(triton_dir):
+            for file in files:
+                if not file.endswith(".py"):
+                    continue
+                fpath = os.path.join(root, file)
+                try:
+                    with open(fpath, "r", encoding="utf-8") as f:
+                        text = f.read()
+                    new_text = text
+                    if "tl.tensor | None" in new_text:
+                        new_text = new_text.replace("tl.tensor | None", "None")
+                    if "tl.tensor|None" in new_text:
+                        new_text = new_text.replace("tl.tensor|None", "None")
+                    if ".itemsize" in new_text:
+                        new_text = new_text.replace(".itemsize", ".primitive_bitwidth // 8")
+                    if new_text != text:
+                        with open(fpath, "w", encoding="utf-8") as f:
+                            f.write(new_text)
+                        logger.info("Patched flex_gemm file on disk: %s", fpath)
+                except Exception as file_err:
+                    logger.debug("Could not patch flex_gemm file %s: %s", fpath, file_err)
+    except Exception:
+        pass
+
+
 def _sanitize_flex_gemm_kernel_annotations():
     """
     Sanitize parameter annotations on flex_gemm Triton kernels.
@@ -657,8 +737,8 @@ def _sanitize_flex_gemm_kernel_annotations():
                     continue
                 visited.add(id(obj))
 
-                fn = getattr(obj, "fn", None)
-                if fn is not None and hasattr(fn, "__annotations__") and isinstance(fn.__annotations__, dict):
+                fn = getattr(obj, "fn", obj)
+                if hasattr(fn, "__annotations__") and isinstance(fn.__annotations__, dict):
                     to_remove = []
                     for param, ann in fn.__annotations__.items():
                         ann_str = str(ann)
@@ -678,10 +758,14 @@ def fix_flex_gemm():
     Also patches:
       1. triton.language.dtype.itemsize (missing in Triton 3.x)
       2. triton.language.str_to_ty ('ier_type' KeyError in Triton 3.x)
-      3. flex_gemm Triton kernel parameter annotations
+      3. triton.language.core.tensor.__or__ (tl.tensor | None ValueError in Python 3.10)
+      4. flex_gemm source files on disk (tl.tensor | None -> None, itemsize -> bitwidth // 8)
+      5. flex_gemm Triton kernel parameter annotations
     """
     _fix_triton_dtype_itemsize()
     _fix_triton_str_to_ty()
+    _fix_triton_semantic_or()
+    _patch_flex_gemm_sources()
     _sanitize_flex_gemm_kernel_annotations()
     try:
         from utils.flex_gemm_fallback import install_flex_gemm_shim
