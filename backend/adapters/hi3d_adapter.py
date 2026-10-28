@@ -264,6 +264,37 @@ class Hi3DAdapter(ImageToMeshModel):
         if hi3d_str not in sys.path:
             sys.path.insert(0, hi3d_str)
 
+        # Patch sparc3d postprocess _simplify to prevent hard crash if pyfqmr is not installed
+        try:
+            import sparc3d.sparcubes.postprocess as pp
+            orig_simplify = getattr(pp, "_simplify", None)
+            if orig_simplify is not None and not getattr(orig_simplify, "_safe_patched", False):
+                def safe_simplify(mesh, target_face_count):
+                    try:
+                        import pyfqmr
+                        simplifier = pyfqmr.Simplify()
+                        simplifier.setMesh(mesh.vertices, mesh.faces)
+                        simplifier.simplify_mesh(
+                            target_count=target_face_count,
+                            aggressiveness=5,
+                            preserve_border=True,
+                            verbose=False,
+                        )
+                        vertices, faces, _ = simplifier.getMesh()
+                        return trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
+                    except Exception:
+                        try:
+                            if hasattr(mesh, "simplify_quadric_decimation") and len(mesh.faces) > target_face_count:
+                                return mesh.simplify_quadric_decimation(face_count=target_face_count)
+                        except Exception:
+                            pass
+                        return mesh
+
+                safe_simplify._safe_patched = True
+                pp._simplify = safe_simplify
+        except Exception:
+            pass
+
     def _load_model(self) -> None:
         """
         Lazily load Hi3D pipeline from model weights.
