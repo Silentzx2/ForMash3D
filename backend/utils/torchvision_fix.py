@@ -583,21 +583,106 @@ def _fix_triton_dtype_itemsize():
     try:
         import triton.language as tl
         if hasattr(tl, "dtype") and not hasattr(tl.dtype, "itemsize"):
-            tl.dtype.itemsize = property(lambda self: self.primitive_bitwidth // 8)
+            tl.dtype.itemsize = property(lambda self: getattr(self, "primitive_bitwidth", 32) // 8)
             logger.debug("Patched triton.language.dtype.itemsize (Triton 3.x compat)")
+    except Exception:
+        pass
+
+
+def _fix_triton_str_to_ty():
+    """
+    Patch triton.language.str_to_ty to handle 'ier_type', 'modifier_type', etc. in Triton 3.x.
+    In Triton 3.x, type annotations like `tl.modifier_type` or bare `tl.pointer_type`
+    in kernel signatures cause `str_to_ty` to slice off prefixes and look up
+    'ier_type' in `tys`, raising `KeyError: 'ier_type'`.
+    """
+    try:
+        import triton.language as tl
+        orig_str_to_ty = getattr(tl, "str_to_ty", None)
+        if orig_str_to_ty is not None and not getattr(orig_str_to_ty, "_safe_patched", False):
+            def safe_str_to_ty(name, *args, **kwargs):
+                if isinstance(name, str):
+                    cleaned = name.strip()
+                    if cleaned in ("ier_type", "modifier_type", "pointer_type") or cleaned.endswith("ier_type"):
+                        return getattr(tl, "int32", None) or getattr(tl, "i32", None)
+                try:
+                    return orig_str_to_ty(name, *args, **kwargs)
+                except KeyError as e:
+                    err_key = str(e).strip("'\"")
+                    if "ier_type" in err_key or "modifier_type" in err_key or "pointer_type" in err_key:
+                        return getattr(tl, "int32", None) or getattr(tl, "i32", None)
+                    raise
+
+            safe_str_to_ty._safe_patched = True
+            tl.str_to_ty = safe_str_to_ty
+
+            import sys
+            for mod_name in ("triton.language", "triton.language.core", "triton.compiler.code_generator"):
+                mod = sys.modules.get(mod_name)
+                if mod and hasattr(mod, "str_to_ty"):
+                    setattr(mod, "str_to_ty", safe_str_to_ty)
+            logger.debug("Patched triton.language.str_to_ty for Triton 3.x 'ier_type' compat")
+    except Exception:
+        pass
+
+
+def _sanitize_flex_gemm_kernel_annotations():
+    """
+    Sanitize parameter annotations on flex_gemm Triton kernels.
+    In Triton 3.x, parameter annotations like `tl.tensor`, `tl.pointer_type`, or `tl.modifier_type`
+    cause signature parsing failure (KeyError: 'ier_type').
+    Stripping non-constexpr annotations allows Triton JIT to dynamically infer tensor types.
+    """
+    try:
+        import sys
+        # Proactively import key kernel modules
+        for mod_name in (
+            "flex_gemm.kernels.triton.neighbor_cache.neighbor_map",
+            "flex_gemm.kernels.triton.hashmap",
+            "flex_gemm.kernels.triton.spconv_fwd",
+            "flex_gemm.kernels.triton.spconv_bwd",
+        ):
+            try:
+                __import__(mod_name, fromlist=["*"])
+            except Exception:
+                pass
+
+        visited = set()
+        for mod_name, mod in list(sys.modules.items()):
+            if not mod_name.startswith("flex_gemm") or mod is None:
+                continue
+            for attr_name in dir(mod):
+                obj = getattr(mod, attr_name, None)
+                if obj is None or id(obj) in visited:
+                    continue
+                visited.add(id(obj))
+
+                fn = getattr(obj, "fn", None)
+                if fn is not None and hasattr(fn, "__annotations__") and isinstance(fn.__annotations__, dict):
+                    to_remove = []
+                    for param, ann in fn.__annotations__.items():
+                        ann_str = str(ann)
+                        if "constexpr" not in ann_str:
+                            to_remove.append(param)
+                    for param in to_remove:
+                        del fn.__annotations__[param]
     except Exception:
         pass
 
 
 def fix_flex_gemm():
     """
-    Ensure `flex_gemm.ops.grid_sample` is importable and Triton 3.x dtype compat is applied.
+    Ensure `flex_gemm.ops.grid_sample` is importable and Triton 3.x compat is applied.
     In environments where flex_gemm is missing or an older wheel lacks ops.grid_sample,
     this registers pure-PyTorch grid_sample_3d fallback shim.
-    Also patches triton.language.dtype.itemsize for Triton 3.x compatibility with
-    flex_gemm's hashmap Triton kernel (which uses `.itemsize` removed in Triton 3.x).
+    Also patches:
+      1. triton.language.dtype.itemsize (missing in Triton 3.x)
+      2. triton.language.str_to_ty ('ier_type' KeyError in Triton 3.x)
+      3. flex_gemm Triton kernel parameter annotations
     """
     _fix_triton_dtype_itemsize()
+    _fix_triton_str_to_ty()
+    _sanitize_flex_gemm_kernel_annotations()
     try:
         from utils.flex_gemm_fallback import install_flex_gemm_shim
         return install_flex_gemm_shim()

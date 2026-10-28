@@ -413,6 +413,15 @@ class Trellis2Runner:
             "Generating TRELLIS.2 mesh from image: %s (pipeline=%s, max_num_tokens=%s)",
             image_path, pipeline_type, max_num_tokens,
         )
+        try:
+            from utils.torchvision_fix import fix_flex_gemm
+            fix_flex_gemm()
+        except Exception:
+            try:
+                from backend.utils.torchvision_fix import fix_flex_gemm
+                fix_flex_gemm()
+            except Exception:
+                pass
         pipeline_result = self.image_to_3d_pipeline.run(
             image,
             seed=42 if seed is None else int(seed),
