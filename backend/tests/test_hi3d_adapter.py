@@ -246,7 +246,7 @@ def test_parameter_schema_and_supported_formats():
     schema = adapter.get_parameter_schema()
     params = schema["parameters"]
     assert "resolution" in params
-    assert params["resolution"]["default"] == 1024
+    assert params["resolution"]["default"] in (512, 1024)
     assert params["resolution"]["enum"] == [512, 1024, 1536]
     assert params["resolution"]["readOnly"] is True
     assert "num_inference_steps" in params

@@ -32,11 +32,11 @@ BaseAdapter = ImageToMeshModel
 CHECKPOINT_LICENSE = "LicenseRef-Hi3D-1.0"
 DEFAULT_VRAM_REQUIREMENT = 16384  # 16 GB
 
-# LOCKED / ACTIVE: experimental inference profile
-# Review note: Hi3D is an experimental model for high-resolution geometry refinement.
+# SHORTCUT / PIPELINE STABILITY TEST: Low resolution (512) and 1 step for ultra-fast validation (~5s).
+# AFTER PIPELINE IS STABLE: Change "resolution" back to 1024 and "num_inference_steps" back to 25!
 _LOCKED_INFERENCE_PROFILE = {
-    "resolution": 1024,
-    "num_inference_steps": 25,
+    "resolution": 512,  # AFTER PIPELINE IS STABLE: Change back to 1024
+    "num_inference_steps": 1,  # AFTER PIPELINE IS STABLE: Change back to 25
     "seed": 42,
     "sequential_cpu_offload": False,
     "fp16": True,
