@@ -572,12 +572,32 @@ def get_dinov3_model_class():
         return DINOv3ViTModel
 
 
+def _fix_triton_dtype_itemsize():
+    """
+    Patch triton.language.dtype to add `itemsize` property missing in Triton 3.x.
+    Triton 3.x removed `.itemsize` from `tl.dtype`; the equivalent is `primitive_bitwidth // 8`.
+    This patch is evaluated at Python level before JIT compilation, so it fixes the
+    `tl.static_assert(D * keys_ptr.dtype.element_ty.itemsize % 4 == 0, ...)` assertion
+    in flex_gemm's hashmap kernel.
+    """
+    try:
+        import triton.language as tl
+        if hasattr(tl, "dtype") and not hasattr(tl.dtype, "itemsize"):
+            tl.dtype.itemsize = property(lambda self: self.primitive_bitwidth // 8)
+            logger.debug("Patched triton.language.dtype.itemsize (Triton 3.x compat)")
+    except Exception:
+        pass
+
+
 def fix_flex_gemm():
     """
-    Ensure `flex_gemm.ops.grid_sample` is importable.
+    Ensure `flex_gemm.ops.grid_sample` is importable and Triton 3.x dtype compat is applied.
     In environments where flex_gemm is missing or an older wheel lacks ops.grid_sample,
     this registers pure-PyTorch grid_sample_3d fallback shim.
+    Also patches triton.language.dtype.itemsize for Triton 3.x compatibility with
+    flex_gemm's hashmap Triton kernel (which uses `.itemsize` removed in Triton 3.x).
     """
+    _fix_triton_dtype_itemsize()
     try:
         from utils.flex_gemm_fallback import install_flex_gemm_shim
         return install_flex_gemm_shim()
