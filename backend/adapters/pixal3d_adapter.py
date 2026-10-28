@@ -180,6 +180,30 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
 
             self._ensure_pixal3d_in_path()
 
+            # Put Hugging Face and Torch Hub caches under the project pretrained tree.
+            # Model inference must not depend on ~/.cache being writable in containers.
+            if self.model_path.is_absolute() or self.model_path.exists():
+                cache_root = self.model_path.parent.resolve()
+            else:
+                cache_root = (Path(__file__).resolve().parents[1] / "pretrained").resolve()
+            hf_cache_dir = cache_root / "huggingface"
+            torch_hub_cache_dir = cache_root / "torch_hub"
+            try:
+                for cache_dir in (hf_cache_dir, torch_hub_cache_dir):
+                    cache_dir.mkdir(parents=True, exist_ok=True)
+                    probe = cache_dir / (".write-check-" + uuid.uuid4().hex)
+                    try:
+                        probe.write_bytes(b"ok")
+                    finally:
+                        probe.unlink(missing_ok=True)
+            except OSError as cache_err:
+                raise PermissionError(
+                    f"Pixal3D requires writable model cache directories under {cache_root}: {cache_err}"
+                ) from cache_err
+
+            import torch.hub
+            torch.hub.set_dir(str(torch_hub_cache_dir))
+
             # Import required modules
             from pixal3d.pipelines import Pixal3DImageTo3DPipeline
             try:
@@ -230,6 +254,8 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
                     "naf_target_size": 1024,
                 },
             }
+            for config in image_cond_configs.values():
+                config["cache_dir"] = str(hf_cache_dir)
 
             self.pipeline.image_cond_model_ss = DinoV3ProjFeatureExtractor(
                 **image_cond_configs["ss"]

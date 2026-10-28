@@ -56,3 +56,29 @@ def test_main_adapter_places_conditioners_with_their_flow_stage():
 
     assert "Could not place Pixal3D condition model" in source
     assert "Pixal3D failed to load a required NAF upsampler" in source
+
+
+
+def test_pixal_custom_encoder_accepts_explicit_hf_cache():
+    repository_root = Path(__file__).resolve().parents[2]
+    thirdparty_root = repository_root / "backend" / "thirdparty" / "Pixal3D"
+    encoder = (
+        thirdparty_root
+        / "pixal3d"
+        / "trainers"
+        / "flow_matching"
+        / "mixins"
+        / "image_conditioned_proj.py"
+    ).read_text(encoding="utf-8")
+    adapter = (
+        repository_root
+        / "backend"
+        / "adapters"
+        / "pixal3d_adapter.py"
+    ).read_text(encoding="utf-8")
+
+    assert "cache_dir: Optional[str] = None" in encoder
+    assert "DINOv3ViTModel.from_pretrained(model_name, cache_dir=cache_dir)" in encoder
+    assert 'config["cache_dir"] = str(hf_cache_dir)' in adapter
+    assert "torch.hub.set_dir(str(torch_hub_cache_dir))" in adapter
+    assert "Pixal3D requires writable model cache directories" in adapter

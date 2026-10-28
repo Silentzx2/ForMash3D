@@ -1,3 +1,9 @@
+## 2026-10-29 — Pixal3D model cache hardening
+
+- DINOv3 feature weights now use an explicit Hugging Face cache under the project pretrained tree, and Torch Hub cache writes (including NAF/MoGe helpers) are redirected to a writable project cache.
+- Cache directories are write-probed at model load and fail with an actionable permission error rather than failing later in NAF/model downloads under a read-only home directory.
+- Added contract coverage for the custom encoder cache API and main-adapter wiring.
+
 ## 2026-10-29 — Pixal3D multi-GPU conditioning fix
 
 - Updated the custom third-party Pixal3D encoders to put image tensors on the encoder's actual device instead of implicit `cuda:current_device`.
