@@ -717,6 +717,57 @@ download_unique3d() {
 }
 
 # Function to download Pixal3D models
+pixal3d_checkpoint_complete() {
+    local model_dir="$1"
+    python3 - "$model_dir" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+required = (
+    "sparse_structure_flow_model",
+    "sparse_structure_decoder",
+    "shape_slat_flow_model_512",
+    "shape_slat_flow_model_1024",
+    "shape_slat_decoder",
+    "tex_slat_flow_model_512",
+    "tex_slat_flow_model_1024",
+    "tex_slat_decoder",
+)
+try:
+    config = json.loads((root / "pipeline.json").read_text(encoding="utf-8"))
+    models = config["args"]["models"]
+    if not isinstance(models, dict):
+        raise ValueError("pipeline args.models is not an object")
+    for name in required:
+        relative_prefix = models.get(name)
+        if not isinstance(relative_prefix, str) or not relative_prefix:
+            raise ValueError(f"pipeline.json is missing model {name}")
+        prefix = Path(relative_prefix)
+        if not prefix.is_absolute():
+            prefix = root / prefix
+        config_path = Path(str(prefix) + ".json")
+        weights_path = Path(str(prefix) + ".safetensors")
+        if not config_path.is_file() or config_path.stat().st_size < 100:
+            raise ValueError(f"missing or truncated config for {name}: {config_path}")
+        if not weights_path.is_file() or weights_path.stat().st_size < 1000000:
+            raise ValueError(f"missing or truncated weights for {name}: {weights_path}")
+except Exception as exc:
+    print(f"Pixal3D checkpoint incomplete: {exc}", file=sys.stderr)
+    sys.exit(1)
+sys.exit(0)
+PY
+}
+
+hf_encoder_weights_present() {
+    local model_dir="$1"
+    [ -f "$model_dir/config.json" ] || return 1
+    find "$model_dir" -maxdepth 1 -type f \
+        \( -name "*.safetensors" -o -name "pytorch_model*.bin" \) \
+        -size +1000000c -print -quit 2>/dev/null | grep -q .
+}
+
 download_pixal3d() {
     print_info "========================================"
     print_info "Downloading Pixal3D Model"
@@ -729,24 +780,28 @@ download_pixal3d() {
     if [ "$FORCE_DOWNLOAD" = false ] && \
        verify_directory "$model_dir" 1 && \
        verify_file "$model_dir/pipeline.json" 1000 && \
-       verify_file "$model_dir/sparse_structure_flow_model.safetensors" 1000000; then
-        print_info "Pixal3D model already exists and verified"
+       pixal3d_checkpoint_complete "$model_dir"; then
+        print_info "Pixal3D model already exists and all eight pipeline checkpoints are verified"
         return 0
     fi
 
     mkdir -p "$model_dir" 2>/dev/null || true
     ensure_writable_model_dir "$model_dir" || return 1
 
-    # Download the full Pixal3D model repo (pipeline.json + all safetensors)
+    # Download the full Pixal3D model repo (pipeline.json plus every model config and weight).
     print_info "Downloading Pixal3D model from Hugging Face (TencentARC/Pixal3D)..."
-    if ! hf_download TencentARC/Pixal3D \
-        --local-dir "$model_dir"; then
+    if ! hf_download TencentARC/Pixal3D --local-dir "$model_dir"; then
         print_error "Failed to download Pixal3D model"
         print_warning "The model requires ~18GB of weights. Check your disk space and network connection."
         return 1
     fi
 
-    print_success "Pixal3D model downloaded successfully"
+    if ! pixal3d_checkpoint_complete "$model_dir"; then
+        print_error "Pixal3D download did not produce all required pipeline checkpoints"
+        return 1
+    fi
+
+    print_success "Pixal3D model downloaded and verified successfully"
 }
 
 # Function to download Paint3D models
@@ -906,40 +961,79 @@ download_hi3d() {
     print_info "========================================"
 
     local model_dir="$PRETRAINED_DIR/Hi3D"
+    local weights_complete=false
 
     if [ "$FORCE_DOWNLOAD" = false ] && \
        verify_directory "$model_dir" 1 && \
        verify_file "$model_dir/model_index.json" 100 && \
-       verify_file "$model_dir/vae/model.safetensors" 1000000; then
-        print_info "Hi3D model already exists and verified"
-        return 0
+       verify_file "$model_dir/scheduler/scheduler_config.json" 10 && \
+       verify_file "$model_dir/vae/config.json" 100 && \
+       verify_file "$model_dir/vae/model.safetensors" 1000000 && \
+       verify_file "$model_dir/transformer_512/config.json" 100 && \
+       verify_file "$model_dir/transformer_512/model.safetensors" 1000000 && \
+       verify_file "$model_dir/transformer_1024/config.json" 100 && \
+       verify_file "$model_dir/transformer_1024/model.safetensors" 1000000; then
+        weights_complete=true
     fi
 
-    mkdir -p "$model_dir" 2>/dev/null || true
-    ensure_writable_model_dir "$model_dir" || return 1
+    if [ "$weights_complete" = true ]; then
+        print_info "Hi3D checkpoint files already exist and are verified"
+    else
+        mkdir -p "$model_dir" 2>/dev/null || true
+        ensure_writable_model_dir "$model_dir" || return 1
 
-    print_info "Downloading Hi3D model from Hugging Face (hi3d-official/Hi3Dv1.0)..."
-    if ! hf_download hi3d-official/Hi3Dv1.0 \
-        --local-dir "$model_dir"; then
-        print_error "Failed to download Hi3D model"
-        print_warning "Hi3D requires ~8GB of weights. Check your disk space and network connection."
+        print_info "Downloading Hi3D model from Hugging Face (hi3d-official/Hi3Dv1.0)..."
+        if ! hf_download hi3d-official/Hi3Dv1.0 --local-dir "$model_dir"; then
+            print_error "Failed to download Hi3D model"
+            print_warning "Hi3D requires ~8GB of weights. Check your disk space and network connection."
+            return 1
+        fi
+
+        if ! verify_file "$model_dir/model_index.json" 100 || \
+           ! verify_file "$model_dir/scheduler/scheduler_config.json" 10 || \
+           ! verify_file "$model_dir/vae/config.json" 100 || \
+           ! verify_file "$model_dir/vae/model.safetensors" 1000000 || \
+           ! verify_file "$model_dir/transformer_512/config.json" 100 || \
+           ! verify_file "$model_dir/transformer_512/model.safetensors" 1000000 || \
+           ! verify_file "$model_dir/transformer_1024/config.json" 100 || \
+           ! verify_file "$model_dir/transformer_1024/model.safetensors" 1000000; then
+            print_error "Hi3D download is incomplete; the custom Sparc3D loader requires all listed artifacts"
+            return 1
+        fi
+    fi
+
+    # Encoder downloads are mandatory for the local-only inference setup.
+    local dino_dir="$PRETRAINED_DIR/dinov2-large"
+    if ! hf_encoder_weights_present "$dino_dir"; then
+        mkdir -p "$dino_dir" 2>/dev/null || true
+        ensure_writable_model_dir "$dino_dir" || return 1
+        print_info "Downloading DINOv2-large vision encoder..."
+        if ! hf_download facebook/dinov2-large --local-dir "$dino_dir"; then
+            print_error "Failed to download DINOv2-large vision encoder"
+            return 1
+        fi
+    fi
+    if ! hf_encoder_weights_present "$dino_dir"; then
+        print_error "DINOv2-large download is incomplete"
         return 1
     fi
 
-    # Download required vision encoders if not present
-    local dino_dir="$PRETRAINED_DIR/dinov2-large"
-    if [ ! -f "$dino_dir/config.json" ]; then
-        print_info "Downloading DINOv2-large vision encoder..."
-        hf_download facebook/dinov2-large --local-dir "$dino_dir" 2>/dev/null || true
-    fi
-
     local clip_dir="$PRETRAINED_DIR/clip-vit-large-patch14"
-    if [ ! -f "$clip_dir/config.json" ]; then
+    if ! hf_encoder_weights_present "$clip_dir"; then
+        mkdir -p "$clip_dir" 2>/dev/null || true
+        ensure_writable_model_dir "$clip_dir" || return 1
         print_info "Downloading CLIP-large vision encoder..."
-        hf_download openai/clip-vit-large-patch14 --local-dir "$clip_dir" 2>/dev/null || true
+        if ! hf_download openai/clip-vit-large-patch14 --local-dir "$clip_dir"; then
+            print_error "Failed to download CLIP-large vision encoder"
+            return 1
+        fi
+    fi
+    if ! hf_encoder_weights_present "$clip_dir"; then
+        print_error "CLIP-large download is incomplete"
+        return 1
     fi
 
-    print_success "Hi3D model downloaded successfully"
+    print_success "Hi3D checkpoint weights and vision encoders verified successfully"
 }
 
 # Function to download miscellaneous models

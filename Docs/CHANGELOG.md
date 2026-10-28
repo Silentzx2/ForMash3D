@@ -1,3 +1,9 @@
+## 2026-10-29 — Model checkpoint verification and active resolutions
+
+- Pixal3D download validation checks all eight model configs and safetensors listed by the custom pipeline JSON, not only the sparse-structure checkpoint.
+- Hi3D download validation checks every artifact required by the custom Sparc3D loader and fails if DINOv2/CLIP encoder downloads are incomplete.
+- Model metadata reports the active Hi3D 512 profile and Pixal3D 1536 cascade target; Pixal3D can downshift to 1024 when its token budget requires it.
+
 ## 2026-10-29 — Pixal3D camera and Hi3D cache runtime corrections
 
 - Camera estimation now uses the custom Pixal3D-preprocessed image, matching the vendored inference flow; temporary camera images and empty working directories are cleaned up.

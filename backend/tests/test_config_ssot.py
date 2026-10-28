@@ -47,3 +47,19 @@ def test_hi3d_manifest_disables_unimplemented_multi_gpu_dispatch():
         capabilities = manifest[section][model_id]["capabilities"]
         assert capabilities["multi_gpu"] is False
         assert "multi_gpu_strategy" not in capabilities
+
+
+
+def test_hi3d_and_pixal_manifest_resolutions_match_active_adapter_profiles():
+    repository_root = Path(__file__).resolve().parents[2]
+    manifest = yaml.safe_load(
+        (repository_root / "backend" / "config" / "models.yaml").read_text(encoding="utf-8")
+    )
+    assert manifest["image_to_raw_mesh"]["pixal3d_image_to_raw_mesh"]["capabilities"]["output_resolution"] == 1536
+    assert manifest["image_to_raw_mesh"]["pixal3d_image_to_raw_mesh"]["capabilities"]["preferred_resolution"] == 1536
+    assert manifest["image_to_raw_mesh"]["pixal3d_image_to_3d"]["capabilities"]["output_resolution"] == 1536
+    assert manifest["image_to_raw_mesh"]["pixal3d_image_to_3d"]["capabilities"]["preferred_resolution"] == 1536
+    assert manifest["image_to_raw_mesh"]["hi3d_image_to_raw_mesh"]["capabilities"]["output_resolution"] == 512
+    assert manifest["image_to_raw_mesh"]["hi3d_image_to_raw_mesh"]["capabilities"]["preferred_resolution"] == 512
+    assert manifest["image_to_textured_mesh"]["hi3d_image_to_textured_mesh"]["capabilities"]["output_resolution"] == 512
+    assert manifest["image_to_textured_mesh"]["hi3d_image_to_textured_mesh"]["capabilities"]["preferred_resolution"] == 512
