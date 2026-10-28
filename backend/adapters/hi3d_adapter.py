@@ -313,10 +313,21 @@ class Hi3DAdapter(ImageToMeshModel):
         cache_dir = None if has_local_weights else str(self.model_path)
         logger.info("Loading Sparc3DPipeline from %s onto %s", model_source, device)
 
+        # Vision encoders (DINOv2-large and CLIP-large) may reside in pretrained/ or be fetched from HF Hub
+        dino_dir = self.model_path.parent / "dinov2-large"
+        clip_dir = self.model_path.parent / "clip-vit-large-patch14"
+        dino_id = str(dino_dir.resolve()) if (dino_dir / "config.json").exists() else "facebook/dinov2-large"
+        clip_id = str(clip_dir.resolve()) if (clip_dir / "config.json").exists() else "openai/clip-vit-large-patch14"
+
+        # local_files_only should only be True if all required vision encoders exist on disk
+        local_only = bool(has_local_weights and (dino_dir / "config.json").exists() and (clip_dir / "config.json").exists())
+
         self.pipeline = Sparc3DPipeline.from_pretrained(
             model_source,
             cache_dir=cache_dir,
-            local_files_only=has_local_weights,
+            local_files_only=local_only,
+            dino_model_id=dino_id,
+            clip_model_id=clip_id,
         )
 
         is_offload = bool(self.sequential_cpu_offload)

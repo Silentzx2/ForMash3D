@@ -922,8 +922,21 @@ download_hi3d() {
     if ! hf_download hi3d-official/Hi3Dv1.0 \
         --local-dir "$model_dir"; then
         print_error "Failed to download Hi3D model"
-        print_warning "Hi3D requires ~25GB of weights. Check your disk space and network connection."
+        print_warning "Hi3D requires ~8GB of weights. Check your disk space and network connection."
         return 1
+    fi
+
+    # Download required vision encoders if not present
+    local dino_dir="$PRETRAINED_DIR/dinov2-large"
+    if [ ! -f "$dino_dir/config.json" ]; then
+        print_info "Downloading DINOv2-large vision encoder..."
+        hf_download facebook/dinov2-large --local-dir "$dino_dir" 2>/dev/null || true
+    fi
+
+    local clip_dir="$PRETRAINED_DIR/clip-vit-large-patch14"
+    if [ ! -f "$clip_dir/config.json" ]; then
+        print_info "Downloading CLIP-large vision encoder..."
+        hf_download openai/clip-vit-large-patch14 --local-dir "$clip_dir" 2>/dev/null || true
     fi
 
     print_success "Hi3D model downloaded successfully"
