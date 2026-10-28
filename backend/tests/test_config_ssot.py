@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import yaml
+
 from core.config import _QUALITY_REQUIRED_KEYS, get_quality_config
 
 
@@ -30,3 +32,18 @@ def test_frontend_physics_defaults_mirror_backend_quality_config():
         "limits": backend_policy["limits"],
         "default_collision_quality": backend_policy["default_collision_quality"],
     }
+
+
+
+def test_hi3d_manifest_disables_unimplemented_multi_gpu_dispatch():
+    repository_root = Path(__file__).resolve().parents[2]
+    manifest = yaml.safe_load(
+        (repository_root / "backend" / "config" / "models.yaml").read_text(encoding="utf-8")
+    )
+    for section, model_id in (
+        ("image_to_raw_mesh", "hi3d_image_to_raw_mesh"),
+        ("image_to_textured_mesh", "hi3d_image_to_textured_mesh"),
+    ):
+        capabilities = manifest[section][model_id]["capabilities"]
+        assert capabilities["multi_gpu"] is False
+        assert "multi_gpu_strategy" not in capabilities

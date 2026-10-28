@@ -428,8 +428,9 @@ image_to_raw_mesh:
       recommended_postprocess_profile: high_fidelity
       latency_class: quality
       quality_priority: 95
-      multi_gpu: true
-      multi_gpu_strategy: accelerate_component_dispatch
+      multi_gpu: false
+      # ponytail: Hi3D has no custom multi-GPU dispatch; admit jobs against one selected GPU.
+      # Upgrade path: implement and validate Sparc3D component placement before re-enabling.
       low_vram_supported: true
       paint_autochain: false
       experimental: true
@@ -534,8 +535,9 @@ image_to_textured_mesh:
       recommended_postprocess_profile: high_fidelity
       latency_class: quality
       quality_priority: 95
-      multi_gpu: true
-      multi_gpu_strategy: accelerate_component_dispatch
+      multi_gpu: false
+      # ponytail: Hi3D has no custom multi-GPU dispatch; admit jobs against one selected GPU.
+      # Upgrade path: implement and validate Sparc3D component placement before re-enabling.
       low_vram_supported: true
       paint_autochain: false
       experimental: true

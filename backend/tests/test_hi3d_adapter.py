@@ -3,6 +3,7 @@ Comprehensive tests for Hi3D experimental model adapter and factory integration.
 """
 
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
@@ -17,6 +18,7 @@ from adapters.hi3d_adapter import (
     Hi3DImageToRawMeshAdapter,
     Hi3DImageToTexturedMeshAdapter,
     _LOCKED_INFERENCE_PROFILE,
+    _apply_hi3d_fp16_profile,
     export_untextured_raw_mesh,
 )
 from core.models.base import ModelStatus
@@ -263,3 +265,58 @@ def test_unload_model():
     adapter._unload_model()
     assert adapter.pipeline is None
     assert adapter.status == ModelStatus.UNLOADED
+
+
+
+def test_output_path_auto_generated(sample_image: Path, sample_mesh: Path, tmp_path: Path):
+    """Verify requests without output_path use the configured path generator."""
+    adapter = Hi3DImageToRawMeshAdapter()
+    adapter.path_generator.base_output_dir = tmp_path / "outputs"
+
+    mock_pipeline = MagicMock()
+    refined = trimesh.creation.icosphere(subdivisions=1, radius=0.5)
+    mock_output = MagicMock()
+    mock_output.mesh = refined
+    mock_output.resolution = _LOCKED_INFERENCE_PROFILE["resolution"]
+    mock_pipeline.return_value = mock_output
+    adapter.pipeline = mock_pipeline
+    adapter.status = ModelStatus.LOADED
+
+    result = adapter._process_request({
+        "image_path": str(sample_image),
+        "coarse_mesh_path": str(sample_mesh),
+        # Intentionally omit output_path to exercise the production default.
+    })
+
+    output_path = Path(result["output_mesh_path"])
+    assert result["success"] is True
+    assert output_path.exists()
+    assert output_path.suffix == ".glb"
+    assert output_path.parent == tmp_path / "outputs" / "meshes"
+
+
+def test_fp16_profile_casts_geometry_weights_and_keeps_high_res_lazy():
+    class FakeTransformer:
+        def __init__(self):
+            self.config = SimpleNamespace(use_fp16=False)
+            self.converted = False
+
+        def convert_to_fp16(self):
+            self.converted = True
+
+    low_res = FakeTransformer()
+    high_res = FakeTransformer()
+    pipeline = MagicMock()
+    pipeline.transformer_512 = low_res
+    pipeline.vae = torch.nn.Linear(2, 2)
+    pipeline._transformer_1024 = None
+    pipeline._transformer_1024_loader = lambda: high_res
+
+    _apply_hi3d_fp16_profile(pipeline)
+
+    assert low_res.converted is True
+    assert pipeline.vae.weight.dtype == torch.float16
+    assert pipeline._transformer_1024 is None
+    loaded = pipeline._transformer_1024_loader()
+    assert loaded is high_res
+    assert high_res.converted is True

@@ -487,7 +487,12 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
             max_num_tokens=max_num_tokens,
         )
 
-        mesh = mesh_list[0]
+        if isinstance(mesh_list, (list, tuple)):
+            if not mesh_list:
+                raise RuntimeError("Pixal3D pipeline returned no meshes")
+            mesh = mesh_list[0]
+        else:
+            mesh = mesh_list
 
         # Extract GLB
         rot = np.array(
@@ -578,11 +583,30 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
             output_dir = self.path_generator.base_output_dir / "pixal3d" / f"{image_path.stem}_{uuid.uuid4().hex}"
             output_dir.mkdir(parents=True, exist_ok=True)
 
-            # Load input image
-            input_image = Image.open(image_path)
+            # Load and preprocess the image; camera estimation still uses the original file.
+            with Image.open(image_path) as source_image:
+                input_image = source_image.convert("RGBA")
             original_input_size = [int(input_image.width), int(input_image.height)]
 
-            # Estimate camera parameters
+            # Match the custom vendored Pixal3D preprocessing (background removal and object crop).
+            try:
+                input_image = self.pipeline.preprocess_image(input_image)
+            except Exception as bg_err:
+                logger.warning(
+                    "Pixal3D image preprocessing failed (%s); using the source image as-is",
+                    bg_err,
+                )
+
+            # Standardize model input to 512x512 without distorting the aspect ratio.
+            input_image = input_image.convert("RGBA")
+            target = Image.new("RGBA", (512, 512), (0, 0, 0, 0))
+            thumb = input_image.copy()
+            thumb.thumbnail((512, 512), Image.Resampling.LANCZOS)
+            offset = ((512 - thumb.width) // 2, (512 - thumb.height) // 2)
+            target.paste(thumb, offset, mask=thumb.getchannel("A"))
+            input_image = target
+
+            # MoGe/camera estimation uses the original, unprocessed image path.
             camera_params = self._estimate_camera_params(str(image_path), manual_fov)
 
             # Run Pixal3D pipeline

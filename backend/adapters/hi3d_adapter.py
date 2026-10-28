@@ -181,6 +181,51 @@ def install_flash_attn_shim() -> None:
         sys.modules["flash_attn.bert_padding"] = bp_mod
 
 
+
+def _cast_hi3d_fp16_component(component: Any, component_name: str) -> Any:
+    """Apply FP16 using the supported conversion path for this vendored component."""
+    if component is None:
+        raise RuntimeError(f"Hi3D FP16 profile is missing component {component_name!r}")
+
+    config = getattr(component, "config", None)
+    if getattr(config, "use_fp16", False):
+        return component
+
+    convert_to_fp16 = getattr(component, "convert_to_fp16", None)
+    if callable(convert_to_fp16):
+        # Preserve the custom transformer's FP32 input/output projections.
+        convert_to_fp16()
+    else:
+        half = getattr(component, "half", None)
+        if not callable(half):
+            raise TypeError(
+                f"Hi3D component {component_name!r} does not support FP16 conversion"
+            )
+        half()
+    return component
+
+
+def _apply_hi3d_fp16_profile(pipeline: Any) -> None:
+    """Apply FP16 to loaded geometry weights and wrap the lazy high-resolution loader."""
+    # ponytail: custom Sparc3DPipeline.from_pretrained has no torch_dtype kwarg; use the
+    # vendored transformer's native mixed-precision conversion and cast the VAE post-load.
+    # Upgrade path: add explicit dtype support to the custom third-party loader and its lazy 1024 loader.
+    for component_name in ("transformer_512", "vae"):
+        _cast_hi3d_fp16_component(getattr(pipeline, component_name, None), component_name)
+
+    transformer_1024 = getattr(pipeline, "_transformer_1024", None)
+    if transformer_1024 is not None:
+        pipeline._transformer_1024 = _cast_hi3d_fp16_component(
+            transformer_1024, "transformer_1024"
+        )
+
+    lazy_loader = getattr(pipeline, "_transformer_1024_loader", None)
+    if callable(lazy_loader):
+        pipeline._transformer_1024_loader = lambda: _cast_hi3d_fp16_component(
+            lazy_loader(), "transformer_1024"
+        )
+
+
 class Hi3DAdapter(ImageToMeshModel):
     """
     Base adapter for Hi3D v1.0 experimental geometry refinement model.
@@ -360,6 +405,8 @@ class Hi3DAdapter(ImageToMeshModel):
             dino_model_id=dino_id,
             clip_model_id=clip_id,
         )
+        if self.fp16:
+            _apply_hi3d_fp16_profile(self.pipeline)
 
         is_offload = bool(self.sequential_cpu_offload)
         if hasattr(self, "resource_plan") and self.resource_plan:
@@ -520,7 +567,11 @@ class Hi3DAdapter(ImageToMeshModel):
             output_path = Path(inputs["output_path"])
             output_path.parent.mkdir(parents=True, exist_ok=True)
         else:
-            output_path = self._get_output_mesh_path(f"hi3d_{uuid.uuid4().hex[:8]}", output_format)
+            output_path = self.path_generator.generate_mesh_path(
+                self.model_id,
+                f"hi3d_{uuid.uuid4().hex[:8]}",
+                output_format,
+            )
 
         if not apply_texture:
             export_untextured_raw_mesh(refined_mesh, output_path)

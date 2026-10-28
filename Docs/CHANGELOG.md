@@ -1,3 +1,13 @@
+## 2026-10-29 — Hi3D and Pixal3D inference hardening
+
+- Pixal3D reuses the custom vendored pipeline preprocessor and normalizes input to a centered 512×512 RGBA canvas; camera estimation still reads the original image.
+- Pixal3D handles sequence and singleton mesh outputs and fails clearly when the pipeline returns an empty sequence.
+- Hi3D generates default output paths through the existing output path generator instead of a missing method.
+- Hi3D applies its FP16 profile after loading, preserves the custom transformer's native mixed-precision path, and covers the deferred 1024 transformer without eager loading.
+- Hi3D multi-GPU scheduling metadata is disabled until the custom adapter implements real component placement.
+- Regression coverage was added for Pixal3D preprocessing/output extraction, Hi3D generated paths/FP16 loading, and the Hi3D single-GPU manifest contract.
+- GPU-backed model smoke tests remain to be run in a compatible runtime.
+
 ## 2026-10-27 — Hi3D experimental model integration
 
 - **Explicit User Authorization:** Integrated Hi3D v1.0 as an experimental model following explicit owner approval.
