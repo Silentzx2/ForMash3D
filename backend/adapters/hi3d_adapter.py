@@ -65,6 +65,100 @@ def export_untextured_raw_mesh(mesh: trimesh.Trimesh, output_path: Union[str, Pa
     return str(out_p)
 
 
+def install_flash_attn_shim() -> None:
+    """
+    Provide PyTorch native scaled_dot_product_attention (SDPA) fallback for flash_attn.
+    Enables Sparc3D / Hi3D to run on Turing (Tesla T4 compute capability 7.5) and non-Ampere GPUs.
+    """
+    import sys
+    import types
+    import torch
+    import torch.nn.functional as F
+
+    def _sdpa_varlen_qkvpacked(qkv, cu_seqlens, max_seqlen=None, dropout_p=0.0, softmax_scale=None, **kwargs):
+        if isinstance(cu_seqlens, torch.Tensor):
+            cu_list = cu_seqlens.tolist()
+        else:
+            cu_list = list(cu_seqlens)
+        seqlens = [cu_list[i + 1] - cu_list[i] for i in range(len(cu_list) - 1)]
+
+        q = qkv[:, 0]
+        k = qkv[:, 1]
+        v = qkv[:, 2]
+
+        q_chunks = torch.split(q, seqlens, dim=0)
+        k_chunks = torch.split(k, seqlens, dim=0)
+        v_chunks = torch.split(v, seqlens, dim=0)
+
+        outputs = []
+        for qc, kc, vc in zip(q_chunks, k_chunks, v_chunks):
+            if qc.shape[0] == 0:
+                continue
+            qc = qc.transpose(0, 1).unsqueeze(0)
+            kc = kc.transpose(0, 1).unsqueeze(0)
+            vc = vc.transpose(0, 1).unsqueeze(0)
+            out = F.scaled_dot_product_attention(
+                qc, kc, vc,
+                dropout_p=dropout_p if kwargs.get("training", False) else 0.0,
+                scale=softmax_scale,
+            )
+            outputs.append(out.squeeze(0).transpose(0, 1))
+
+        if outputs:
+            return torch.cat(outputs, dim=0)
+        return torch.empty((0, q.shape[1], q.shape[2]), device=q.device, dtype=q.dtype)
+
+    def _sdpa_varlen_kvpacked(q, kv, cu_seqlens_q, cu_seqlens_k, max_seqlen_q=None, max_seqlen_k=None, dropout_p=0.0, softmax_scale=None, **kwargs):
+        if isinstance(cu_seqlens_q, torch.Tensor):
+            q_list = cu_seqlens_q.tolist()
+        else:
+            q_list = list(cu_seqlens_q)
+        if isinstance(cu_seqlens_k, torch.Tensor):
+            k_list = cu_seqlens_k.tolist()
+        else:
+            k_list = list(cu_seqlens_k)
+
+        q_seqlens = [q_list[i + 1] - q_list[i] for i in range(len(q_list) - 1)]
+        k_seqlens = [k_list[i + 1] - k_list[i] for i in range(len(k_list) - 1)]
+
+        k = kv[:, 0]
+        v = kv[:, 1]
+
+        q_chunks = torch.split(q, q_seqlens, dim=0)
+        k_chunks = torch.split(k, k_seqlens, dim=0)
+        v_chunks = torch.split(v, k_seqlens, dim=0)
+
+        outputs = []
+        for qc, kc, vc in zip(q_chunks, k_chunks, v_chunks):
+            if qc.shape[0] == 0:
+                continue
+            qc = qc.transpose(0, 1).unsqueeze(0)
+            kc = kc.transpose(0, 1).unsqueeze(0)
+            vc = vc.transpose(0, 1).unsqueeze(0)
+            out = F.scaled_dot_product_attention(
+                qc, kc, vc,
+                dropout_p=dropout_p if kwargs.get("training", False) else 0.0,
+                scale=softmax_scale,
+            )
+            outputs.append(out.squeeze(0).transpose(0, 1))
+
+        if outputs:
+            return torch.cat(outputs, dim=0)
+        return torch.empty((0, q.shape[1], q.shape[2]), device=q.device, dtype=q.dtype)
+
+    try:
+        import flash_attn  # noqa: F401
+        if torch.cuda.is_available():
+            major, _ = torch.cuda.get_device_capability()
+            if major < 8:
+                raise ImportError("Pre-Ampere GPU; use SDPA fallback")
+    except Exception:
+        mod = types.ModuleType("flash_attn")
+        mod.flash_attn_varlen_qkvpacked_func = _sdpa_varlen_qkvpacked
+        mod.flash_attn_varlen_kvpacked_func = _sdpa_varlen_kvpacked
+        sys.modules["flash_attn"] = mod
+
+
 class Hi3DAdapter(ImageToMeshModel):
     """
     Base adapter for Hi3D v1.0 experimental geometry refinement model.
@@ -160,16 +254,18 @@ class Hi3DAdapter(ImageToMeshModel):
 
         if not torch.cuda.is_available():
             raise RuntimeError(
-                "Hi3D requires an NVIDIA GPU with CUDA capability >= 8.0 (Ampere+); "
+                "Hi3D requires an NVIDIA GPU with CUDA capability >= 7.0 (Volta+); "
                 "CUDA device is not available."
             )
 
         major_cap, _ = torch.cuda.get_device_capability()
-        if major_cap < 8:
+        if major_cap < 7:
             raise RuntimeError(
-                f"Hi3D requires compute capability >= 8.0 (Ampere+), "
+                f"Hi3D requires compute capability >= 7.0 (Volta+), "
                 f"but current device has capability {major_cap}.x"
             )
+
+        install_flash_attn_shim()
 
         try:
             from sparc3d import Sparc3DPipeline

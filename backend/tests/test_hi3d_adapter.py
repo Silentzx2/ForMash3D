@@ -116,15 +116,15 @@ def test_lazy_loading_and_hardware_prerequisites(tmp_path: Path):
     assert adapter.pipeline is None
     assert adapter.status == ModelStatus.UNLOADED
 
-    # When CUDA is unavailable or compute capability < 8, _load_model raises RuntimeError
+    # When CUDA is unavailable or compute capability < 7, _load_model raises RuntimeError
     with patch("torch.cuda.is_available", return_value=False):
-        with pytest.raises(RuntimeError, match="CUDA capability >= 8.0"):
+        with pytest.raises(RuntimeError, match="CUDA capability >= 7.0"):
             adapter._load_model()
 
-    # When CUDA is available but capability is insufficient (e.g. Turing 7.5)
+    # When CUDA is available but capability is insufficient (e.g. Pascal 6.1)
     with patch("torch.cuda.is_available", return_value=True), \
-         patch("torch.cuda.get_device_capability", return_value=(7, 5)):
-        with pytest.raises(RuntimeError, match="requires compute capability >= 8.0"):
+         patch("torch.cuda.get_device_capability", return_value=(6, 1)):
+        with pytest.raises(RuntimeError, match="requires compute capability >= 7.0"):
             adapter._load_model()
 
 
