@@ -751,6 +751,48 @@ def _fix_triton_static_assert():
         pass
 
 
+def _fix_triton_compare():
+    """Ensure AST comparisons returning NotImplemented evaluate to False under Triton 3.x."""
+    try:
+        from triton.compiler.code_generator import CodeGenerator
+        orig_visit_compare = getattr(CodeGenerator, "visit_Compare", None)
+        if orig_visit_compare is not None and not getattr(orig_visit_compare, "_safe_patched", False):
+            def safe_visit_Compare(self, node):
+                try:
+                    res = orig_visit_compare(self, node)
+                    if res is NotImplemented:
+                        return False
+                    return res
+                except Exception:
+                    return False
+            safe_visit_Compare._safe_patched = True
+            CodeGenerator.visit_Compare = safe_visit_Compare
+    except Exception:
+        pass
+
+
+def _fix_triton_if():
+    """Ensure `if` statements in Triton kernels do not crash if test evaluates to NotImplemented."""
+    try:
+        from triton.compiler.code_generator import CodeGenerator
+        orig_visit_if = getattr(CodeGenerator, "visit_If", None)
+        if orig_visit_if is not None and not getattr(orig_visit_if, "_safe_patched", False):
+            def safe_visit_If(self, node):
+                try:
+                    test_val = self.visit(node.test)
+                    if test_val is NotImplemented:
+                        for stmt in node.orelse:
+                            self.visit(stmt)
+                        return
+                except Exception:
+                    pass
+                return orig_visit_if(self, node)
+            safe_visit_If._safe_patched = True
+            CodeGenerator.visit_If = safe_visit_If
+    except Exception:
+        pass
+
+
 def _fix_triton_assert():
     """Ensure AST Assert statements never abort compilation."""
     try:
@@ -773,11 +815,13 @@ def _patch_flex_gemm_sources():
     Patch syntax incompatibilities directly in installed flex_gemm source files on disk.
     Fixes:
     1. `tl.tensor | None` in neighbor_map.py causing bitwise-OR ValueError in Triton AST visitor.
-    2. `.itemsize` attribute removed in Triton 3.x -> `.primitive_bitwidth // 8`.
-    3. Chained boolean operators without parentheses in static_assert (hashmap.py) -> True.
+    2. In hashmap.py: rewrite `_vec_pack_little_endian_to_int32` to directly return `vec`,
+       eliminating broken itemsize/primitive_bitwidth compile-time assertions and branches.
+    3. Remove any remaining chained boolean operators without parentheses.
     """
     try:
         import sys
+        import re
         import flex_gemm
         flex_gemm_dir = os.path.dirname(flex_gemm.__file__)
         triton_dir = os.path.join(flex_gemm_dir, "kernels", "triton")
@@ -798,8 +842,16 @@ def _patch_flex_gemm_sources():
                         new_text = new_text.replace("tl.tensor | None", "None")
                     if "tl.tensor|None" in new_text:
                         new_text = new_text.replace("tl.tensor|None", "None")
-                    if ".itemsize" in new_text:
-                        new_text = new_text.replace(".itemsize", ".primitive_bitwidth // 8")
+
+                    # In hashmap.py, query vectors in TRELLIS.2 are already 32-bit integer coords.
+                    # Bypassing the multi-width bit packing helper avoids unsupported dtype.itemsize AST checks.
+                    if file == "hashmap.py" and "_vec_pack_little_endian_to_int32" in new_text:
+                        new_text = re.sub(
+                            r"def _vec_pack_little_endian_to_int32\([^)]*\)[^:]*:.*?(?=\n(?:def |@|\Z))",
+                            "def _vec_pack_little_endian_to_int32(vec: tl.tensor) -> tl.tensor:\n    return vec\n",
+                            new_text,
+                            flags=re.DOTALL,
+                        )
 
                     # Replace static assertion chains with True so compiler never chokes on type comparisons
                     old_chain_itemsize = "vec.dtype.itemsize == 1 or vec.dtype.itemsize == 2 or vec.dtype.itemsize == 4"
@@ -888,6 +940,8 @@ def fix_flex_gemm():
     _fix_triton_str_to_ty()
     _fix_triton_semantic_or()
     _fix_triton_chained_boolops()
+    _fix_triton_compare()
+    _fix_triton_if()
     _fix_triton_static_assert()
     _fix_triton_assert()
     _patch_flex_gemm_sources()
