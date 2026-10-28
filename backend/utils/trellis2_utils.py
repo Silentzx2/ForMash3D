@@ -427,9 +427,10 @@ class Trellis2Runner:
             seed=42 if seed is None else int(seed),
             pipeline_type=pipeline_type,
             max_num_tokens=int(max_num_tokens),
-            sparse_structure_sampler_params=dict(sparse_structure_sampler_params or {"steps": 50}),
-            shape_slat_sampler_params=dict(shape_slat_sampler_params or {"steps": 50}),
-            tex_slat_sampler_params=dict(tex_slat_sampler_params or shape_slat_sampler_params or {"steps": 50}),
+            # AFTER PIPELINE IS STABLE: Change {"steps": 1} back to {"steps": 50} for high-fidelity production generation
+            sparse_structure_sampler_params=dict(sparse_structure_sampler_params or {"steps": 1}),
+            shape_slat_sampler_params=dict(shape_slat_sampler_params or {"steps": 1}),
+            tex_slat_sampler_params=dict(tex_slat_sampler_params or shape_slat_sampler_params or {"steps": 1}),
             return_latent=True,
         )
         mesh, effective_resolution, voxel_size, resolution_source = (
