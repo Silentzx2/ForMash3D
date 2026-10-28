@@ -47,7 +47,7 @@ def test_process_request_preprocesses_and_centers_image(monkeypatch, tmp_path: P
         captured["image"] = image.copy()
         captured["seed"] = seed
         captured["camera_params"] = camera_params
-        return str(generated_glb)
+        return str(generated_glb), 1536
 
     camera_calls = []
     monkeypatch.setattr(
@@ -69,6 +69,7 @@ def test_process_request_preprocesses_and_centers_image(monkeypatch, tmp_path: P
     assert captured["image"].size == (512, 512)
     assert result["generation_info"]["original_input_size"] == [1200, 300]
     assert result["generation_info"]["inference_input_size"] == [512, 512]
+    assert result["generation_info"]["effective_geometry_resolution"] == 1536
 
 
 def _install_fake_o_voxel(monkeypatch):
@@ -79,33 +80,55 @@ def _install_fake_o_voxel(monkeypatch):
         def export(self, path, extension_webp=True):
             Path(path).write_bytes(b"mock glb")
 
+    glb_calls = []
     voxel = ModuleType("o_voxel")
-    voxel.postprocess = SimpleNamespace(to_glb=lambda **kwargs: FakeGLB())
+    voxel.postprocess = SimpleNamespace(
+        to_glb=lambda **kwargs: (glb_calls.append(kwargs) or FakeGLB())
+    )
     monkeypatch.setitem(sys.modules, "o_voxel", voxel)
+    return glb_calls
 
 
 def test_run_inference_accepts_single_mesh_and_rejects_empty_output(monkeypatch, tmp_path: Path):
-    _install_fake_o_voxel(monkeypatch)
+    glb_calls = _install_fake_o_voxel(monkeypatch)
     adapter = _make_adapter(tmp_path)
     mesh = SimpleNamespace(
         vertices=np.zeros((3, 3), dtype=np.float32),
         faces=np.array([[0, 1, 2]], dtype=np.int32),
         attrs=np.zeros((3, 4), dtype=np.float32),
         coords=np.zeros((3, 3), dtype=np.int32),
+        voxel_size=1.0 / 1536,
     )
-    pipeline = MagicMock()
-    pipeline.pbr_attr_layout = {}
-    pipeline.run.return_value = mesh
+    pipeline_results = [[mesh]]
+
+    def custom_pipeline_run(
+        image,
+        camera_params,
+        num_samples=1,
+        seed=42,
+        sparse_structure_sampler_params=None,
+        shape_slat_sampler_params=None,
+        tex_slat_sampler_params=None,
+        preprocess_image=True,
+        return_latent=False,
+        pipeline_type=None,
+        max_num_tokens=49152,
+    ):
+        return pipeline_results[0]
+
+    pipeline = SimpleNamespace(run=custom_pipeline_run, pbr_attr_layout={})
     adapter.pipeline = pipeline
 
-    output_path = adapter._run_inference(
+    output_path, effective_resolution = adapter._run_inference(
         Image.new("RGB", (512, 512)),
         seed=42,
         camera_params={"camera_angle_x": 0.8, "distance": 1.0, "mesh_scale": 1.0},
     )
     assert Path(output_path).is_file()
+    assert effective_resolution == 1536
+    assert glb_calls[0]["grid_size"] == 1536
 
-    pipeline.run.return_value = []
+    pipeline_results[0] = []
     with pytest.raises(RuntimeError, match="returned no meshes"):
         adapter._run_inference(
             Image.new("RGB", (512, 512)),

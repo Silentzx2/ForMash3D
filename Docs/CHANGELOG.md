@@ -1,3 +1,9 @@
+## 2026-10-29 — Pixal3D custom pipeline contract correction
+
+- Removed the unsupported resolution keyword from the custom pipeline run call; the vendored pipeline selects actual resolution through pipeline_type and its token budget.
+- GLB attribute postprocessing now derives grid_size from the returned MeshWithVoxel voxel_size, preventing the input-profile value from being mistaken for the achieved output resolution.
+- The response reports the effective geometry resolution, and regression tests enforce the custom run signature and postprocessing grid size.
+
 ## 2026-10-29 — Hi3D and Pixal3D inference hardening
 
 - Pixal3D reuses the custom vendored pipeline preprocessor and normalizes input to a centered 512×512 RGBA canvas; camera estimation still reads the original image.

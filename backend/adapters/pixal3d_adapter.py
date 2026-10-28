@@ -13,7 +13,7 @@ import sys
 import uuid
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -453,7 +453,7 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
         image: Image.Image,
         seed: int = 42,
         camera_params: Optional[Dict[str, float]] = None,
-    ) -> str:
+    ) -> Tuple[str, int]:
         """Run Pixal3D pipeline inference and return GLB path."""
         import o_voxel
 
@@ -463,8 +463,6 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
         # Keep model settings adapter-owned; seed and camera parameters remain caller-controlled.
         pipeline_type = _LOCKED_INFERENCE_PROFILE["pipeline_type"]
         max_num_tokens = _LOCKED_INFERENCE_PROFILE["max_num_tokens"]
-        resolution = _LOCKED_INFERENCE_PROFILE["resolution"]
-        low_vram = _LOCKED_INFERENCE_PROFILE["low_vram"]
         locked_samplers = _LOCKED_INFERENCE_PROFILE["sampler_overrides"]
         ss_override = deepcopy(locked_samplers["sparse_structure"])
         shape_override = deepcopy(locked_samplers["shape"])
@@ -483,7 +481,6 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
             tex_slat_sampler_params=tex_override,
             preprocess_image=False,
             pipeline_type=pipeline_type,
-            resolution=resolution,
             max_num_tokens=max_num_tokens,
         )
 
@@ -493,6 +490,12 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
             mesh = mesh_list[0]
         else:
             mesh = mesh_list
+
+        # Derive the actual voxel grid resolution from the custom pipeline result.
+        voxel_size = float(getattr(mesh, "voxel_size", 0.0))
+        if not math.isfinite(voxel_size) or voxel_size <= 0:
+            raise ValueError("Pixal3D pipeline output must expose a positive voxel_size")
+        grid_size = int(round(1.0 / voxel_size))
 
         # Extract GLB
         rot = np.array(
@@ -518,7 +521,7 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
             attr_volume=mesh.attrs,
             coords=mesh.coords,
             attr_layout=self.pipeline.pbr_attr_layout,
-            grid_size=resolution,
+            grid_size=grid_size,
             aabb=[[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]],
             decimation_target=1000000,
             texture_size=4096,
@@ -530,9 +533,9 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
 
         glb.apply_transform(rot)
         glb.export(output_path, extension_webp=True)
-        logger.info(f"Pixal3D GLB exported to: {output_path}")
+        logger.info("Pixal3D GLB exported to: %s (grid_size=%s)", output_path, grid_size)
 
-        return output_path
+        return output_path, grid_size
 
     def _process_request(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -610,7 +613,7 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
             camera_params = self._estimate_camera_params(str(image_path), manual_fov)
 
             # Run Pixal3D pipeline
-            glb_path = self._run_inference(
+            glb_path, effective_geometry_resolution = self._run_inference(
                 input_image,
                 seed=seed,
                 camera_params=camera_params,
@@ -652,8 +655,8 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
                     "native_vertex_count": mesh_stats["vertex_count"],
                     "native_face_count": mesh_stats["face_count"],
                     "geometry_extractor": "Pixal3D image-to-3D with MoGe camera estimation",
-                    "effective_geometry_resolution": None,
-                    "geometry_resolution_source": "Pixal3D pipeline does not expose a scalar achieved grid resolution",
+                    "effective_geometry_resolution": effective_geometry_resolution,
+                    "geometry_resolution_source": "Inferred from custom Pixal3D MeshWithVoxel.voxel_size",
                     "mesh_operations": [],
                     "geometry_transforms": ["uniform scale", "axis orientation conversion"],
                     "original_input_size": original_input_size,
