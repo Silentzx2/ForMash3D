@@ -31,26 +31,28 @@ logger = logging.getLogger(__name__)
 # EXPERIMENTAL: selected experimental values, snapshot (2026-10-20) for stress-test; use only for benchmarking.
 # SUPPORTED BY: Pixal3D adapter, EXPERIMENTAL-MODEL-SETTINGS.md section "Pixal3D".
 # ROLLBACK: previous effective values; scheduler strips frontend overrides before adapter applies lock.
+# SHORTCUT / PIPELINE STABILITY TEST: Low resolution (512) and 1 step for ultra-fast validation (~5s).
+# AFTER PIPELINE IS STABLE: Change "resolution" back to 2048 and sampler "steps" back to 100!
 _LOCKED_INFERENCE_PROFILE = {
     "source_quality": "max",
-    "resolution": 2048,
+    "resolution": 512,  # AFTER PIPELINE IS STABLE: Change back to 2048
     "pipeline_type": "1536_cascade",
     "max_num_tokens": 524288,
     "sampler_overrides": {
         "sparse_structure": {
-            "steps": 100,
+            "steps": 1,  # AFTER PIPELINE IS STABLE: Change back to 100
             "guidance_strength": 10.0,
             "guidance_rescale": 0.9,
             "rescale_t": 8.0,
         },
         "shape": {
-            "steps": 100,
+            "steps": 1,  # AFTER PIPELINE IS STABLE: Change back to 100
             "guidance_strength": 10.0,
             "guidance_rescale": 0.8,
             "rescale_t": 8.0,
         },
         "texture": {
-            "steps": 100,
+            "steps": 1,  # AFTER PIPELINE IS STABLE: Change back to 100
             "guidance_strength": 3.5,
             "guidance_rescale": 0.5,
             "rescale_t": 8.0,

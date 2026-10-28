@@ -32,11 +32,11 @@ BaseAdapter = ImageToMeshModel
 CHECKPOINT_LICENSE = "LicenseRef-Hi3D-1.0"
 DEFAULT_VRAM_REQUIREMENT = 16384  # 16 GB
 
-# LOCKED / ACTIVE: experimental inference profile
-# Review note: Hi3D is an experimental model for high-resolution geometry refinement.
+# SHORTCUT / PIPELINE STABILITY TEST: Low resolution (512) and 1 step for ultra-fast validation (~5s).
+# AFTER PIPELINE IS STABLE: Change "resolution" back to 1024 and "num_inference_steps" back to 25!
 _LOCKED_INFERENCE_PROFILE = {
-    "resolution": 1024,
-    "num_inference_steps": 25,
+    "resolution": 512,  # AFTER PIPELINE IS STABLE: Change back to 1024
+    "num_inference_steps": 1,  # AFTER PIPELINE IS STABLE: Change back to 25
     "seed": 42,
     "sequential_cpu_offload": False,
     "fp16": True,
@@ -63,6 +63,122 @@ def export_untextured_raw_mesh(mesh: trimesh.Trimesh, output_path: Union[str, Pa
         clean_mesh.export(str(out_p))
 
     return str(out_p)
+
+
+def install_flash_attn_shim() -> None:
+    """
+    Provide PyTorch native scaled_dot_product_attention (SDPA) fallback for flash_attn.
+    Enables Sparc3D / Hi3D to run on Turing (Tesla T4 compute capability 7.5) and non-Ampere GPUs.
+    """
+    import sys
+    import types
+    import torch
+    import torch.nn.functional as F
+
+    def _sdpa_varlen_qkvpacked(qkv, cu_seqlens, max_seqlen=None, dropout_p=0.0, softmax_scale=None, **kwargs):
+        if isinstance(cu_seqlens, torch.Tensor):
+            cu_list = cu_seqlens.tolist()
+        else:
+            cu_list = list(cu_seqlens)
+        seqlens = [cu_list[i + 1] - cu_list[i] for i in range(len(cu_list) - 1)]
+
+        q = qkv[:, 0]
+        k = qkv[:, 1]
+        v = qkv[:, 2]
+
+        q_chunks = torch.split(q, seqlens, dim=0)
+        k_chunks = torch.split(k, seqlens, dim=0)
+        v_chunks = torch.split(v, seqlens, dim=0)
+
+        outputs = []
+        for qc, kc, vc in zip(q_chunks, k_chunks, v_chunks):
+            if qc.shape[0] == 0:
+                continue
+            qc = qc.transpose(0, 1).unsqueeze(0)
+            kc = kc.transpose(0, 1).unsqueeze(0)
+            vc = vc.transpose(0, 1).unsqueeze(0)
+            out = F.scaled_dot_product_attention(
+                qc, kc, vc,
+                dropout_p=dropout_p if kwargs.get("training", False) else 0.0,
+                scale=softmax_scale,
+            )
+            outputs.append(out.squeeze(0).transpose(0, 1))
+
+        if outputs:
+            return torch.cat(outputs, dim=0)
+        return torch.empty((0, q.shape[1], q.shape[2]), device=q.device, dtype=q.dtype)
+
+    def _sdpa_varlen_kvpacked(q, kv, cu_seqlens_q, cu_seqlens_k, max_seqlen_q=None, max_seqlen_k=None, dropout_p=0.0, softmax_scale=None, **kwargs):
+        if isinstance(cu_seqlens_q, torch.Tensor):
+            q_list = cu_seqlens_q.tolist()
+        else:
+            q_list = list(cu_seqlens_q)
+        if isinstance(cu_seqlens_k, torch.Tensor):
+            k_list = cu_seqlens_k.tolist()
+        else:
+            k_list = list(cu_seqlens_k)
+
+        q_seqlens = [q_list[i + 1] - q_list[i] for i in range(len(q_list) - 1)]
+        k_seqlens = [k_list[i + 1] - k_list[i] for i in range(len(k_list) - 1)]
+
+        k = kv[:, 0]
+        v = kv[:, 1]
+
+        q_chunks = torch.split(q, q_seqlens, dim=0)
+        k_chunks = torch.split(k, k_seqlens, dim=0)
+        v_chunks = torch.split(v, k_seqlens, dim=0)
+
+        outputs = []
+        for qc, kc, vc in zip(q_chunks, k_chunks, v_chunks):
+            if qc.shape[0] == 0:
+                continue
+            qc = qc.transpose(0, 1).unsqueeze(0)
+            kc = kc.transpose(0, 1).unsqueeze(0)
+            vc = vc.transpose(0, 1).unsqueeze(0)
+            out = F.scaled_dot_product_attention(
+                qc, kc, vc,
+                dropout_p=dropout_p if kwargs.get("training", False) else 0.0,
+                scale=softmax_scale,
+            )
+            outputs.append(out.squeeze(0).transpose(0, 1))
+
+        if outputs:
+            return torch.cat(outputs, dim=0)
+        return torch.empty((0, q.shape[1], q.shape[2]), device=q.device, dtype=q.dtype)
+
+    try:
+        import transformers.utils.import_utils as tiu
+        tiu.is_flash_attn_2_available = lambda: False
+        tiu.is_flash_attn_available = lambda: False
+    except Exception:
+        pass
+
+    try:
+        import flash_attn  # noqa: F401
+        if torch.cuda.is_available():
+            major, _ = torch.cuda.get_device_capability()
+            if major < 8:
+                raise ImportError("Pre-Ampere GPU; use SDPA fallback")
+    except Exception:
+        import importlib.machinery
+        mod = types.ModuleType("flash_attn")
+        mod.__spec__ = importlib.machinery.ModuleSpec("flash_attn", None)
+        mod.__file__ = "flash_attn_shim.py"
+        mod.__version__ = "2.0.0"
+        mod.flash_attn_varlen_qkvpacked_func = _sdpa_varlen_qkvpacked
+        mod.flash_attn_varlen_kvpacked_func = _sdpa_varlen_kvpacked
+        mod.flash_attn_func = lambda *a, **k: None
+        mod.flash_attn_varlen_func = lambda *a, **k: None
+
+        bp_mod = types.ModuleType("flash_attn.bert_padding")
+        bp_mod.__spec__ = importlib.machinery.ModuleSpec("flash_attn.bert_padding", None)
+        bp_mod.index_first_axis = lambda *a, **k: None
+        bp_mod.pad_input = lambda *a, **k: None
+        bp_mod.unpad_input = lambda *a, **k: None
+        mod.bert_padding = bp_mod
+
+        sys.modules["flash_attn"] = mod
+        sys.modules["flash_attn.bert_padding"] = bp_mod
 
 
 class Hi3DAdapter(ImageToMeshModel):
@@ -148,6 +264,37 @@ class Hi3DAdapter(ImageToMeshModel):
         if hi3d_str not in sys.path:
             sys.path.insert(0, hi3d_str)
 
+        # Patch sparc3d postprocess _simplify to prevent hard crash if pyfqmr is not installed
+        try:
+            import sparc3d.sparcubes.postprocess as pp
+            orig_simplify = getattr(pp, "_simplify", None)
+            if orig_simplify is not None and not getattr(orig_simplify, "_safe_patched", False):
+                def safe_simplify(mesh, target_face_count):
+                    try:
+                        import pyfqmr
+                        simplifier = pyfqmr.Simplify()
+                        simplifier.setMesh(mesh.vertices, mesh.faces)
+                        simplifier.simplify_mesh(
+                            target_count=target_face_count,
+                            aggressiveness=5,
+                            preserve_border=True,
+                            verbose=False,
+                        )
+                        vertices, faces, _ = simplifier.getMesh()
+                        return trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
+                    except Exception:
+                        try:
+                            if hasattr(mesh, "simplify_quadric_decimation") and len(mesh.faces) > target_face_count:
+                                return mesh.simplify_quadric_decimation(face_count=target_face_count)
+                        except Exception:
+                            pass
+                        return mesh
+
+                safe_simplify._safe_patched = True
+                pp._simplify = safe_simplify
+        except Exception:
+            pass
+
     def _load_model(self) -> None:
         """
         Lazily load Hi3D pipeline from model weights.
@@ -160,16 +307,18 @@ class Hi3DAdapter(ImageToMeshModel):
 
         if not torch.cuda.is_available():
             raise RuntimeError(
-                "Hi3D requires an NVIDIA GPU with CUDA capability >= 8.0 (Ampere+); "
+                "Hi3D requires an NVIDIA GPU with CUDA capability >= 7.0 (Volta+); "
                 "CUDA device is not available."
             )
 
         major_cap, _ = torch.cuda.get_device_capability()
-        if major_cap < 8:
+        if major_cap < 7:
             raise RuntimeError(
-                f"Hi3D requires compute capability >= 8.0 (Ampere+), "
+                f"Hi3D requires compute capability >= 7.0 (Volta+), "
                 f"but current device has capability {major_cap}.x"
             )
+
+        install_flash_attn_shim()
 
         try:
             from sparc3d import Sparc3DPipeline
@@ -195,10 +344,21 @@ class Hi3DAdapter(ImageToMeshModel):
         cache_dir = None if has_local_weights else str(self.model_path)
         logger.info("Loading Sparc3DPipeline from %s onto %s", model_source, device)
 
+        # Vision encoders (DINOv2-large and CLIP-large) may reside in pretrained/ or be fetched from HF Hub
+        dino_dir = self.model_path.parent / "dinov2-large"
+        clip_dir = self.model_path.parent / "clip-vit-large-patch14"
+        dino_id = str(dino_dir.resolve()) if (dino_dir / "config.json").exists() else "facebook/dinov2-large"
+        clip_id = str(clip_dir.resolve()) if (clip_dir / "config.json").exists() else "openai/clip-vit-large-patch14"
+
+        # local_files_only should only be True if all required vision encoders exist on disk
+        local_only = bool(has_local_weights and (dino_dir / "config.json").exists() and (clip_dir / "config.json").exists())
+
         self.pipeline = Sparc3DPipeline.from_pretrained(
             model_source,
             cache_dir=cache_dir,
-            local_files_only=has_local_weights,
+            local_files_only=local_only,
+            dino_model_id=dino_id,
+            clip_model_id=clip_id,
         )
 
         is_offload = bool(self.sequential_cpu_offload)

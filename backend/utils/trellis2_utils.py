@@ -413,14 +413,24 @@ class Trellis2Runner:
             "Generating TRELLIS.2 mesh from image: %s (pipeline=%s, max_num_tokens=%s)",
             image_path, pipeline_type, max_num_tokens,
         )
+        try:
+            from utils.torchvision_fix import fix_flex_gemm
+            fix_flex_gemm()
+        except Exception:
+            try:
+                from backend.utils.torchvision_fix import fix_flex_gemm
+                fix_flex_gemm()
+            except Exception:
+                pass
         pipeline_result = self.image_to_3d_pipeline.run(
             image,
             seed=42 if seed is None else int(seed),
             pipeline_type=pipeline_type,
             max_num_tokens=int(max_num_tokens),
-            sparse_structure_sampler_params=dict(sparse_structure_sampler_params or {"steps": 50}),
-            shape_slat_sampler_params=dict(shape_slat_sampler_params or {"steps": 50}),
-            tex_slat_sampler_params=dict(tex_slat_sampler_params or shape_slat_sampler_params or {"steps": 50}),
+            # AFTER PIPELINE IS STABLE: Change {"steps": 1} back to {"steps": 50} for high-fidelity production generation
+            sparse_structure_sampler_params=dict(sparse_structure_sampler_params or {"steps": 1}),
+            shape_slat_sampler_params=dict(shape_slat_sampler_params or {"steps": 1}),
+            tex_slat_sampler_params=dict(tex_slat_sampler_params or shape_slat_sampler_params or {"steps": 1}),
             return_latent=True,
         )
         mesh, effective_resolution, voxel_size, resolution_source = (
@@ -481,6 +491,12 @@ class Trellis2Runner:
             logger.info("Extracting untextured raw mesh (texture baking skipped)")
             verts = mesh.vertices.cpu().numpy() if hasattr(mesh.vertices, 'cpu') else np.array(mesh.vertices)
             faces = mesh.faces.cpu().numpy() if hasattr(mesh.faces, 'cpu') else np.array(mesh.faces)
+            # Replace NaN/Inf vertices: GLB accessor min/max with NaN is invalid JSON and breaks viewers
+            bad = ~np.isfinite(verts).all(axis=1)
+            if bad.any():
+                logger.warning("TRELLIS.2 raw mesh has %d NaN/Inf vertices; replacing with (0,0,0)", bad.sum())
+                verts = verts.copy()
+                verts[bad] = 0.0
             raw_mesh = trimesh.Trimesh(vertices=verts, faces=faces, process=False)
             raw_mesh.metadata.update(mesh_metadata)
             return raw_mesh
