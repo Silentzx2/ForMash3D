@@ -1003,6 +1003,12 @@ def fix_flash_attention_hardware():
                     os.environ["ATTN_BACKEND"] = "sdpa"
                 if os.environ.get("SPARSE_ATTN_BACKEND") in (None, "", "flash_attn"):
                     os.environ["SPARSE_ATTN_BACKEND"] = "sdpa"
+                try:
+                    import transformers.utils.import_utils as tiu
+                    tiu.is_flash_attn_2_available = lambda: False
+                    tiu.is_flash_attn_available = lambda: False
+                except Exception:
+                    pass
                 print(f"Pre-Ampere GPU detected (compute capability < 8.0). Defaulted ATTN_BACKEND and SPARSE_ATTN_BACKEND to 'sdpa'.")
     except Exception:
         pass

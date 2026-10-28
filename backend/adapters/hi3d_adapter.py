@@ -147,16 +147,38 @@ def install_flash_attn_shim() -> None:
         return torch.empty((0, q.shape[1], q.shape[2]), device=q.device, dtype=q.dtype)
 
     try:
+        import transformers.utils.import_utils as tiu
+        tiu.is_flash_attn_2_available = lambda: False
+        tiu.is_flash_attn_available = lambda: False
+    except Exception:
+        pass
+
+    try:
         import flash_attn  # noqa: F401
         if torch.cuda.is_available():
             major, _ = torch.cuda.get_device_capability()
             if major < 8:
                 raise ImportError("Pre-Ampere GPU; use SDPA fallback")
     except Exception:
+        import importlib.machinery
         mod = types.ModuleType("flash_attn")
+        mod.__spec__ = importlib.machinery.ModuleSpec("flash_attn", None)
+        mod.__file__ = "flash_attn_shim.py"
+        mod.__version__ = "2.0.0"
         mod.flash_attn_varlen_qkvpacked_func = _sdpa_varlen_qkvpacked
         mod.flash_attn_varlen_kvpacked_func = _sdpa_varlen_kvpacked
+        mod.flash_attn_func = lambda *a, **k: None
+        mod.flash_attn_varlen_func = lambda *a, **k: None
+
+        bp_mod = types.ModuleType("flash_attn.bert_padding")
+        bp_mod.__spec__ = importlib.machinery.ModuleSpec("flash_attn.bert_padding", None)
+        bp_mod.index_first_axis = lambda *a, **k: None
+        bp_mod.pad_input = lambda *a, **k: None
+        bp_mod.unpad_input = lambda *a, **k: None
+        mod.bert_padding = bp_mod
+
         sys.modules["flash_attn"] = mod
+        sys.modules["flash_attn.bert_padding"] = bp_mod
 
 
 class Hi3DAdapter(ImageToMeshModel):
