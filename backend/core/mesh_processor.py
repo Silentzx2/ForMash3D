@@ -634,6 +634,32 @@ class MeshProcessor:
             return mesh
 
     @staticmethod
+    def _sanitize_mesh_nan(mesh: trimesh.Trimesh) -> trimesh.Trimesh:
+        """Replace NaN/Inf vertices with (0,0,0) so GLB accessor min/max are valid JSON.
+
+        NaN in vertex positions causes trimesh to write IEEE NaN into the GLB accessor
+        min/max arrays, which are invalid JSON and break any viewer that parses them.
+        """
+        if not isinstance(mesh, trimesh.Trimesh):
+            return mesh
+        v = mesh.vertices
+        if not np.any(~np.isfinite(v)):
+            return mesh
+        bad = ~np.isfinite(v).all(axis=1)
+        n_bad = bad.sum()
+        if n_bad > 0:
+            import logging as _log
+            _log.getLogger(__name__).warning(
+                "Mesh has %d NaN/Inf vertices; replacing with (0,0,0) before export.", n_bad
+            )
+            v = v.copy()
+            v[bad] = 0.0
+            mesh = trimesh.Trimesh(vertices=v, faces=mesh.faces,
+                                   vertex_normals=mesh.vertex_normals if mesh.vertex_normals is not None and len(mesh.vertex_normals) else None,
+                                   process=False)
+        return mesh
+
+    @staticmethod
     def save_mesh(
         mesh: trimesh.Trimesh,
         output_path: Union[str, Path],
@@ -649,6 +675,9 @@ class MeshProcessor:
             raise ValueError(f"Cannot save None mesh to {output_path}: model generation produced a null mesh object.")
 
         try:
+            # Sanitize NaN/Inf before export — NaN in vertices produces NaN in GLB accessor
+            # min/max which is invalid JSON and breaks all 3D viewers.
+            mesh = MeshProcessor._sanitize_mesh_nan(mesh)
             if do_normalise:
                 mesh = MeshProcessor.normalise_mesh(mesh)
             if crease_angle_deg is not None and isinstance(mesh, trimesh.Trimesh) and len(mesh.faces) > 0:

@@ -481,6 +481,12 @@ class Trellis2Runner:
             logger.info("Extracting untextured raw mesh (texture baking skipped)")
             verts = mesh.vertices.cpu().numpy() if hasattr(mesh.vertices, 'cpu') else np.array(mesh.vertices)
             faces = mesh.faces.cpu().numpy() if hasattr(mesh.faces, 'cpu') else np.array(mesh.faces)
+            # Replace NaN/Inf vertices: GLB accessor min/max with NaN is invalid JSON and breaks viewers
+            bad = ~np.isfinite(verts).all(axis=1)
+            if bad.any():
+                logger.warning("TRELLIS.2 raw mesh has %d NaN/Inf vertices; replacing with (0,0,0)", bad.sum())
+                verts = verts.copy()
+                verts[bad] = 0.0
             raw_mesh = trimesh.Trimesh(vertices=verts, faces=faces, process=False)
             raw_mesh.metadata.update(mesh_metadata)
             return raw_mesh
