@@ -546,11 +546,23 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
             generator = torch.Generator(device=self.device).manual_seed(seed)
 
             algo = inputs.get("mc_algo", "mc")
+            # diso/DMC requires CUDA arch >= 8.0 (Ampere+). T4 = SM 7.5 → DMC CUDA kernels abort.
+            # A diso crash taints the CUDA context, making all subsequent GPU ops fail too.
+            # So: only enable dmc if diso is importable AND GPU is SM >= 8.
+            _dmc_allowed = False
             try:
                 import diso
-                algo = "dmc"
-            except ImportError:
+                if torch.cuda.is_available():
+                    cap = torch.cuda.get_device_capability(
+                        int(str(self.device).split(":")[-1]) if ":" in str(self.device) else 0
+                    )
+                    _dmc_allowed = (cap[0] >= 8)
+            except Exception:
                 pass
+            if _dmc_allowed:
+                algo = "dmc"
+            else:
+                algo = "mc"
             configure_native_dense_decoder(self.pipeline_shapegen, "Hunyuan3D-Shape-v2.1", mc_algo=algo)
             mesh_outputs = self.pipeline_shapegen(
                 image=image,
