@@ -534,9 +534,12 @@ class Hi3DAdapter(ImageToMeshModel):
             img_p = Path(image_path)
             if not img_p.exists():
                 raise FileNotFoundError(f"Input image file not found: {img_p}")
-            image = Image.open(str(img_p)).convert("RGB")
+            # Preserve alpha and EXIF metadata: the custom SPARC3D prepare_image()
+            # uses transparency to crop the subject before conditioning.
+            with Image.open(str(img_p)) as source_image:
+                image = source_image.copy()
         elif isinstance(image_path, Image.Image):
-            image = image_path.convert("RGB")
+            image = image_path.copy()
         else:
             raise ValueError(f"Invalid image type: {type(image_path)}")
 

@@ -353,3 +353,34 @@ def test_local_hf_encoder_checks_all_sharded_files(tmp_path: Path):
 
     (model_dir / "model-00002-of-00002.safetensors").write_bytes(b"part2")
     assert _has_local_hf_model_weights(model_dir) is True
+
+
+
+def test_process_request_preserves_transparent_reference_image(
+    sample_mesh: Path, tmp_path: Path
+):
+    """Hi3D's conditioner needs the uploaded alpha channel for subject framing."""
+    image_path = tmp_path / "transparent_subject.png"
+    rgba = Image.new("RGBA", (32, 32), (0, 0, 0, 0))
+    rgba.paste(Image.new("RGBA", (12, 20), (220, 80, 40, 255)), (10, 6))
+    rgba.save(image_path)
+
+    adapter = Hi3DImageToRawMeshAdapter()
+    adapter.path_generator.base_output_dir = tmp_path / "outputs"
+    refined_mesh = trimesh.creation.icosphere(subdivisions=1, radius=0.5)
+    mock_output = MagicMock()
+    mock_output.mesh = refined_mesh
+    mock_output.resolution = _LOCKED_INFERENCE_PROFILE["resolution"]
+    mock_pipeline = MagicMock(return_value=mock_output)
+    adapter.pipeline = mock_pipeline
+    adapter.status = ModelStatus.LOADED
+
+    result = adapter._process_request({
+        "image_path": str(image_path),
+        "coarse_mesh_path": str(sample_mesh),
+    })
+
+    passed_image = mock_pipeline.call_args.args[0]
+    assert passed_image.mode == "RGBA"
+    assert np.asarray(passed_image.getchannel("A")).min() == 0
+    assert result["success"] is True

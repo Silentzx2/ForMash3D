@@ -1,3 +1,8 @@
+## 2026-10-29 — Preserve Hi3D image transparency
+
+- Hi3D no longer converts the reference image to RGB before SPARC3D image preparation. The custom conditioner uses alpha to find and frame the subject, so the adapter now preserves the uploaded image mode/alpha and closes source files promptly.
+- Added a mocked inference regression test for transparent PNG input.
+
 ## 2026-10-29 — Partial-checkpoint loading guards
 
 - Hi3D only selects local DINOv2/CLIP directories when a complete single-file or sharded Transformers weight set exists; config-only or incomplete downloads now fall back to the Hub using the writable cache.
