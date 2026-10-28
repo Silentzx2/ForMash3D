@@ -1037,6 +1037,11 @@ verify_all_models() {
     if [ -d "$PRETRAINED_DIR/Taobao3D/TaoFlowForge" ]; then
         verify_directory "$PRETRAINED_DIR/Taobao3D/TaoFlowForge" 3 || all_verified=false
     fi
+
+    print_info "Checking Hi3D..."
+    if [ -d "$PRETRAINED_DIR/Hi3D" ]; then
+        verify_directory "$PRETRAINED_DIR/Hi3D" 2 || all_verified=false
+    fi
     
     if [ "$all_verified" = true ]; then
         print_success "All required models are present and verified!"

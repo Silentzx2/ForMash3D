@@ -233,6 +233,7 @@ cmd_models() {
         printf "  ${CYAN}[15]${NC} Paint3D             - 1K/2K UV texture diffusion model\n"
         printf "  ${CYAN}[16]${NC} Pixal3D             - High-quality pixel-aligned (Not Tested)\n"
         printf "  ${CYAN}[17]${NC} TaoFlowForge        - Progressive native mesh generation (Alibaba)\n"
+        printf "  ${CYAN}[18]${NC} Hi3D                - High-resolution refinement model (Experimental)\n"
         printf "\n"
         printf "  ${CYAN}[a]${NC}  Download ALL models\n"
         printf "  ${CYAN}[v]${NC}  Verify existing models only\n"
@@ -282,8 +283,9 @@ cmd_models() {
                         13) models_csv="${models_csv}ardy," ;;
                         14) models_csv="${models_csv}unique3d," ;;
                         15) models_csv="${models_csv}paint3d," ;;
-                         16) models_csv="${models_csv}pixal3d," ;;
-                         17) models_csv="${models_csv}taoflowforge," ;;
+                        16) models_csv="${models_csv}pixal3d," ;;
+                        17) models_csv="${models_csv}taoflowforge," ;;
+                        18) models_csv="${models_csv}hi3d," ;;
                          *)
                             echo -e "${RED}[✗]${NC} Invalid selection: $num"
                             sleep 1
