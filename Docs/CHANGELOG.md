@@ -1,3 +1,9 @@
+## 2026-10-29 — Hi3D VAE precision and Pixal3D regression test fix
+
+- Hi3D FP16 profile leaves the custom VAE in float32. Autoencoder blocks decorated with `@force_fp32` require float32 weights, avoiding `RuntimeError: expected scalar type Float but found Half` during refinement decode.
+- Added runtime self-healing and vendored autoencoder guards ensuring `LayerNormFP32` and `PointBatchNorm` dynamically align parameter dtypes to the input tensor.
+- Updated AST regression test suite to match Pixal3D's direct run contract.
+
 ## 2026-10-29 — Pixal3D model cache hardening
 
 - DINOv3 feature weights now use an explicit Hugging Face cache under the project pretrained tree, and Torch Hub cache writes (including NAF/MoGe helpers) are redirected to a writable project cache.

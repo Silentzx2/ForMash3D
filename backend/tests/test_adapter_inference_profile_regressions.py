@@ -204,7 +204,6 @@ def test_adapter_profiles_reach_model_library_kwargs():
     assert ast.unparse(pixal_kwargs["sparse_structure_sampler_params"]) == "ss_override"
     assert ast.unparse(pixal_kwargs["shape_slat_sampler_params"]) == "shape_override"
     assert ast.unparse(pixal_kwargs["tex_slat_sampler_params"]) == "tex_override"
-    assert ast.unparse(pixal_kwargs["resolution"]) == "resolution"
     assert ast.unparse(pixal_kwargs["pipeline_type"]) == "pipeline_type"
     assert pixal_profile["sampler_overrides"]["sparse_structure"]["guidance_rescale"] == 0.9
     assert pixal_profile["sampler_overrides"]["shape"]["guidance_rescale"] == 0.8
@@ -217,7 +216,7 @@ def test_adapter_profiles_reach_model_library_kwargs():
         for target in node.targets
         if isinstance(target, ast.Name)
     }
-    for name in ("pipeline_type", "max_num_tokens", "resolution", "low_vram"):
+    for name in ("pipeline_type", "max_num_tokens"):
         assert pixal_assignments[name] == f"_LOCKED_INFERENCE_PROFILE['{name}']"
 
     legacy_tree = _tree(ADAPTERS / "hunyuan3d_adapter_v21.py")

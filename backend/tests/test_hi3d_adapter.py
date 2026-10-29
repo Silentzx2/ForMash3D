@@ -317,7 +317,7 @@ def test_fp16_profile_casts_geometry_weights_and_keeps_high_res_lazy():
     _apply_hi3d_fp16_profile(pipeline)
 
     assert low_res.converted is True
-    assert pipeline.vae.weight.dtype == torch.float16
+    assert pipeline.vae.weight.dtype == torch.float32
     assert pipeline._transformer_1024 is None
     loaded = pipeline._transformer_1024_loader()
     assert loaded is high_res
