@@ -866,8 +866,41 @@ def _patch_flex_gemm_sources():
     try:
         import sys
         import re
-        import flex_gemm
-        flex_gemm_dir = os.path.dirname(flex_gemm.__file__)
+
+        # Locate flex_gemm root without calling `import flex_gemm` (which triggers `from . import kernels`
+        # and fails if post_process.py has a broken header before we can patch it).
+        flex_gemm_dir = None
+        mod = sys.modules.get("flex_gemm")
+        if mod and getattr(mod, "__file__", None):
+            flex_gemm_dir = os.path.dirname(mod.__file__)
+        else:
+            for p in sys.path:
+                candidate = os.path.join(p, "flex_gemm")
+                if os.path.isdir(candidate) and os.path.isfile(os.path.join(candidate, "__init__.py")):
+                    flex_gemm_dir = candidate
+                    break
+
+        if not flex_gemm_dir:
+            try:
+                import importlib.util
+                spec = importlib.util.find_spec("flex_gemm")
+                if spec and spec.submodule_search_locations:
+                    flex_gemm_dir = list(spec.submodule_search_locations)[0]
+                elif spec and spec.origin:
+                    flex_gemm_dir = os.path.dirname(spec.origin)
+            except Exception:
+                pass
+
+        if not flex_gemm_dir:
+            try:
+                import flex_gemm
+                flex_gemm_dir = os.path.dirname(flex_gemm.__file__)
+            except Exception:
+                pass
+
+        if not flex_gemm_dir:
+            return
+
         triton_dir = os.path.join(flex_gemm_dir, "kernels", "triton")
         if not os.path.isdir(triton_dir):
             return
@@ -927,9 +960,7 @@ def _patch_flex_gemm_sources():
                         )
 
                     # Replace `tl.reduce_or(gray_code, axis=0)` with native reduce or inline helper.
-                    if "reduce_or" in new_text or "_or_combine" not in new_text and "tl.reduce(" in new_text:
-                        if "def _or_combine(a, b):" not in new_text:
-                            new_text = "import triton\nimport triton.language as tl\n\n@triton.jit\ndef _or_combine(a, b):\n    return a | b\n\n" + new_text
+                    if "reduce_or" in new_text or "_or_combine" in new_text or "tl.reduce(" in new_text:
                         new_text = re.sub(
                             r"tl\.reduce_or\s*\(\s*([^,]+)\s*,\s*axis\s*=\s*0\s*\)",
                             r"tl.reduce(\1, 0, _or_combine)",
@@ -940,6 +971,10 @@ def _patch_flex_gemm_sources():
                             r"tl.reduce(\1, 0, _or_combine)",
                             new_text,
                         )
+                        if "def _or_combine(a, b):" not in new_text:
+                            new_text = "import triton\nimport triton.language as tl\n\n@triton.jit\ndef _or_combine(a, b):\n    return a | b\n\n" + new_text
+                        elif not new_text.startswith("import triton"):
+                            new_text = "import triton\nimport triton.language as tl\n\n" + new_text
 
                     if new_text != text:
                         with open(fpath, "w", encoding="utf-8") as f:
