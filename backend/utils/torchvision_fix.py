@@ -1278,8 +1278,122 @@ def fix_trellis2_flexible_dual_grid():
     (such as Tesla T4, V100, or modern GPUs where o_voxel._C only has Hopper compute_90 compiled).
     Replaces CUDA hashmap calls (_C.hashmap_insert_3d_idx_as_val_cuda & _C.hashmap_lookup_3d_cuda)
     with a pure PyTorch torch.searchsorted implementation that runs natively on CUDA and CPU.
+    Also patches source on disk and intercepts o_voxel._C functions directly.
     """
     try:
+        import sys
+        import re
+
+        # --- 1. Disk-level patch: rewrite o_voxel/convert/flexible_dual_grid.py in site-packages ---
+        try:
+            cand_files = []
+            for p in sys.path:
+                cand = os.path.join(p, "o_voxel", "convert", "flexible_dual_grid.py")
+                if os.path.isfile(cand):
+                    cand_files.append(cand)
+            try:
+                import site
+                for sp in site.getsitepackages():
+                    cand = os.path.join(sp, "o_voxel", "convert", "flexible_dual_grid.py")
+                    if os.path.isfile(cand) and cand not in cand_files:
+                        cand_files.append(cand)
+            except Exception:
+                pass
+
+            for fpath in cand_files:
+                try:
+                    with open(fpath, "r", encoding="utf-8") as f:
+                        content = f.read()
+                    if "_C.hashmap_insert_3d_idx_as_val_cuda" in content:
+                        old_hash_pattern = re.compile(
+                            r"(\s*# Store active voxels into hashmap\s*\n\s*hashmap = _init_hashmap.*?"
+                            r"_C\.hashmap_insert_3d_idx_as_val_cuda.*?\n)(.*?"
+                            r"connected_voxel_indices = _C\.hashmap_lookup_3d_cuda.*?\n)",
+                            re.DOTALL
+                        )
+                        # Replace the _C calls with inline pure-PyTorch searchsorted logic
+                        repl = (
+                            r"\2"
+                            r"    # Pure PyTorch lookup (bypasses missing sm_75 binary in o_voxel._C)\n"
+                            r"    _W, _H, _D = int(grid_size[0].item()), int(grid_size[1].item()), int(grid_size[2].item())\n"
+                            r"    _stride_x, _stride_y = _H * _D, _D\n"
+                            r"    _ins_keys = coords[:, 0].long() * _stride_x + coords[:, 1].long() * _stride_y + coords[:, 2].long()\n"
+                            r"    _sorted_keys, _sort_perm = torch.sort(_ins_keys)\n"
+                            r"    _q = connected_voxel.reshape(-1, 3)\n"
+                            r"    _qx, _qy, _qz = _q[:, 0].long(), _q[:, 1].long(), _q[:, 2].long()\n"
+                            r"    _in_bound = (_qx >= 0) & (_qx < _W) & (_qy >= 0) & (_qy < _H) & (_qz >= 0) & (_qz < _D)\n"
+                            r"    _q_keys = _qx * _stride_x + _qy * _stride_y + _qz\n"
+                            r"    _pos = torch.searchsorted(_sorted_keys, _q_keys)\n"
+                            r"    _pos = torch.clamp(_pos, 0, max(0, len(_sorted_keys) - 1))\n"
+                            r"    _matched = (_sorted_keys[_pos] == _q_keys) & _in_bound\n"
+                            r"    _res = torch.full((_q.shape[0],), 0xffffffff, dtype=torch.int64, device=coords.device)\n"
+                            r"    _res[_matched] = _sort_perm[_pos[_matched]]\n"
+                            r"    connected_voxel_indices = _res.reshape(M, 4).int()\n"
+                        )
+                        new_content = old_hash_pattern.sub(repl, content)
+                        if new_content != content:
+                            with open(fpath, "w", encoding="utf-8") as f:
+                                f.write(new_content)
+                            logger.info(f"Patched o_voxel flexible_dual_grid.py on disk: {fpath}")
+                except Exception as patch_file_err:
+                    logger.debug(f"Could not patch o_voxel on disk {fpath}: {patch_file_err}")
+        except Exception:
+            pass
+
+        # --- 2. In-memory patch: shim o_voxel._C hashmap functions directly ---
+        try:
+            import o_voxel
+            _C = getattr(o_voxel, "_C", None)
+            if _C is not None:
+                _hashmap_store = {}
+
+                def shim_insert(hashmap_keys, hashmap_vals, coords, W, H, D):
+                    _hashmap_store[id(hashmap_keys)] = (coords, int(W), int(H), int(D))
+
+                def shim_lookup(hashmap_keys, hashmap_vals, query_coords, W, H, D):
+                    entry = _hashmap_store.get(id(hashmap_keys))
+                    if entry is not None:
+                        ins_coords, iW, iH, iD = entry
+                    else:
+                        ins_coords = None
+                        iW, iH, iD = int(W), int(H), int(D)
+
+                    if ins_coords is None:
+                        return torch.full((query_coords.size(0),), 0xffffffff, dtype=hashmap_vals.dtype, device=query_coords.device)
+
+                    stride_y = iD
+                    stride_x = iH * iD
+                    stride_b = iW * iH * iD
+
+                    b = ins_coords[:, 0].long()
+                    x = ins_coords[:, 1].long()
+                    y = ins_coords[:, 2].long()
+                    z = ins_coords[:, 3].long()
+                    ins_keys = b * stride_b + x * stride_x + y * stride_y + z
+                    sorted_keys, sort_perm = torch.sort(ins_keys)
+
+                    qb = query_coords[:, 0].long()
+                    qx = query_coords[:, 1].long()
+                    qy = query_coords[:, 2].long()
+                    qz = query_coords[:, 3].long()
+                    in_bound = (qx >= 0) & (qx < iW) & (qy >= 0) & (qy < iH) & (qz >= 0) & (qz < iD)
+                    q_keys = qb * stride_b + qx * stride_x + qy * stride_y + qz
+
+                    pos = torch.searchsorted(sorted_keys, q_keys)
+                    pos = torch.clamp(pos, 0, max(0, len(sorted_keys) - 1))
+                    matched = (sorted_keys[pos] == q_keys) & in_bound
+
+                    res = torch.full((query_coords.size(0),), 0xffffffff, dtype=torch.int64, device=query_coords.device)
+                    res[matched] = sort_perm[pos[matched]]
+                    return res.to(hashmap_vals.dtype)
+
+                setattr(_C, "hashmap_insert_3d_idx_as_val_cuda", shim_insert)
+                setattr(_C, "hashmap_lookup_3d_cuda", shim_lookup)
+                logger.info("Successfully intercepted o_voxel._C hashmap CUDA functions with pure PyTorch")
+        except Exception:
+            pass
+
+        # --- 3. Python-level module patch for o_voxel.convert and trellis2 ---
         import o_voxel.convert.flexible_dual_grid as fdg
         if getattr(fdg, "_pure_torch_patched", False):
             return True
@@ -1371,11 +1485,11 @@ def fix_trellis2_flexible_dual_grid():
             pos = torch.clamp(pos, 0, max(0, len(sorted_keys) - 1))
             matched = (sorted_keys[pos] == q_keys) & in_bound
 
-            res = torch.full((q.shape[0],), -1, dtype=torch.int64, device=coords.device)
+            res = torch.full((q.shape[0],), 0xffffffff, dtype=torch.int64, device=coords.device)
             res[matched] = sort_perm[pos[matched]]
             connected_voxel_indices = res.reshape(M, 4).int()
 
-            connected_voxel_valid = (connected_voxel_indices != -1).all(dim=1)
+            connected_voxel_valid = (connected_voxel_indices != 0xffffffff).all(dim=1)
             quad_indices = connected_voxel_indices[connected_voxel_valid].long()
             L = quad_indices.shape[0]
 
@@ -1424,6 +1538,14 @@ def fix_trellis2_flexible_dual_grid():
 
         fdg.flexible_dual_grid_to_mesh = pure_torch_flexible_dual_grid_to_mesh
         fdg._pure_torch_patched = True
+
+        # Propagate to all importing modules
+        if "o_voxel.convert" in sys.modules:
+            setattr(sys.modules["o_voxel.convert"], "flexible_dual_grid_to_mesh", pure_torch_flexible_dual_grid_to_mesh)
+        for mod_name, mod_obj in list(sys.modules.items()):
+            if "fdg_vae" in mod_name and mod_obj is not None:
+                setattr(mod_obj, "flexible_dual_grid_to_mesh", pure_torch_flexible_dual_grid_to_mesh)
+
         logger.info("Applied pure PyTorch flexible_dual_grid_to_mesh patch (removes o_voxel._C CUDA architecture requirement)")
         return True
     except Exception as e:
