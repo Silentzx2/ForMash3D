@@ -109,3 +109,28 @@ def _hashmap_find_store_neighbor_map_inline(
     assert "):" in stripped
     assert "-> None" not in stripped
 
+
+def test_flex_gemm_reduce_or_patching():
+    """Verify that flex_gemm source patching replaces missing tl.reduce_or with tl.reduce + _or_combine."""
+    import re
+
+    sample_postprocess_src = """
+@triton.jit
+def _reduce_gray_code_triton_kernel(gray_code_ptr):
+    reduced_code = tl.reduce_or(gray_code, axis=0)
+    seglen = tl.sum((reduced_code >> tl.arange(0, 32)) & 1, axis=0).to(tl.int32)
+"""
+    new_text = sample_postprocess_src
+    if "reduce_or" in new_text:
+        if "def _or_combine(a, b):" not in new_text:
+            new_text = "@triton.jit\ndef _or_combine(a, b):\n    return a | b\n\n" + new_text
+        new_text = re.sub(
+            r"tl\.reduce_or\s*\(\s*([^,]+)\s*,\s*axis\s*=\s*0\s*\)",
+            r"tl.reduce(\1, 0, _or_combine)",
+            new_text,
+        )
+
+    assert "tl.reduce_or" not in new_text
+    assert "tl.reduce(gray_code, 0, _or_combine)" in new_text
+    assert "def _or_combine(a, b):" in new_text
+

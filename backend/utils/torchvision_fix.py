@@ -883,6 +883,23 @@ def _patch_flex_gemm_sources():
                         if target in new_text:
                             new_text = new_text.replace(target, "True")
 
+                    # In post_process.py: Triton 3.x does not have `tl.reduce_or`.
+                    # Replace `tl.reduce_or(gray_code, axis=0)` with native reduce or inline helper.
+                    if "reduce_or" in new_text:
+                        # Define helper or_combine if not present
+                        if "def _or_combine(a, b):" not in new_text:
+                            new_text = "@triton.jit\ndef _or_combine(a, b):\n    return a | b\n\n" + new_text
+                        new_text = re.sub(
+                            r"tl\.reduce_or\s*\(\s*([^,]+)\s*,\s*axis\s*=\s*0\s*\)",
+                            r"tl.reduce(\1, 0, _or_combine)",
+                            new_text,
+                        )
+                        new_text = re.sub(
+                            r"tl\.reduce_or\s*\(\s*([^)]+)\s*\)",
+                            r"tl.reduce(\1, 0, _or_combine)",
+                            new_text,
+                        )
+
                     if new_text != text:
                         with open(fpath, "w", encoding="utf-8") as f:
                             f.write(new_text)
