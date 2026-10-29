@@ -933,6 +933,10 @@ def _patch_flex_gemm_sources():
                             new_text,
                         )
 
+                    # Fix any previous patch that prepended `@triton.jit` without `import triton`
+                    if "@triton.jit\ndef _or_combine" in new_text and not new_text.startswith("import triton"):
+                        new_text = "import triton\nimport triton.language as tl\n\n" + new_text
+
                     if new_text != text:
                         with open(fpath, "w", encoding="utf-8") as f:
                             f.write(new_text)
