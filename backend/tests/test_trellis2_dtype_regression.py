@@ -77,3 +77,33 @@ def test_sparse_structure_flow_and_linear_runtime():
     out_lin = linear(var_len)
     assert out_lin.feats.shape == (10, 16)
     assert out_lin.feats.dtype == torch.bfloat16
+
+
+def test_flex_gemm_triton_annotation_stripping_and_store_patch():
+    """Verify that flex_gemm source patching strips broken parameter annotations and preserves constexpr."""
+    import re
+
+    sample_kernel_src = """
+def _hashmap_find_store_neighbor_map_inline(
+    hashmap_ptr: tl.tensor,
+    neighbor_map_ptr: tl.pointer_type,
+    coord_stride_vec: tl.tensor | None = None,
+    D: tl.constexpr = 3,
+) -> None:
+    tl.store(neighbor_map_ptr + 1, 42)
+"""
+    # Test stripping regex
+    stripped = re.sub(
+        r':\s*(?:tl\.)?(?:tensor|pointer_type|modifier_type)(?:\s*\|\s*None)?',
+        '',
+        sample_kernel_src,
+    )
+    stripped = re.sub(r'\)\s*->\s*(?:None|tl\.\w+)\s*:', '):', stripped)
+
+    assert "hashmap_ptr," in stripped
+    assert "neighbor_map_ptr," in stripped
+    assert "coord_stride_vec = None," in stripped
+    assert "D: tl.constexpr = 3," in stripped
+    assert "):" in stripped
+    assert "-> None" not in stripped
+

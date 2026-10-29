@@ -591,10 +591,11 @@ def _fix_triton_dtype_itemsize():
 
 def _fix_triton_str_to_ty():
     """
-    Patch triton.language.str_to_ty to handle 'ier_type', 'modifier_type', etc. in Triton 3.x.
-    In Triton 3.x, type annotations like `tl.modifier_type` or bare `tl.pointer_type`
-    in kernel signatures cause `str_to_ty` to slice off prefixes and look up
-    'ier_type' in `tys`, raising `KeyError: 'ier_type'`.
+    Patch triton.language.str_to_ty to handle 'ier_type', 'modifier_type', 'pointer_type', 'tensor' in Triton 3.x.
+    In Triton 3.x, type annotations like `tl.modifier_type`, `tl.pointer_type`, or `tl.tensor`
+    in kernel signatures cause `str_to_ty` to slice off prefixes and look up 'ier_type' in `tys`,
+    raising `KeyError: 'ier_type'`, or mapping pointer parameters to integer types.
+    Ensures pointer/tensor types resolve to tl.pointer_type so that `tl.store` receives true pointers.
     """
     try:
         import triton.language as tl
@@ -603,13 +604,22 @@ def _fix_triton_str_to_ty():
             def safe_str_to_ty(name, *args, **kwargs):
                 if isinstance(name, str):
                     cleaned = name.strip()
-                    if cleaned in ("ier_type", "modifier_type", "pointer_type") or cleaned.endswith("ier_type"):
+                    if cleaned in ("pointer_type", "tl.pointer_type") or cleaned.endswith("pointer_type"):
+                        elem_ty = getattr(tl, "int32", getattr(tl, "i32", None))
+                        return tl.pointer_type(elem_ty) if hasattr(tl, "pointer_type") else elem_ty
+                    if cleaned in ("tensor", "tl.tensor") or cleaned.endswith(".tensor"):
+                        elem_ty = getattr(tl, "int32", getattr(tl, "i32", None))
+                        return tl.pointer_type(elem_ty) if hasattr(tl, "pointer_type") else elem_ty
+                    if cleaned in ("ier_type", "modifier_type", "tl.modifier_type") or cleaned.endswith("ier_type"):
                         return getattr(tl, "int32", None) or getattr(tl, "i32", None)
                 try:
                     return orig_str_to_ty(name, *args, **kwargs)
                 except KeyError as e:
                     err_key = str(e).strip("'\"")
-                    if "ier_type" in err_key or "modifier_type" in err_key or "pointer_type" in err_key:
+                    if "pointer_type" in err_key or "tensor" in err_key:
+                        elem_ty = getattr(tl, "int32", getattr(tl, "i32", None))
+                        return tl.pointer_type(elem_ty) if hasattr(tl, "pointer_type") else elem_ty
+                    if "ier_type" in err_key or "modifier_type" in err_key:
                         return getattr(tl, "int32", None) or getattr(tl, "i32", None)
                     raise
 
@@ -621,7 +631,7 @@ def _fix_triton_str_to_ty():
                 mod = sys.modules.get(mod_name)
                 if mod and hasattr(mod, "str_to_ty"):
                     setattr(mod, "str_to_ty", safe_str_to_ty)
-            logger.debug("Patched triton.language.str_to_ty for Triton 3.x 'ier_type' compat")
+            logger.debug("Patched triton.language.str_to_ty for Triton 3.x compat")
     except Exception:
         pass
 
@@ -848,10 +858,21 @@ def _patch_flex_gemm_sources():
                     if file == "hashmap.py" and "_vec_pack_little_endian_to_int32" in new_text:
                         new_text = re.sub(
                             r"def _vec_pack_little_endian_to_int32\([^)]*\)[^:]*:.*?(?=\n(?:def |@|\Z))",
-                            "def _vec_pack_little_endian_to_int32(vec: tl.tensor) -> tl.tensor:\n    return vec\n",
+                            "def _vec_pack_little_endian_to_int32(vec):\n    return vec\n",
                             new_text,
                             flags=re.DOTALL,
                         )
+
+                    # Strip non-constexpr parameter type annotations and return annotations from Triton kernels.
+                    # In Triton 3.x, parameter annotations like `: tl.tensor` or `: tl.pointer_type` cause Triton
+                    # to misinterpret pointer parameters as integer tensor values, leading to:
+                    # `ValueError: Unsupported ptr type <[16, 16], int32> in tl.store`.
+                    new_text = re.sub(
+                        r':\s*(?:tl\.)?(?:tensor|pointer_type|modifier_type)(?:\s*\|\s*None)?',
+                        '',
+                        new_text,
+                    )
+                    new_text = re.sub(r'\)\s*->\s*(?:None|tl\.\w+)\s*:', '):', new_text)
 
                     # Replace static assertion chains with True so compiler never chokes on type comparisons
                     old_chain_itemsize = "vec.dtype.itemsize == 1 or vec.dtype.itemsize == 2 or vec.dtype.itemsize == 4"
@@ -875,6 +896,41 @@ def _patch_flex_gemm_sources():
             for mod_name in list(sys.modules.keys()):
                 if "flex_gemm.kernels.triton" in mod_name:
                     sys.modules.pop(mod_name, None)
+
+            # Evict Triton JIT cache so newly patched kernels recompile fresh
+            try:
+                import shutil
+                cache_dir = os.environ.get("TRITON_CACHE_DIR", os.path.expanduser("~/.triton/cache"))
+                if os.path.isdir(cache_dir):
+                    shutil.rmtree(cache_dir, ignore_errors=True)
+                    logger.info("Cleared Triton cache at %s", cache_dir)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
+def _fix_triton_store():
+    """
+    Defensively guard tl.store against integer tensor pointers in Triton 3.x.
+    """
+    try:
+        import triton.language as tl
+        import triton.language.core as tlc
+        for mod in (tl, tlc):
+            if hasattr(mod, "store"):
+                orig_store = getattr(mod, "store")
+                if not getattr(orig_store, "_safe_patched", False):
+                    def safe_store(pointer, value, *args, **kwargs):
+                        if hasattr(pointer, "type") and not getattr(pointer.type, "is_ptr", lambda: True)():
+                            try:
+                                target_elem_ty = getattr(value, "dtype", getattr(tl, "int32", None))
+                                pointer = pointer.to(tl.pointer_type(target_elem_ty))
+                            except Exception:
+                                pass
+                        return orig_store(pointer, value, *args, **kwargs)
+                    safe_store._safe_patched = True
+                    setattr(mod, "store", safe_store)
     except Exception:
         pass
 
@@ -944,6 +1000,7 @@ def fix_flex_gemm():
     _fix_triton_if()
     _fix_triton_static_assert()
     _fix_triton_assert()
+    _fix_triton_store()
     _patch_flex_gemm_sources()
     _sanitize_flex_gemm_kernel_annotations()
     try:
