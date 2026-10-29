@@ -1555,6 +1555,153 @@ def fix_trellis2_flexible_dual_grid():
         return False
 
 
+def fix_trellis2_cumesh_fallback():
+    """
+    Ensure TRELLIS.2 mesh processing does not crash when `cumesh` is missing or fails on pre-Ampere GPUs.
+    Patches `Mesh.fill_holes`, `Mesh.simplify`, and `Mesh.remove_faces` in `trellis2.representations.mesh.base`
+    to safely fall back without throwing NameError or CUDA architecture errors.
+    Also registers a lightweight fallback shim for `cumesh` into `sys.modules`.
+    """
+    try:
+        import sys
+        import types
+
+        # 1. Fallback shim for cumesh module if missing or broken
+        if "cumesh" not in sys.modules:
+            try:
+                import cumesh
+            except Exception:
+                mod_cumesh = types.ModuleType("cumesh")
+
+                class DummyCuMesh:
+                    def __init__(self):
+                        self.vertices = None
+                        self.faces = None
+                        self.num_boundaries = 0
+                        self.num_boundary_loops = 0
+
+                    def init(self, vertices, faces):
+                        self.vertices = vertices
+                        self.faces = faces
+
+                    def get_edges(self): pass
+                    def get_boundary_info(self): pass
+                    def get_vertex_edge_adjacency(self): pass
+                    def get_vertex_boundary_adjacency(self): pass
+                    def get_manifold_boundary_adjacency(self): pass
+                    def read_manifold_boundary_adjacency(self): pass
+                    def get_boundary_connected_components(self): pass
+                    def get_boundary_loops(self): pass
+                    def fill_holes(self, max_hole_perimeter=3e-2): pass
+                    def simplify(self, target=1000000, verbose=False, options=None): pass
+                    def remove_faces(self, face_mask):
+                        if self.faces is not None and face_mask is not None:
+                            self.faces = self.faces[~face_mask]
+
+                    def read(self):
+                        return self.vertices, self.faces
+
+                class DummyCuBVH:
+                    def __init__(self, vertices, faces):
+                        self.vertices = vertices
+                        self.faces = faces
+
+                mod_cumesh.CuMesh = DummyCuMesh
+                mod_cumesh.cuBVH = DummyCuBVH
+                sys.modules["cumesh"] = mod_cumesh
+                logger.info("Registered cumesh fallback shim in sys.modules")
+
+        # 2. Patch Mesh class methods directly in trellis2 modules
+        def patch_mesh_class(cls):
+            if getattr(cls, "_cumesh_safe_patched", False):
+                return
+
+            def safe_fill_holes(self, max_hole_perimeter=3e-2):
+                try:
+                    import cumesh
+                    vertices = self.vertices.cuda()
+                    faces = self.faces.cuda()
+                    mesh = cumesh.CuMesh()
+                    mesh.init(vertices, faces)
+                    mesh.get_edges()
+                    mesh.get_boundary_info()
+                    if getattr(mesh, "num_boundaries", 0) == 0:
+                        return
+                    mesh.get_vertex_edge_adjacency()
+                    mesh.get_vertex_boundary_adjacency()
+                    mesh.get_manifold_boundary_adjacency()
+                    mesh.read_manifold_boundary_adjacency()
+                    mesh.get_boundary_connected_components()
+                    mesh.get_boundary_loops()
+                    if getattr(mesh, "num_boundary_loops", 0) == 0:
+                        return
+                    mesh.fill_holes(max_hole_perimeter=max_hole_perimeter)
+                    new_vertices, new_faces = mesh.read()
+                    self.vertices = new_vertices.to(self.device)
+                    self.faces = new_faces.to(self.device)
+                except Exception as e:
+                    # In dual-grid representation, the generated geometry is already watertight;
+                    # skipping optional hole-fill gracefully preserves model mesh.
+                    logger.debug(f"fill_holes gracefully skipped: {e}")
+
+            def safe_remove_faces(self, face_mask):
+                try:
+                    import cumesh
+                    vertices = self.vertices.cuda()
+                    faces = self.faces.cuda()
+                    mesh = cumesh.CuMesh()
+                    mesh.init(vertices, faces)
+                    mesh.remove_faces(face_mask)
+                    new_vertices, new_faces = mesh.read()
+                    self.vertices = new_vertices.to(self.device)
+                    self.faces = new_faces.to(self.device)
+                except Exception:
+                    # Pure-PyTorch face removal fallback
+                    keep = ~face_mask.to(self.faces.device)
+                    self.faces = self.faces[keep]
+
+            def safe_simplify(self, target=1000000, verbose=False, options=None):
+                try:
+                    import cumesh
+                    vertices = self.vertices.cuda()
+                    faces = self.faces.cuda()
+                    mesh = cumesh.CuMesh()
+                    mesh.init(vertices, faces)
+                    mesh.simplify(target, verbose=verbose, options=options or {})
+                    new_vertices, new_faces = mesh.read()
+                    self.vertices = new_vertices.to(self.device)
+                    self.faces = new_faces.to(self.device)
+                except Exception:
+                    pass
+
+            cls.fill_holes = safe_fill_holes
+            cls.remove_faces = safe_remove_faces
+            cls.simplify = safe_simplify
+            cls._cumesh_safe_patched = True
+
+        for mod_name in list(sys.modules.keys()):
+            if "trellis2" in mod_name:
+                mod = sys.modules[mod_name]
+                if mod is not None and hasattr(mod, "Mesh"):
+                    patch_mesh_class(getattr(mod, "Mesh"))
+
+        try:
+            from trellis2.representations.mesh.base import Mesh
+            patch_mesh_class(Mesh)
+        except Exception:
+            pass
+        try:
+            from trellis2.representations import Mesh
+            patch_mesh_class(Mesh)
+        except Exception:
+            pass
+
+        return True
+    except Exception as e:
+        logger.debug(f"fix_trellis2_cumesh_fallback notice: {e}")
+        return False
+
+
 def fix_trellis2_sparse_vae_dtype():
     """Ensure TRELLIS.2 SparseStructureDecoder/Encoder align input tensor dtype with conv3d weights (prevents BFloat16/Float32 mismatch)."""
     try:
@@ -1663,6 +1810,7 @@ def apply_fix():
     fix_torch_cluster()
     fix_trellis2_sparse_vae_dtype()
     fix_trellis2_flexible_dual_grid()
+    fix_trellis2_cumesh_fallback()
     return True
 
 

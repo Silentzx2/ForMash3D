@@ -210,16 +210,18 @@ class Trellis2Runner:
                 pretrained_path
             )
 
-            # Auto-align sparse structure decoder input dtype with weights (guards BFloat16/Float32 mismatch)
+            # Auto-align sparse structure decoder input dtype with weights and guard native C++ extensions
             try:
-                from utils.torchvision_fix import fix_trellis2_sparse_vae_dtype, fix_trellis2_flexible_dual_grid
+                from utils.torchvision_fix import fix_trellis2_sparse_vae_dtype, fix_trellis2_flexible_dual_grid, fix_trellis2_cumesh_fallback
                 fix_trellis2_sparse_vae_dtype()
                 fix_trellis2_flexible_dual_grid()
+                fix_trellis2_cumesh_fallback()
             except Exception as patch_err:
                 try:
-                    from backend.utils.torchvision_fix import fix_trellis2_sparse_vae_dtype, fix_trellis2_flexible_dual_grid
+                    from backend.utils.torchvision_fix import fix_trellis2_sparse_vae_dtype, fix_trellis2_flexible_dual_grid, fix_trellis2_cumesh_fallback
                     fix_trellis2_sparse_vae_dtype()
                     fix_trellis2_flexible_dual_grid()
+                    fix_trellis2_cumesh_fallback()
                 except Exception:
                     logger.debug(f"fix_trellis2 notice: {patch_err}")
 
