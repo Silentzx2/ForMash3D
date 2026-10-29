@@ -1394,6 +1394,7 @@ def fix_trellis2_flexible_dual_grid():
             pass
 
         # --- 3. Python-level module patch for o_voxel.convert and trellis2 ---
+        import torch
         import o_voxel.convert.flexible_dual_grid as fdg
         if getattr(fdg, "_pure_torch_patched", False):
             return True
@@ -1412,6 +1413,7 @@ def fix_trellis2_flexible_dual_grid():
             grid_size=None,
             train=False,
         ):
+            import torch
             import numpy as np
 
             # Static variables
