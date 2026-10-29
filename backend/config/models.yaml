@@ -413,7 +413,7 @@ image_to_raw_mesh:
     experimental: true
     capabilities:
       native_topology: false
-      output_resolution: 512
+      output_resolution: 1024
       text_to_3d: false
       image_to_3d: true
       multiview: false
@@ -423,7 +423,7 @@ image_to_raw_mesh:
       mesh_quality_characteristics: [high_resolution_refinement, progressive_sparse_flow]
       preferred_preprocessing: high_fidelity
       preferred_extraction: flexicubes
-      preferred_resolution: 512
+      preferred_resolution: 1024
       preferred_face_budget: high
       recommended_postprocess_profile: high_fidelity
       latency_class: quality
@@ -520,7 +520,7 @@ image_to_textured_mesh:
     alias_of: "hi3d_image_to_raw_mesh"
     capabilities:
       native_topology: false
-      output_resolution: 512
+      output_resolution: 1024
       text_to_3d: false
       image_to_3d: true
       multiview: false
@@ -530,7 +530,7 @@ image_to_textured_mesh:
       mesh_quality_characteristics: [high_resolution_refinement, progressive_sparse_flow]
       preferred_preprocessing: high_fidelity
       preferred_extraction: flexicubes
-      preferred_resolution: 512
+      preferred_resolution: 1024
       preferred_face_budget: high
       recommended_postprocess_profile: high_fidelity
       latency_class: quality

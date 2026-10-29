@@ -64,11 +64,10 @@ def _has_local_hf_model_weights(model_dir: Path) -> bool:
             continue
     return False
 
-# SHORTCUT / PIPELINE STABILITY TEST: Low resolution (512) and 1 step for ultra-fast validation (~5s).
-# AFTER PIPELINE IS STABLE: Change "resolution" back to 1024 and "num_inference_steps" back to 25!
+# Hi3D high-fidelity geometry refinement locked inference profile (original production setting)
 _LOCKED_INFERENCE_PROFILE = {
-    "resolution": 512,  # AFTER PIPELINE IS STABLE: Change back to 1024
-    "num_inference_steps": 1,  # AFTER PIPELINE IS STABLE: Change back to 25
+    "resolution": 1024,
+    "num_inference_steps": 25,
     "seed": 42,
     "sequential_cpu_offload": False,
     "fp16": True,

@@ -1,3 +1,8 @@
+## 2026-10-29 — Restore Hi3D high-fidelity production inference settings
+
+- Restored Hi3D production inference profile to high resolution `1024` and `25` flow steps following successful hardware pipeline verification.
+- Updated `backend/config/models.yaml` and single-source-of-truth contract tests to active `1024` geometry resolution.
+
 ## 2026-10-29 — TRELLIS.2 FlexGEMM Triton 3.x neighbor map pointer fix
 
 - Fixed `ValueError: Unsupported ptr type <[16, 16], int32> in tl.store` during TRELLIS.2 `sample_shape_slat_cascade` upsampling.
