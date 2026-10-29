@@ -212,10 +212,16 @@ class Trellis2Runner:
 
             # Auto-align sparse structure decoder input dtype with weights (guards BFloat16/Float32 mismatch)
             try:
-                from utils.torchvision_fix import fix_trellis2_sparse_vae_dtype
+                from utils.torchvision_fix import fix_trellis2_sparse_vae_dtype, fix_trellis2_flexible_dual_grid
                 fix_trellis2_sparse_vae_dtype()
+                fix_trellis2_flexible_dual_grid()
             except Exception as patch_err:
-                logger.debug(f"fix_trellis2_sparse_vae_dtype notice: {patch_err}")
+                try:
+                    from backend.utils.torchvision_fix import fix_trellis2_sparse_vae_dtype, fix_trellis2_flexible_dual_grid
+                    fix_trellis2_sparse_vae_dtype()
+                    fix_trellis2_flexible_dual_grid()
+                except Exception:
+                    logger.debug(f"fix_trellis2 notice: {patch_err}")
 
             if self.low_vram:
                 self.image_to_3d_pipeline.low_vram = True
