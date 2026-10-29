@@ -35,3 +35,8 @@ Hi3D v1.0 has been integrated as an **experimental model** following explicit us
   - `apply_texture`: `False` (produces geometry only; untextured raw mesh exported)
 - **Hardware Prerequisites:** Linux, Python 3.10, NVIDIA GPU with CUDA compute capability >= 8.0 (Ampere+), 16 GB VRAM reservation. No native CPU inference path exists in upstream kernels; graceful hardware requirement validation and errors are enforced.
 
+
+
+## TRELLIS.2 raw-geometry path
+
+The TRELLIS.2 raw adapter opts into the pipeline's backward-compatible geometry-only mode. Sparse-structure and shape-latent inference remain active, while texture-latent sampling and decoding are skipped. The existing maximum-resolution cascade and its token-budget-based downshift behavior remain unchanged. Texturing stays in the separate TRELLIS.2 painting adapter. The adapter remains the single source of truth for numeric inference settings; GPU output quality, VRAM and latency are unverified until benchmarked on the supported runtime.

@@ -27,29 +27,22 @@ logger = logging.getLogger(__name__)
 # EXPERIMENTAL: selected experimental values, snapshot (2026-10-20) for stress-test; use only for benchmarking.
 # SUPPORTED BY: TRELLIS.2 adapter, EXPERIMENTAL-MODEL-SETTINGS.md section "TRELLIS.2 (raw/image geometry aliases)".
 # ROLLBACK: previous effective values; scheduler strips frontend overrides before adapter applies lock.
-# SHORTCUT / STABILITY TEST MODE: steps=1 for fast pipeline testing (~5s runs).
-# AFTER PIPELINE IS STABLE: Change "steps": 1 back to "steps": 50 in sampler params below!
+# The raw-mesh path runs geometry-only inference; TRELLIS.2 painting is handled separately.
 _LOCKED_INFERENCE_PROFILE = {
     "source_quality": "max",
     "pipeline_type": "1536_cascade",
     "max_num_tokens": 524288,
     "texture_size": 4096,
     "sparse_structure_sampler_params": {
-        "steps": 50,
+        "steps": 25,
         "guidance_strength": 10.0,
         "guidance_rescale": 0.9,
         "rescale_t": 8.0,
     },
     "shape_slat_sampler_params": {
-        "steps": 50,
+        "steps": 25,
         "guidance_strength": 10.0,
         "guidance_rescale": 0.8,
-        "rescale_t": 8.0,
-    },
-    "tex_slat_sampler_params": {
-        "steps": 50,
-        "guidance_strength": 3.5,
-        "guidance_rescale": 0.5,
         "rescale_t": 8.0,
     },
     "decimation_target": -1,
@@ -252,28 +245,8 @@ class Trellis2ImageToRawMeshAdapter(ImageToMeshModel):
             seed = inputs.get("seed", None)
             pipeline_type = str(inputs.get("pipeline_type") or "1536_cascade")
             max_num_tokens = int(inputs.get("max_num_tokens", _LOCKED_INFERENCE_PROFILE["max_num_tokens"]))
-            # SHORTCUT / FAST PIPELINE STABILIZATION MODE:
-            # Set default_steps to 1 so end-to-end inference completes in ~5s instead of ~3m.
-            # AFTER PIPELINE IS STABLE: Change default_steps back to 50 (or 25) for high-detail production mesh.
-            steps = inputs.get("steps") or inputs.get("num_inference_steps")
-            default_steps = int(steps) if steps else 1  # STABILITY TEST: 1 (change back to 50 when stable)
-
-            # AFTER PIPELINE IS STABLE: Change default_steps back to 50 in sampler params
-            sparse_defaults = {
-                "steps": default_steps, "guidance_strength": 10.0,
-                "guidance_rescale": 0.7, "rescale_t": 6.0,
-            }
-            shape_defaults = {
-                "steps": default_steps, "guidance_strength": 10.0,
-                "guidance_rescale": 0.5, "rescale_t": 6.0,
-            }
-            texture_defaults = {
-                "steps": default_steps, "guidance_strength": 3.5,
-                "guidance_rescale": 0.2, "rescale_t": 6.0,
-            }
-            sparse_structure_sampler_params = inputs.get("sparse_structure_sampler_params") or sparse_defaults
-            shape_slat_sampler_params = inputs.get("shape_slat_sampler_params") or shape_defaults
-            tex_slat_sampler_params = inputs.get("tex_slat_sampler_params") or texture_defaults
+            sparse_structure_sampler_params = inputs["sparse_structure_sampler_params"]
+            shape_slat_sampler_params = inputs["shape_slat_sampler_params"]
             
             logger.info(
                 "Generating high-fidelity untextured TRELLIS.2 mesh (pipeline=%s, max_num_tokens=%s, steps=%s)",
@@ -297,7 +270,6 @@ class Trellis2ImageToRawMeshAdapter(ImageToMeshModel):
                 max_num_tokens=max_num_tokens,
                 sparse_structure_sampler_params=sparse_structure_sampler_params,
                 shape_slat_sampler_params=shape_slat_sampler_params,
-                tex_slat_sampler_params=tex_slat_sampler_params,
                 low_vram=low_vram,
             )
             

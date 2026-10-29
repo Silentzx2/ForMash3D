@@ -1,3 +1,12 @@
+## 2026-10-29 — TRELLIS.2 geometry-only raw inference
+
+- Reduced the adapter-owned sparse-structure and shape-SLat sampling schedule to 25 steps. The existing maximum-resolution cascade and token budget remain unchanged, including upstream resolution downshift when the token budget requires it.
+- Added an opt-in geometry-only pipeline mode for the raw-mesh route. It skips texture-SLat sampling and texture-latent decoding, while preserving shape decoding, hole filling, returned vertices/faces, and the existing untextured raw export contract.
+- The standalone TRELLIS.2 painting adapter is unchanged; the vendored pipeline's default mode remains backward-compatible for callers that need PBR attributes.
+- Added source-contract regression coverage. GPU inference, output-quality comparison, peak VRAM, and latency are NOT RUN as part of this GitHub source change.
+
+---
+
 ## 2026-10-27 — Adapter-owned resource controls and documentation repair
 
 - Root cause: the active Generate UI exposed Low-VRAM toggles and the request builder forwarded `low_vram` into adapter inputs even though resource placement is selected by the scheduler.

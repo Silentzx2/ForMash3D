@@ -263,14 +263,15 @@ def test_trellis2_raw_pipeline_receives_adapter_locked_kwargs():
         "max_num_tokens",
         "sparse_structure_sampler_params",
         "shape_slat_sampler_params",
-        "tex_slat_sampler_params",
     ):
         assert argument in kwargs
     assert profile["pipeline_type"] == "1536_cascade"
     assert profile["max_num_tokens"] == 524288
-    assert profile["sparse_structure_sampler_params"]["steps"] in (1, 50)
+    assert profile["sparse_structure_sampler_params"]["steps"] == 25
+    assert profile["shape_slat_sampler_params"]["steps"] == 25
     assert profile["shape_slat_sampler_params"]["guidance_rescale"] == 0.8
-    assert profile["tex_slat_sampler_params"]["guidance_strength"] == 3.5
+    assert "tex_slat_sampler_params" not in profile
+    assert kwargs["raw_mesh_only"] is True
 
 
 def test_paint3d_locks_sampler_settings_but_forwards_caller_seed():
@@ -340,4 +341,51 @@ def test_triposg_locked_profile_and_resolution_clamps():
     assert "max(8, min(8, int(inputs.get('dense_octree_depth', 8))))" in source
     assert "min(10, max(dense_octree_depth, int(inputs.get('hierarchical_octree_depth', 10))))" in source
     assert "outputs[0] is None or len(outputs[0]) == 0" in source
+
+
+def test_trellis2_geometry_only_mode_skips_texture_latents_and_preserves_default_path():
+    adapter_tree = _tree(ADAPTERS / "trellis2_adapter.py")
+    profile = _assignment(adapter_tree, "_LOCKED_INFERENCE_PROFILE")
+    assert profile["pipeline_type"] == "1536_cascade"
+    assert profile["max_num_tokens"] == 524288
+    assert profile["sparse_structure_sampler_params"]["steps"] == 25
+    assert profile["shape_slat_sampler_params"]["steps"] == 25
+
+    runner_source = (ROOT / "backend" / "utils" / "trellis2_utils.py").read_text(encoding="utf-8")
+    assert "geometry_only=raw_mesh_only" in runner_source
+    assert 'sparse_structure_sampler_params=dict(sparse_structure_sampler_params or {})' in runner_source
+    assert 'shape_slat_sampler_params=dict(shape_slat_sampler_params or {})' in runner_source
+    assert '{"steps": 50}' not in runner_source
+
+    pipeline_path = ROOT / "backend" / "thirdparty" / "TRELLIS.2" / "trellis2" / "pipelines" / "trellis2_image_to_3d.py"
+    pipeline_tree = ast.parse(pipeline_path.read_text(encoding="utf-8"))
+    pipeline_method = _find_method(_find_class(pipeline_tree, "Trellis2ImageTo3DPipeline"), "run")
+    defaults = pipeline_method.args.defaults
+    default_by_arg = {
+        arg.arg: default
+        for arg, default in zip(pipeline_method.args.args[-len(defaults):], defaults)
+    } if defaults else {}
+    assert ast.unparse(default_by_arg["geometry_only"]) == "False"
+
+    parents = {}
+    for parent in ast.walk(pipeline_method):
+        for child in ast.iter_child_nodes(parent):
+            parents[child] = parent
+    texture_calls = _calls(pipeline_method, "sample_tex_slat")
+    assert len(texture_calls) == 4
+    for call in texture_calls:
+        node = parents[call]
+        while node is not pipeline_method and not (isinstance(node, ast.If) and ast.unparse(node.test) == "not geometry_only"):
+            node = parents[node]
+        assert isinstance(node, ast.If) and ast.unparse(node.test) == "not geometry_only"
+
+    geometry_branch = next(
+        node for node in ast.walk(pipeline_method)
+        if isinstance(node, ast.If) and ast.unparse(node.test) == "geometry_only"
+        and any(isinstance(child, ast.Call) and isinstance(child.func, ast.Attribute) and child.func.attr == "decode_shape_slat" for child in ast.walk(node))
+    )
+    assert any(isinstance(child, ast.Call) and isinstance(child.func, ast.Attribute) and child.func.attr == "decode_shape_slat" for child in ast.walk(ast.Module(body=geometry_branch.body, type_ignores=[])))
+    assert any(isinstance(child, ast.Call) and isinstance(child.func, ast.Attribute) and child.func.attr == "decode_latent" for child in ast.walk(ast.Module(body=geometry_branch.orelse, type_ignores=[])))
+    assert any(isinstance(child, ast.Call) and isinstance(child.func, ast.Attribute) and child.func.attr == "fill_holes" for child in ast.walk(ast.Module(body=geometry_branch.body, type_ignores=[])))
+
 

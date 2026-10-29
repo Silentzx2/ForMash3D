@@ -1,7 +1,7 @@
 # Architecture — ForMesh 3D
 
 > **Architecture Version**: 0.1.0 (FastAPI + Next.js 16)
-> **Last Verified**: October 22, 2026
+> **Last Verified**: October 29, 2026
 > **Target Environments**: Linux (Ubuntu 20.04/22.04/24.04), Cloud GPU / Local Workstations
 
 ---
@@ -43,7 +43,7 @@ For a behavior change, update the owning implementation and its contract test fi
 - Hunyuan3D-Shape-v2.1 locks the effective dev scheduler values in its adapter: octree resolution 1300, 150 steps, guidance 5.0, 80,000 chunks, and the native dense decoder with marching cubes. These are preserved runtime values, not a claim of GPU or quality validation; the resolution carries OOM risk.
 - TripoSG locks the effective dev scheduler values in its adapter: 100 steps, guidance 9.0, dense depth 10, hierarchical depth 11, and no Flash decoder. Its current depth resolver does not automatically downgrade from supplied VRAM estimates. GPU quality/VRAM benchmarking has not been performed for these settings.
 - Hunyuan3D-DiT-v2-mini-Turbo is adapter-owned like the other migrated profiles: its adapter locks octree resolution 768, 20 steps, guidance 7.5 and 80,000 chunks. These runtime values must not be retuned as a side effect.
-- TRELLIS locks 100 sparse/slat sampling steps, guidance 7.5 and `simplify=0.0` in its adapter; TRELLIS.2 locks the `1536_cascade` pipeline with a 524,288 max-token budget.
+- TRELLIS locks 100 sparse/slat sampling steps, guidance 7.5 and `simplify=0.0` in its adapter; TRELLIS.2 keeps its `1536_cascade` geometry target and existing token budget, while the raw-mesh path skips texture-latent inference and decoding. The separate TRELLIS.2 painting adapter remains unchanged.
 - Pixal3D locks the `1536_cascade` pipeline at resolution 2048; Unique3D locks `input_processing=true`, `do_refine=true` and `expansion_weight=0.1`; TaoFlowForge locks `fill_holes=true` and `offload="auto"` for progressive native mesh generation.
 - The scheduler strips downstream-only target/decimation/remesh controls before adapter inference.
 - Raw extraction ceilings remain model-specific; only explicit hardware safety guards may lower them.
