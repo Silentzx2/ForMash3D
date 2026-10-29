@@ -827,12 +827,13 @@ def _fix_triton_reduce_or():
     FlexGEMM post-processing uses `tl.reduce_or(gray_code, axis=0)`.
     """
     try:
+        import triton
         import triton.language as tl
         import triton.language.core as tlc
         import triton.language.standard as tls
 
         if not hasattr(tl, "reduce_or"):
-            @tl.jit
+            @triton.jit
             def _or_combine(a, b):
                 return a | b
 
@@ -917,9 +918,16 @@ def _patch_flex_gemm_sources():
                             new_text = new_text.replace(target, "True")
 
                     # In post_process.py: Triton 3.x does not have `tl.reduce_or`.
+                    # First, sanitize any broken prior patches that may have prepended `@triton.jit` without imports
+                    if "def _or_combine" in new_text:
+                        new_text = re.sub(
+                            r'^(?:(?:\s*import triton(?:\.language as tl)?\s*\n)*\s*@(?:triton|tl)\.jit\s*\ndef _or_combine\([^)]*\):[^\n]*\n\s*return[^\n]*\n*)+',
+                            '',
+                            new_text,
+                        )
+
                     # Replace `tl.reduce_or(gray_code, axis=0)` with native reduce or inline helper.
-                    if "reduce_or" in new_text:
-                        # Define helper or_combine if not present
+                    if "reduce_or" in new_text or "_or_combine" not in new_text and "tl.reduce(" in new_text:
                         if "def _or_combine(a, b):" not in new_text:
                             new_text = "import triton\nimport triton.language as tl\n\n@triton.jit\ndef _or_combine(a, b):\n    return a | b\n\n" + new_text
                         new_text = re.sub(
@@ -932,10 +940,6 @@ def _patch_flex_gemm_sources():
                             r"tl.reduce(\1, 0, _or_combine)",
                             new_text,
                         )
-
-                    # Fix any previous patch that prepended `@triton.jit` without `import triton`
-                    if "@triton.jit\ndef _or_combine" in new_text and not new_text.startswith("import triton"):
-                        new_text = "import triton\nimport triton.language as tl\n\n" + new_text
 
                     if new_text != text:
                         with open(fpath, "w", encoding="utf-8") as f:
