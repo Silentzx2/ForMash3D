@@ -921,7 +921,7 @@ def _patch_flex_gemm_sources():
                     if "reduce_or" in new_text:
                         # Define helper or_combine if not present
                         if "def _or_combine(a, b):" not in new_text:
-                            new_text = "@triton.jit\ndef _or_combine(a, b):\n    return a | b\n\n" + new_text
+                            new_text = "import triton\nimport triton.language as tl\n\n@triton.jit\ndef _or_combine(a, b):\n    return a | b\n\n" + new_text
                         new_text = re.sub(
                             r"tl\.reduce_or\s*\(\s*([^,]+)\s*,\s*axis\s*=\s*0\s*\)",
                             r"tl.reduce(\1, 0, _or_combine)",
@@ -1035,9 +1035,18 @@ def fix_flex_gemm():
         try:
             from backend.utils.flex_gemm_fallback import install_flex_gemm_shim
             return install_flex_gemm_shim()
-        except Exception as e:
-            print(f"Failed to apply flex_gemm fix: {e}")
-            return False
+        except Exception:
+            try:
+                import sys
+                from pathlib import Path
+                backend_dir = str(Path(__file__).resolve().parents[1])
+                if backend_dir not in sys.path:
+                    sys.path.insert(0, backend_dir)
+                from utils.flex_gemm_fallback import install_flex_gemm_shim
+                return install_flex_gemm_shim()
+            except Exception as e:
+                print(f"Failed to apply flex_gemm fix: {e}")
+                return False
 
 
 def get_grid_sample_3d():
