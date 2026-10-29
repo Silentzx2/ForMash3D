@@ -1326,9 +1326,11 @@ def fix_trellis2_flexible_dual_grid():
                             r"    _pos = torch.searchsorted(_sorted_keys, _q_keys)\n"
                             r"    _pos = torch.clamp(_pos, 0, max(0, len(_sorted_keys) - 1))\n"
                             r"    _matched = (_sorted_keys[_pos] == _q_keys) & _in_bound\n"
-                            r"    _res = torch.full((_q.shape[0],), 0xffffffff, dtype=torch.int64, device=coords.device)\n"
+                            r"    _res = torch.full((_q.shape[0],), -1, dtype=torch.int64, device=coords.device)\n"
                             r"    _res[_matched] = _sort_perm[_pos[_matched]]\n"
-                            r"    connected_voxel_indices = _res.reshape(M, 4).int()\n"
+                            r"    connected_voxel_indices = _res.reshape(M, 4)\n"
+                            r"    connected_voxel_valid = (connected_voxel_indices >= 0).all(dim=1)\n"
+                            r"    quad_indices = connected_voxel_indices[connected_voxel_valid]\n"
                         )
                         new_content = old_hash_pattern.sub(repl, content)
                         if new_content != content:
@@ -1487,11 +1489,11 @@ def fix_trellis2_flexible_dual_grid():
             pos = torch.clamp(pos, 0, max(0, len(sorted_keys) - 1))
             matched = (sorted_keys[pos] == q_keys) & in_bound
 
-            res = torch.full((q.shape[0],), 0xffffffff, dtype=torch.int64, device=coords.device)
+            res = torch.full((q.shape[0],), -1, dtype=torch.int64, device=coords.device)
             res[matched] = sort_perm[pos[matched]]
-            connected_voxel_indices = res.reshape(M, 4).int()
+            connected_voxel_indices = res.reshape(M, 4)
 
-            connected_voxel_valid = (connected_voxel_indices != 0xffffffff).all(dim=1)
+            connected_voxel_valid = (connected_voxel_indices >= 0).all(dim=1)
             quad_indices = connected_voxel_indices[connected_voxel_valid].long()
             L = quad_indices.shape[0]
 
