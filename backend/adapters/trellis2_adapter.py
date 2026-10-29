@@ -35,19 +35,19 @@ _LOCKED_INFERENCE_PROFILE = {
     "max_num_tokens": 524288,
     "texture_size": 4096,
     "sparse_structure_sampler_params": {
-        "steps": 1,  # AFTER PIPELINE IS STABLE: Change back to 50
+        "steps": 50,
         "guidance_strength": 10.0,
         "guidance_rescale": 0.9,
         "rescale_t": 8.0,
     },
     "shape_slat_sampler_params": {
-        "steps": 1,  # AFTER PIPELINE IS STABLE: Change back to 50
+        "steps": 50,
         "guidance_strength": 10.0,
         "guidance_rescale": 0.8,
         "rescale_t": 8.0,
     },
     "tex_slat_sampler_params": {
-        "steps": 1,  # AFTER PIPELINE IS STABLE: Change back to 50
+        "steps": 50,
         "guidance_strength": 3.5,
         "guidance_rescale": 0.5,
         "rescale_t": 8.0,

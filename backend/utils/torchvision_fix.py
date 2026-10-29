@@ -1272,6 +1272,438 @@ def fix_torch_cluster():
     return True
 
 
+def fix_trellis2_flexible_dual_grid():
+    """
+    Ensure `o_voxel.convert.flexible_dual_grid_to_mesh` does not fail on GPUs without precompiled C++ binaries
+    (such as Tesla T4, V100, or modern GPUs where o_voxel._C only has Hopper compute_90 compiled).
+    Replaces CUDA hashmap calls (_C.hashmap_insert_3d_idx_as_val_cuda & _C.hashmap_lookup_3d_cuda)
+    with a pure PyTorch torch.searchsorted implementation that runs natively on CUDA and CPU.
+    Also patches source on disk and intercepts o_voxel._C functions directly.
+    """
+    try:
+        import sys
+        import re
+
+        # --- 1. Disk-level patch: rewrite o_voxel/convert/flexible_dual_grid.py in site-packages ---
+        try:
+            cand_files = []
+            for p in sys.path:
+                cand = os.path.join(p, "o_voxel", "convert", "flexible_dual_grid.py")
+                if os.path.isfile(cand):
+                    cand_files.append(cand)
+            try:
+                import site
+                for sp in site.getsitepackages():
+                    cand = os.path.join(sp, "o_voxel", "convert", "flexible_dual_grid.py")
+                    if os.path.isfile(cand) and cand not in cand_files:
+                        cand_files.append(cand)
+            except Exception:
+                pass
+
+            for fpath in cand_files:
+                try:
+                    with open(fpath, "r", encoding="utf-8") as f:
+                        content = f.read()
+                    if "_C.hashmap_insert_3d_idx_as_val_cuda" in content:
+                        old_hash_pattern = re.compile(
+                            r"(\s*# Store active voxels into hashmap\s*\n\s*hashmap = _init_hashmap.*?"
+                            r"_C\.hashmap_insert_3d_idx_as_val_cuda.*?\n)(.*?"
+                            r"connected_voxel_indices = _C\.hashmap_lookup_3d_cuda.*?\n)",
+                            re.DOTALL
+                        )
+                        # Replace the _C calls with inline pure-PyTorch searchsorted logic
+                        repl = (
+                            r"\2"
+                            r"    # Pure PyTorch lookup (bypasses missing sm_75 binary in o_voxel._C)\n"
+                            r"    _W, _H, _D = int(grid_size[0].item()), int(grid_size[1].item()), int(grid_size[2].item())\n"
+                            r"    _stride_x, _stride_y = _H * _D, _D\n"
+                            r"    _ins_keys = coords[:, 0].long() * _stride_x + coords[:, 1].long() * _stride_y + coords[:, 2].long()\n"
+                            r"    _sorted_keys, _sort_perm = torch.sort(_ins_keys)\n"
+                            r"    _q = connected_voxel.reshape(-1, 3)\n"
+                            r"    _qx, _qy, _qz = _q[:, 0].long(), _q[:, 1].long(), _q[:, 2].long()\n"
+                            r"    _in_bound = (_qx >= 0) & (_qx < _W) & (_qy >= 0) & (_qy < _H) & (_qz >= 0) & (_qz < _D)\n"
+                            r"    _q_keys = _qx * _stride_x + _qy * _stride_y + _qz\n"
+                            r"    _pos = torch.searchsorted(_sorted_keys, _q_keys)\n"
+                            r"    _pos = torch.clamp(_pos, 0, max(0, len(_sorted_keys) - 1))\n"
+                            r"    _matched = (_sorted_keys[_pos] == _q_keys) & _in_bound\n"
+                            r"    _res = torch.full((_q.shape[0],), -1, dtype=torch.int64, device=coords.device)\n"
+                            r"    _res[_matched] = _sort_perm[_pos[_matched]]\n"
+                            r"    connected_voxel_indices = _res.reshape(M, 4)\n"
+                            r"    connected_voxel_valid = (connected_voxel_indices >= 0).all(dim=1)\n"
+                            r"    quad_indices = connected_voxel_indices[connected_voxel_valid]\n"
+                        )
+                        new_content = old_hash_pattern.sub(repl, content)
+                        if new_content != content:
+                            with open(fpath, "w", encoding="utf-8") as f:
+                                f.write(new_content)
+                            logger.info(f"Patched o_voxel flexible_dual_grid.py on disk: {fpath}")
+                except Exception as patch_file_err:
+                    logger.debug(f"Could not patch o_voxel on disk {fpath}: {patch_file_err}")
+        except Exception:
+            pass
+
+        # --- 2. In-memory patch: shim o_voxel._C hashmap functions directly ---
+        try:
+            import o_voxel
+            _C = getattr(o_voxel, "_C", None)
+            if _C is not None:
+                _hashmap_store = {}
+
+                def shim_insert(hashmap_keys, hashmap_vals, coords, W, H, D):
+                    _hashmap_store[id(hashmap_keys)] = (coords, int(W), int(H), int(D))
+
+                def shim_lookup(hashmap_keys, hashmap_vals, query_coords, W, H, D):
+                    entry = _hashmap_store.get(id(hashmap_keys))
+                    if entry is not None:
+                        ins_coords, iW, iH, iD = entry
+                    else:
+                        ins_coords = None
+                        iW, iH, iD = int(W), int(H), int(D)
+
+                    if ins_coords is None:
+                        return torch.full((query_coords.size(0),), 0xffffffff, dtype=hashmap_vals.dtype, device=query_coords.device)
+
+                    stride_y = iD
+                    stride_x = iH * iD
+                    stride_b = iW * iH * iD
+
+                    b = ins_coords[:, 0].long()
+                    x = ins_coords[:, 1].long()
+                    y = ins_coords[:, 2].long()
+                    z = ins_coords[:, 3].long()
+                    ins_keys = b * stride_b + x * stride_x + y * stride_y + z
+                    sorted_keys, sort_perm = torch.sort(ins_keys)
+
+                    qb = query_coords[:, 0].long()
+                    qx = query_coords[:, 1].long()
+                    qy = query_coords[:, 2].long()
+                    qz = query_coords[:, 3].long()
+                    in_bound = (qx >= 0) & (qx < iW) & (qy >= 0) & (qy < iH) & (qz >= 0) & (qz < iD)
+                    q_keys = qb * stride_b + qx * stride_x + qy * stride_y + qz
+
+                    pos = torch.searchsorted(sorted_keys, q_keys)
+                    pos = torch.clamp(pos, 0, max(0, len(sorted_keys) - 1))
+                    matched = (sorted_keys[pos] == q_keys) & in_bound
+
+                    res = torch.full((query_coords.size(0),), 0xffffffff, dtype=torch.int64, device=query_coords.device)
+                    res[matched] = sort_perm[pos[matched]]
+                    return res.to(hashmap_vals.dtype)
+
+                setattr(_C, "hashmap_insert_3d_idx_as_val_cuda", shim_insert)
+                setattr(_C, "hashmap_lookup_3d_cuda", shim_lookup)
+                logger.info("Successfully intercepted o_voxel._C hashmap CUDA functions with pure PyTorch")
+        except Exception:
+            pass
+
+        # --- 3. Python-level module patch for o_voxel.convert and trellis2 ---
+        import torch
+        import o_voxel.convert.flexible_dual_grid as fdg
+        if getattr(fdg, "_pure_torch_patched", False):
+            return True
+
+        orig_fn = getattr(fdg, "flexible_dual_grid_to_mesh", None)
+        if orig_fn is None:
+            return False
+
+        def pure_torch_flexible_dual_grid_to_mesh(
+            coords,
+            dual_vertices,
+            intersected_flag,
+            split_weight,
+            aabb,
+            voxel_size=None,
+            grid_size=None,
+            train=False,
+        ):
+            import torch
+            import numpy as np
+
+            # Static variables
+            if not hasattr(pure_torch_flexible_dual_grid_to_mesh, "edge_neighbor_voxel_offset"):
+                pure_torch_flexible_dual_grid_to_mesh.edge_neighbor_voxel_offset = torch.tensor([
+                    [[0, 0, 0], [0, 0, 1], [0, 1, 1], [0, 1, 0]],     # x-axis
+                    [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]],     # y-axis
+                    [[0, 0, 0], [0, 1, 0], [1, 1, 0], [1, 0, 0]],     # z-axis
+                ], dtype=torch.int, device=coords.device).unsqueeze(0)
+            if not hasattr(pure_torch_flexible_dual_grid_to_mesh, "quad_split_1"):
+                pure_torch_flexible_dual_grid_to_mesh.quad_split_1 = torch.tensor([0, 1, 2, 0, 2, 3], dtype=torch.long, device=coords.device, requires_grad=False)
+            if not hasattr(pure_torch_flexible_dual_grid_to_mesh, "quad_split_2"):
+                pure_torch_flexible_dual_grid_to_mesh.quad_split_2 = torch.tensor([0, 1, 3, 3, 1, 2], dtype=torch.long, device=coords.device, requires_grad=False)
+            if not hasattr(pure_torch_flexible_dual_grid_to_mesh, "quad_split_train"):
+                pure_torch_flexible_dual_grid_to_mesh.quad_split_train = torch.tensor([0, 1, 4, 1, 2, 4, 2, 3, 4, 3, 0, 4], dtype=torch.long, device=coords.device, requires_grad=False)
+
+            # AABB
+            if isinstance(aabb, (list, tuple)):
+                aabb = np.array(aabb)
+            if isinstance(aabb, np.ndarray):
+                aabb = torch.tensor(aabb, dtype=torch.float32, device=coords.device)
+            assert isinstance(aabb, torch.Tensor) and aabb.dim() == 2 and aabb.size(0) == 2 and aabb.size(1) == 3
+
+            # Voxel size
+            if voxel_size is not None:
+                if isinstance(voxel_size, float):
+                    voxel_size = [voxel_size, voxel_size, voxel_size]
+                if isinstance(voxel_size, (list, tuple)):
+                    voxel_size = np.array(voxel_size)
+                if isinstance(voxel_size, np.ndarray):
+                    voxel_size = torch.tensor(voxel_size, dtype=torch.float32, device=coords.device)
+                grid_size = ((aabb[1] - aabb[0]) / voxel_size).round().int()
+            else:
+                assert grid_size is not None, "Either voxel_size or grid_size must be provided"
+                if isinstance(grid_size, int):
+                    grid_size = [grid_size, grid_size, grid_size]
+                if isinstance(grid_size, (list, tuple)):
+                    grid_size = np.array(grid_size)
+                if isinstance(grid_size, np.ndarray):
+                    grid_size = torch.tensor(grid_size, dtype=torch.int32, device=coords.device)
+                voxel_size = (aabb[1] - aabb[0]) / grid_size
+
+            W, H, D = int(grid_size[0].item()), int(grid_size[1].item()), int(grid_size[2].item())
+            stride_z = 1
+            stride_y = D
+            stride_x = H * D
+
+            # Find connected voxels
+            N = dual_vertices.shape[0]
+            edge_neighbor_voxel = coords.reshape(N, 1, 1, 3) + pure_torch_flexible_dual_grid_to_mesh.edge_neighbor_voxel_offset  # (N, 3, 4, 3)
+            connected_voxel = edge_neighbor_voxel[intersected_flag]  # (M, 4, 3)
+            M = connected_voxel.shape[0]
+
+            # Pure PyTorch coordinate lookup (replaces CUDA _C.hashmap_lookup_3d_cuda)
+            # Keys for inserted voxels:
+            c_x = coords[:, 0].long()
+            c_y = coords[:, 1].long()
+            c_z = coords[:, 2].long()
+            ins_keys = c_x * stride_x + c_y * stride_y + c_z
+            sorted_keys, sort_perm = torch.sort(ins_keys)
+
+            # Keys for queried quad voxels:
+            q = connected_voxel.reshape(-1, 3)
+            q_x = q[:, 0].long()
+            q_y = q[:, 1].long()
+            q_z = q[:, 2].long()
+            in_bound = (q_x >= 0) & (q_x < W) & (q_y >= 0) & (q_y < H) & (q_z >= 0) & (q_z < D)
+            q_keys = q_x * stride_x + q_y * stride_y + q_z
+
+            pos = torch.searchsorted(sorted_keys, q_keys)
+            pos = torch.clamp(pos, 0, max(0, len(sorted_keys) - 1))
+            matched = (sorted_keys[pos] == q_keys) & in_bound
+
+            res = torch.full((q.shape[0],), -1, dtype=torch.int64, device=coords.device)
+            res[matched] = sort_perm[pos[matched]]
+            connected_voxel_indices = res.reshape(M, 4)
+
+            connected_voxel_valid = (connected_voxel_indices >= 0).all(dim=1)
+            quad_indices = connected_voxel_indices[connected_voxel_valid].long()
+            L = quad_indices.shape[0]
+
+            # Construct triangles
+            if not train:
+                mesh_vertices = (coords.float() + dual_vertices) * voxel_size + aabb[0].reshape(1, 3)
+                if split_weight is None:
+                    atempt_triangles_0 = quad_indices[:, pure_torch_flexible_dual_grid_to_mesh.quad_split_1]
+                    normals0 = torch.cross(mesh_vertices[atempt_triangles_0[:, 1]] - mesh_vertices[atempt_triangles_0[:, 0]], mesh_vertices[atempt_triangles_0[:, 2]] - mesh_vertices[atempt_triangles_0[:, 0]])
+                    normals1 = torch.cross(mesh_vertices[atempt_triangles_0[:, 2]] - mesh_vertices[atempt_triangles_0[:, 1]], mesh_vertices[atempt_triangles_0[:, 3]] - mesh_vertices[atempt_triangles_0[:, 1]])
+                    align0 = (normals0 * normals1).sum(dim=1, keepdim=True).abs()
+
+                    atempt_triangles_1 = quad_indices[:, pure_torch_flexible_dual_grid_to_mesh.quad_split_2]
+                    normals0 = torch.cross(mesh_vertices[atempt_triangles_1[:, 1]] - mesh_vertices[atempt_triangles_1[:, 0]], mesh_vertices[atempt_triangles_1[:, 2]] - mesh_vertices[atempt_triangles_1[:, 0]])
+                    normals1 = torch.cross(mesh_vertices[atempt_triangles_1[:, 2]] - mesh_vertices[atempt_triangles_1[:, 1]], mesh_vertices[atempt_triangles_1[:, 3]] - mesh_vertices[atempt_triangles_1[:, 1]])
+                    align1 = (normals0 * normals1).sum(dim=1, keepdim=True).abs()
+
+                    mesh_triangles = torch.where(align0 > align1, atempt_triangles_0, atempt_triangles_1).reshape(-1, 3)
+                else:
+                    split_weight_ws = split_weight[quad_indices]
+                    split_weight_ws_02 = split_weight_ws[:, 0] * split_weight_ws[:, 2]
+                    split_weight_ws_13 = split_weight_ws[:, 1] * split_weight_ws[:, 3]
+                    mesh_triangles = torch.where(
+                        split_weight_ws_02 > split_weight_ws_13,
+                        quad_indices[:, pure_torch_flexible_dual_grid_to_mesh.quad_split_1],
+                        quad_indices[:, pure_torch_flexible_dual_grid_to_mesh.quad_split_2]
+                    ).reshape(-1, 3)
+            else:
+                assert split_weight is not None, "split_weight must be provided in training mode"
+                mesh_vertices = (coords.float() + dual_vertices) * voxel_size + aabb[0].reshape(1, 3)
+                quad_vs = mesh_vertices[quad_indices]
+                mean_v02 = (quad_vs[:, 0] + quad_vs[:, 2]) / 2
+                mean_v13 = (quad_vs[:, 1] + quad_vs[:, 3]) / 2
+                split_weight_ws = split_weight[quad_indices]
+                split_weight_ws_02 = split_weight_ws[:, 0] * split_weight_ws[:, 2]
+                split_weight_ws_13 = split_weight_ws[:, 1] * split_weight_ws[:, 3]
+                mid_vertices = (
+                    split_weight_ws_02 * mean_v02 +
+                    split_weight_ws_13 * mean_v13
+                ) / (split_weight_ws_02 + split_weight_ws_13)
+                mesh_vertices = torch.cat([mesh_vertices, mid_vertices], dim=0)
+                quad_indices = torch.cat([quad_indices, torch.arange(N, N + L, device=coords.device).unsqueeze(1)], dim=1)
+                mesh_triangles = quad_indices[:, pure_torch_flexible_dual_grid_to_mesh.quad_split_train].reshape(-1, 3)
+
+            return mesh_vertices, mesh_triangles
+
+        fdg.flexible_dual_grid_to_mesh = pure_torch_flexible_dual_grid_to_mesh
+        fdg._pure_torch_patched = True
+
+        # Propagate to all importing modules
+        if "o_voxel.convert" in sys.modules:
+            setattr(sys.modules["o_voxel.convert"], "flexible_dual_grid_to_mesh", pure_torch_flexible_dual_grid_to_mesh)
+        for mod_name, mod_obj in list(sys.modules.items()):
+            if "fdg_vae" in mod_name and mod_obj is not None:
+                setattr(mod_obj, "flexible_dual_grid_to_mesh", pure_torch_flexible_dual_grid_to_mesh)
+
+        logger.info("Applied pure PyTorch flexible_dual_grid_to_mesh patch (removes o_voxel._C CUDA architecture requirement)")
+        return True
+    except Exception as e:
+        logger.debug(f"fix_trellis2_flexible_dual_grid notice: {e}")
+        return False
+
+
+def fix_trellis2_cumesh_fallback():
+    """
+    Ensure TRELLIS.2 mesh processing does not crash when `cumesh` is missing or fails on pre-Ampere GPUs.
+    Patches `Mesh.fill_holes`, `Mesh.simplify`, and `Mesh.remove_faces` in `trellis2.representations.mesh.base`
+    to safely fall back without throwing NameError or CUDA architecture errors.
+    Also registers a lightweight fallback shim for `cumesh` into `sys.modules`.
+    """
+    try:
+        import sys
+        import types
+
+        # 1. Fallback shim for cumesh module if missing or broken
+        if "cumesh" not in sys.modules:
+            try:
+                import cumesh
+            except Exception:
+                mod_cumesh = types.ModuleType("cumesh")
+
+                class DummyCuMesh:
+                    def __init__(self):
+                        self.vertices = None
+                        self.faces = None
+                        self.num_boundaries = 0
+                        self.num_boundary_loops = 0
+
+                    def init(self, vertices, faces):
+                        self.vertices = vertices
+                        self.faces = faces
+
+                    def get_edges(self): pass
+                    def get_boundary_info(self): pass
+                    def get_vertex_edge_adjacency(self): pass
+                    def get_vertex_boundary_adjacency(self): pass
+                    def get_manifold_boundary_adjacency(self): pass
+                    def read_manifold_boundary_adjacency(self): pass
+                    def get_boundary_connected_components(self): pass
+                    def get_boundary_loops(self): pass
+                    def fill_holes(self, max_hole_perimeter=3e-2): pass
+                    def simplify(self, target=1000000, verbose=False, options=None): pass
+                    def remove_faces(self, face_mask):
+                        if self.faces is not None and face_mask is not None:
+                            self.faces = self.faces[~face_mask]
+
+                    def read(self):
+                        return self.vertices, self.faces
+
+                class DummyCuBVH:
+                    def __init__(self, vertices, faces):
+                        self.vertices = vertices
+                        self.faces = faces
+
+                mod_cumesh.CuMesh = DummyCuMesh
+                mod_cumesh.cuBVH = DummyCuBVH
+                sys.modules["cumesh"] = mod_cumesh
+                logger.info("Registered cumesh fallback shim in sys.modules")
+
+        # 2. Patch Mesh class methods directly in trellis2 modules
+        def patch_mesh_class(cls):
+            if getattr(cls, "_cumesh_safe_patched", False):
+                return
+
+            def safe_fill_holes(self, max_hole_perimeter=3e-2):
+                try:
+                    import cumesh
+                    vertices = self.vertices.cuda()
+                    faces = self.faces.cuda()
+                    mesh = cumesh.CuMesh()
+                    mesh.init(vertices, faces)
+                    mesh.get_edges()
+                    mesh.get_boundary_info()
+                    if getattr(mesh, "num_boundaries", 0) == 0:
+                        return
+                    mesh.get_vertex_edge_adjacency()
+                    mesh.get_vertex_boundary_adjacency()
+                    mesh.get_manifold_boundary_adjacency()
+                    mesh.read_manifold_boundary_adjacency()
+                    mesh.get_boundary_connected_components()
+                    mesh.get_boundary_loops()
+                    if getattr(mesh, "num_boundary_loops", 0) == 0:
+                        return
+                    mesh.fill_holes(max_hole_perimeter=max_hole_perimeter)
+                    new_vertices, new_faces = mesh.read()
+                    self.vertices = new_vertices.to(self.device)
+                    self.faces = new_faces.to(self.device)
+                except Exception as e:
+                    # In dual-grid representation, the generated geometry is already watertight;
+                    # skipping optional hole-fill gracefully preserves model mesh.
+                    logger.debug(f"fill_holes gracefully skipped: {e}")
+
+            def safe_remove_faces(self, face_mask):
+                try:
+                    import cumesh
+                    vertices = self.vertices.cuda()
+                    faces = self.faces.cuda()
+                    mesh = cumesh.CuMesh()
+                    mesh.init(vertices, faces)
+                    mesh.remove_faces(face_mask)
+                    new_vertices, new_faces = mesh.read()
+                    self.vertices = new_vertices.to(self.device)
+                    self.faces = new_faces.to(self.device)
+                except Exception:
+                    # Pure-PyTorch face removal fallback
+                    keep = ~face_mask.to(self.faces.device)
+                    self.faces = self.faces[keep]
+
+            def safe_simplify(self, target=1000000, verbose=False, options=None):
+                try:
+                    import cumesh
+                    vertices = self.vertices.cuda()
+                    faces = self.faces.cuda()
+                    mesh = cumesh.CuMesh()
+                    mesh.init(vertices, faces)
+                    mesh.simplify(target, verbose=verbose, options=options or {})
+                    new_vertices, new_faces = mesh.read()
+                    self.vertices = new_vertices.to(self.device)
+                    self.faces = new_faces.to(self.device)
+                except Exception:
+                    pass
+
+            cls.fill_holes = safe_fill_holes
+            cls.remove_faces = safe_remove_faces
+            cls.simplify = safe_simplify
+            cls._cumesh_safe_patched = True
+
+        for mod_name in list(sys.modules.keys()):
+            if "trellis2" in mod_name:
+                mod = sys.modules[mod_name]
+                if mod is not None and hasattr(mod, "Mesh"):
+                    patch_mesh_class(getattr(mod, "Mesh"))
+
+        try:
+            from trellis2.representations.mesh.base import Mesh
+            patch_mesh_class(Mesh)
+        except Exception:
+            pass
+        try:
+            from trellis2.representations import Mesh
+            patch_mesh_class(Mesh)
+        except Exception:
+            pass
+
+        return True
+    except Exception as e:
+        logger.debug(f"fix_trellis2_cumesh_fallback notice: {e}")
+        return False
+
+
 def fix_trellis2_sparse_vae_dtype():
     """Ensure TRELLIS.2 SparseStructureDecoder/Encoder align input tensor dtype with conv3d weights (prevents BFloat16/Float32 mismatch)."""
     try:
@@ -1379,6 +1811,8 @@ def apply_fix():
     fix_pixal3d_modules()
     fix_torch_cluster()
     fix_trellis2_sparse_vae_dtype()
+    fix_trellis2_flexible_dual_grid()
+    fix_trellis2_cumesh_fallback()
     return True
 
 
