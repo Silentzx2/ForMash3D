@@ -868,7 +868,7 @@ def _patch_flex_gemm_sources():
                     # to misinterpret pointer parameters as integer tensor values, leading to:
                     # `ValueError: Unsupported ptr type <[16, 16], int32> in tl.store`.
                     new_text = re.sub(
-                        r':\s*(?:tl\.)?(?:tensor|pointer_type|modifier_type)(?:\s*\|\s*None)?',
+                        r':\s*(?:tl\.)?(?:tensor|pointer_type|modifier_type|const\b)(?:\s*\|\s*None)?',
                         '',
                         new_text,
                     )
@@ -906,31 +906,6 @@ def _patch_flex_gemm_sources():
                     logger.info("Cleared Triton cache at %s", cache_dir)
             except Exception:
                 pass
-    except Exception:
-        pass
-
-
-def _fix_triton_store():
-    """
-    Defensively guard tl.store against integer tensor pointers in Triton 3.x.
-    """
-    try:
-        import triton.language as tl
-        import triton.language.core as tlc
-        for mod in (tl, tlc):
-            if hasattr(mod, "store"):
-                orig_store = getattr(mod, "store")
-                if not getattr(orig_store, "_safe_patched", False):
-                    def safe_store(pointer, value, *args, **kwargs):
-                        if hasattr(pointer, "type") and not getattr(pointer.type, "is_ptr", lambda: True)():
-                            try:
-                                target_elem_ty = getattr(value, "dtype", getattr(tl, "int32", None))
-                                pointer = pointer.to(tl.pointer_type(target_elem_ty))
-                            except Exception:
-                                pass
-                        return orig_store(pointer, value, *args, **kwargs)
-                    safe_store._safe_patched = True
-                    setattr(mod, "store", safe_store)
     except Exception:
         pass
 
@@ -1000,7 +975,6 @@ def fix_flex_gemm():
     _fix_triton_if()
     _fix_triton_static_assert()
     _fix_triton_assert()
-    _fix_triton_store()
     _patch_flex_gemm_sources()
     _sanitize_flex_gemm_kernel_annotations()
     try:
