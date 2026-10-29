@@ -64,11 +64,10 @@ def _has_local_hf_model_weights(model_dir: Path) -> bool:
             continue
     return False
 
-# SHORTCUT / PIPELINE STABILITY TEST: Low resolution (512) and 1 step for ultra-fast validation (~5s).
-# AFTER PIPELINE IS STABLE: Change "resolution" back to 1024 and "num_inference_steps" back to 25!
+# Hi3D high-fidelity geometry refinement locked inference profile (original production setting)
 _LOCKED_INFERENCE_PROFILE = {
-    "resolution": 512,  # AFTER PIPELINE IS STABLE: Change back to 1024
-    "num_inference_steps": 1,  # AFTER PIPELINE IS STABLE: Change back to 25
+    "resolution": 1024,
+    "num_inference_steps": 25,
     "seed": 42,
     "sequential_cpu_offload": False,
     "fp16": True,
@@ -239,10 +238,9 @@ def _cast_hi3d_fp16_component(component: Any, component_name: str) -> Any:
 
 def _apply_hi3d_fp16_profile(pipeline: Any) -> None:
     """Apply FP16 to loaded geometry weights and wrap the lazy high-resolution loader."""
-    # ponytail: custom Sparc3DPipeline.from_pretrained has no torch_dtype kwarg; use the
-    # vendored transformer's native mixed-precision conversion and cast the VAE post-load.
-    # Upgrade path: add explicit dtype support to the custom third-party loader and its lazy 1024 loader.
-    for component_name in ("transformer_512", "vae"):
+    # Custom Sparc3DPipeline uses native mixed-precision on transformers.
+    # The VAE requires float32 for geometric precision and force_fp32 point ops.
+    for component_name in ("transformer_512",):
         _cast_hi3d_fp16_component(getattr(pipeline, component_name, None), component_name)
 
     transformer_1024 = getattr(pipeline, "_transformer_1024", None)
@@ -369,6 +367,19 @@ class Hi3DAdapter(ImageToMeshModel):
 
                 safe_simplify._safe_patched = True
                 pp._simplify = safe_simplify
+        except Exception:
+            pass
+
+        # Patch sparc3d autoencoder blocks to prevent Float vs Half mismatch under autocast or FP16
+        try:
+            import sparc3d.models.autoencoders.blocks as ae_blocks
+            if not getattr(ae_blocks.LayerNormFP32, "_safe_dtype_patched", False):
+                def _safe_ln_forward(self, x: torch.Tensor) -> torch.Tensor:
+                    weight = self.weight.to(x.dtype) if self.weight is not None else None
+                    bias = self.bias.to(x.dtype) if self.bias is not None else None
+                    return torch.nn.functional.layer_norm(x, self.normalized_shape, weight, bias, self.eps)
+                ae_blocks.LayerNormFP32.forward = ae_blocks.force_fp32(mode="convert_back")(_safe_ln_forward)
+                ae_blocks.LayerNormFP32._safe_dtype_patched = True
         except Exception:
             pass
 

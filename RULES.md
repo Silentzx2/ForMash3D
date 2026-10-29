@@ -35,6 +35,7 @@ Rules:
 - Honest test and verification reporting: Every architectural, pipeline, or contract claim must be verified against actual code and test execution. Classify test/benchmark results accurately as `PASS`, `FAIL`, or `NOT RUN`. If dependencies, weights, or GPUs are missing, explicitly document them as `NOT RUN` with reasons rather than inferring or inventing passes.
 - For UI verification, use agent-browser CLI (`agent-browser`). Never save screenshots or test images to the project root; store them in `/tmp/agent-browser-screenshots/` or scratch directory.
 - When making changes to the `backend/thirdparty` directory, you must push changes to both the main repository and the thirdparty repository to keep them in sync. Never leave one repository ahead of the other.
+- **Model Code Direct Patching over Global Monkeypatching**: Always prefer fixing bugs directly in the specific model's code or third-party source rather than applying broad, global runtime monkeypatches (e.g. patching shared compiler functions or core library primitives like `tl.store`, `tl.load`, or framework internals in `torchvision_fix.py`). Global monkeypatches easily leak across models, breaking sibling pipelines. Local, targeted changes inside the model's own source/adapter guarantee complete isolation with zero cross-contamination.
 
 
 ### Documentation

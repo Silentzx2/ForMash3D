@@ -1,3 +1,21 @@
+## 2026-10-29 — Restore Hi3D high-fidelity production inference settings
+
+- Restored Hi3D production inference profile to high resolution `1024` and `25` flow steps following successful hardware pipeline verification.
+- Updated `backend/config/models.yaml` and single-source-of-truth contract tests to active `1024` geometry resolution.
+
+## 2026-10-29 — TRELLIS.2 FlexGEMM Triton 3.x neighbor map pointer fix
+
+- Fixed `ValueError: Unsupported ptr type <[16, 16], int32> in tl.store` during TRELLIS.2 `sample_shape_slat_cascade` upsampling.
+- In `backend/utils/torchvision_fix.py`, patched `str_to_ty` so `pointer_type` and `tensor` map to true pointer types (`tl.pointer_type`) rather than `int32`, ensuring destination addresses in `_hashmap_find_store_neighbor_map_inline` remain valid pointers.
+- Enhanced disk-level `_patch_flex_gemm_sources()` to strip legacy non-constexpr parameter type annotations (`: tl.tensor`, `: tl.pointer_type`, `: tl.modifier_type`) from flex_gemm Triton kernels, allowing Triton 3.x to dynamically specialize pointer arguments from runtime PyTorch tensors.
+- Added defensive `_fix_triton_store()` and Triton JIT disk cache eviction on source modification.
+
+## 2026-10-29 — Hi3D VAE precision and Pixal3D regression test fix
+
+- Hi3D FP16 profile leaves the custom VAE in float32. Autoencoder blocks decorated with `@force_fp32` require float32 weights, avoiding `RuntimeError: expected scalar type Float but found Half` during refinement decode.
+- Added runtime self-healing and vendored autoencoder guards ensuring `LayerNormFP32` and `PointBatchNorm` dynamically align parameter dtypes to the input tensor.
+- Updated AST regression test suite to match Pixal3D's direct run contract.
+
 ## 2026-10-29 — Pixal3D model cache hardening
 
 - DINOv3 feature weights now use an explicit Hugging Face cache under the project pretrained tree, and Torch Hub cache writes (including NAF/MoGe helpers) are redirected to a writable project cache.

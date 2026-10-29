@@ -591,10 +591,11 @@ def _fix_triton_dtype_itemsize():
 
 def _fix_triton_str_to_ty():
     """
-    Patch triton.language.str_to_ty to handle 'ier_type', 'modifier_type', etc. in Triton 3.x.
-    In Triton 3.x, type annotations like `tl.modifier_type` or bare `tl.pointer_type`
-    in kernel signatures cause `str_to_ty` to slice off prefixes and look up
-    'ier_type' in `tys`, raising `KeyError: 'ier_type'`.
+    Patch triton.language.str_to_ty to handle 'ier_type', 'modifier_type', 'pointer_type', 'tensor' in Triton 3.x.
+    In Triton 3.x, type annotations like `tl.modifier_type`, `tl.pointer_type`, or `tl.tensor`
+    in kernel signatures cause `str_to_ty` to slice off prefixes and look up 'ier_type' in `tys`,
+    raising `KeyError: 'ier_type'`, or mapping pointer parameters to integer types.
+    Ensures pointer/tensor types resolve to tl.pointer_type so that `tl.store` receives true pointers.
     """
     try:
         import triton.language as tl
@@ -603,13 +604,22 @@ def _fix_triton_str_to_ty():
             def safe_str_to_ty(name, *args, **kwargs):
                 if isinstance(name, str):
                     cleaned = name.strip()
-                    if cleaned in ("ier_type", "modifier_type", "pointer_type") or cleaned.endswith("ier_type"):
+                    if cleaned in ("pointer_type", "tl.pointer_type") or cleaned.endswith("pointer_type"):
+                        elem_ty = getattr(tl, "int32", getattr(tl, "i32", None))
+                        return tl.pointer_type(elem_ty) if hasattr(tl, "pointer_type") else elem_ty
+                    if cleaned in ("tensor", "tl.tensor") or cleaned.endswith(".tensor"):
+                        elem_ty = getattr(tl, "int32", getattr(tl, "i32", None))
+                        return tl.pointer_type(elem_ty) if hasattr(tl, "pointer_type") else elem_ty
+                    if cleaned in ("ier_type", "modifier_type", "tl.modifier_type") or cleaned.endswith("ier_type"):
                         return getattr(tl, "int32", None) or getattr(tl, "i32", None)
                 try:
                     return orig_str_to_ty(name, *args, **kwargs)
                 except KeyError as e:
                     err_key = str(e).strip("'\"")
-                    if "ier_type" in err_key or "modifier_type" in err_key or "pointer_type" in err_key:
+                    if "pointer_type" in err_key or "tensor" in err_key:
+                        elem_ty = getattr(tl, "int32", getattr(tl, "i32", None))
+                        return tl.pointer_type(elem_ty) if hasattr(tl, "pointer_type") else elem_ty
+                    if "ier_type" in err_key or "modifier_type" in err_key:
                         return getattr(tl, "int32", None) or getattr(tl, "i32", None)
                     raise
 
@@ -621,7 +631,7 @@ def _fix_triton_str_to_ty():
                 mod = sys.modules.get(mod_name)
                 if mod and hasattr(mod, "str_to_ty"):
                     setattr(mod, "str_to_ty", safe_str_to_ty)
-            logger.debug("Patched triton.language.str_to_ty for Triton 3.x 'ier_type' compat")
+            logger.debug("Patched triton.language.str_to_ty for Triton 3.x compat")
     except Exception:
         pass
 
@@ -810,6 +820,40 @@ def _fix_triton_assert():
         pass
 
 
+def _fix_triton_reduce_or():
+    """
+    Ensure `triton.language.reduce_or` exists for Triton 3.x compatibility.
+    In Triton 3.x, `reduce_or` is not an attribute of `triton.language`.
+    FlexGEMM post-processing uses `tl.reduce_or(gray_code, axis=0)`.
+    """
+    try:
+        import triton
+        import triton.language as tl
+        import triton.language.core as tlc
+        import triton.language.standard as tls
+
+        if not hasattr(tl, "reduce_or"):
+            @triton.jit
+            def _or_combine(a, b):
+                return a | b
+
+            @tlc._tensor_member_fn
+            @tlc.builtin
+            def reduce_or(input, axis=0, keep_dims=False, _builder=None, _generator=None):
+                scalar_ty = input.type.scalar
+                if not scalar_ty.is_int():
+                    raise ValueError("reduce_or only supported for integers")
+                return tlc.reduce(input, axis, _or_combine, keep_dims=keep_dims, _builder=_builder, _generator=_generator)
+
+            setattr(tl, "reduce_or", reduce_or)
+            setattr(tlc, "reduce_or", reduce_or)
+            if hasattr(tls, "__all__") and "reduce_or" not in tls.__all__:
+                setattr(tls, "reduce_or", reduce_or)
+            logger.debug("Registered triton.language.reduce_or builtin for Triton 3.x compat")
+    except Exception:
+        pass
+
+
 def _patch_flex_gemm_sources():
     """
     Patch syntax incompatibilities directly in installed flex_gemm source files on disk.
@@ -822,8 +866,41 @@ def _patch_flex_gemm_sources():
     try:
         import sys
         import re
-        import flex_gemm
-        flex_gemm_dir = os.path.dirname(flex_gemm.__file__)
+
+        # Locate flex_gemm root without calling `import flex_gemm` (which triggers `from . import kernels`
+        # and fails if post_process.py has a broken header before we can patch it).
+        flex_gemm_dir = None
+        mod = sys.modules.get("flex_gemm")
+        if mod and getattr(mod, "__file__", None):
+            flex_gemm_dir = os.path.dirname(mod.__file__)
+        else:
+            for p in sys.path:
+                candidate = os.path.join(p, "flex_gemm")
+                if os.path.isdir(candidate) and os.path.isfile(os.path.join(candidate, "__init__.py")):
+                    flex_gemm_dir = candidate
+                    break
+
+        if not flex_gemm_dir:
+            try:
+                import importlib.util
+                spec = importlib.util.find_spec("flex_gemm")
+                if spec and spec.submodule_search_locations:
+                    flex_gemm_dir = list(spec.submodule_search_locations)[0]
+                elif spec and spec.origin:
+                    flex_gemm_dir = os.path.dirname(spec.origin)
+            except Exception:
+                pass
+
+        if not flex_gemm_dir:
+            try:
+                import flex_gemm
+                flex_gemm_dir = os.path.dirname(flex_gemm.__file__)
+            except Exception:
+                pass
+
+        if not flex_gemm_dir:
+            return
+
         triton_dir = os.path.join(flex_gemm_dir, "kernels", "triton")
         if not os.path.isdir(triton_dir):
             return
@@ -848,10 +925,21 @@ def _patch_flex_gemm_sources():
                     if file == "hashmap.py" and "_vec_pack_little_endian_to_int32" in new_text:
                         new_text = re.sub(
                             r"def _vec_pack_little_endian_to_int32\([^)]*\)[^:]*:.*?(?=\n(?:def |@|\Z))",
-                            "def _vec_pack_little_endian_to_int32(vec: tl.tensor) -> tl.tensor:\n    return vec\n",
+                            "def _vec_pack_little_endian_to_int32(vec):\n    return vec\n",
                             new_text,
                             flags=re.DOTALL,
                         )
+
+                    # Strip non-constexpr parameter type annotations and return annotations from Triton kernels.
+                    # In Triton 3.x, parameter annotations like `: tl.tensor` or `: tl.pointer_type` cause Triton
+                    # to misinterpret pointer parameters as integer tensor values, leading to:
+                    # `ValueError: Unsupported ptr type <[16, 16], int32> in tl.store`.
+                    new_text = re.sub(
+                        r':\s*(?:tl\.)?(?:tensor|pointer_type|modifier_type|const\b)(?:\s*\|\s*None)?',
+                        '',
+                        new_text,
+                    )
+                    new_text = re.sub(r'\)\s*->\s*(?:None|tl\.\w+)\s*:', '):', new_text)
 
                     # Replace static assertion chains with True so compiler never chokes on type comparisons
                     old_chain_itemsize = "vec.dtype.itemsize == 1 or vec.dtype.itemsize == 2 or vec.dtype.itemsize == 4"
@@ -861,6 +949,32 @@ def _patch_flex_gemm_sources():
                     for target in (old_chain_itemsize, old_chain_bitwidth, safe_chain):
                         if target in new_text:
                             new_text = new_text.replace(target, "True")
+
+                    # In post_process.py: Triton 3.x does not have `tl.reduce_or`.
+                    # First, sanitize any broken prior patches that may have prepended `@triton.jit` without imports
+                    if "def _or_combine" in new_text:
+                        new_text = re.sub(
+                            r'^(?:(?:\s*import triton(?:\.language as tl)?\s*\n)*\s*@(?:triton|tl)\.jit\s*\ndef _or_combine\([^)]*\):[^\n]*\n\s*return[^\n]*\n*)+',
+                            '',
+                            new_text,
+                        )
+
+                    # Replace `tl.reduce_or(gray_code, axis=0)` with native reduce or inline helper.
+                    if "reduce_or" in new_text or "_or_combine" in new_text or "tl.reduce(" in new_text:
+                        new_text = re.sub(
+                            r"tl\.reduce_or\s*\(\s*([^,]+)\s*,\s*axis\s*=\s*0\s*\)",
+                            r"tl.reduce(\1, 0, _or_combine)",
+                            new_text,
+                        )
+                        new_text = re.sub(
+                            r"tl\.reduce_or\s*\(\s*([^)]+)\s*\)",
+                            r"tl.reduce(\1, 0, _or_combine)",
+                            new_text,
+                        )
+                        if "def _or_combine(a, b):" not in new_text:
+                            new_text = "import triton\nimport triton.language as tl\n\n@triton.jit\ndef _or_combine(a, b):\n    return a | b\n\n" + new_text
+                        elif not new_text.startswith("import triton"):
+                            new_text = "import triton\nimport triton.language as tl\n\n" + new_text
 
                     if new_text != text:
                         with open(fpath, "w", encoding="utf-8") as f:
@@ -875,6 +989,16 @@ def _patch_flex_gemm_sources():
             for mod_name in list(sys.modules.keys()):
                 if "flex_gemm.kernels.triton" in mod_name:
                     sys.modules.pop(mod_name, None)
+
+            # Evict Triton JIT cache so newly patched kernels recompile fresh
+            try:
+                import shutil
+                cache_dir = os.environ.get("TRITON_CACHE_DIR", os.path.expanduser("~/.triton/cache"))
+                if os.path.isdir(cache_dir):
+                    shutil.rmtree(cache_dir, ignore_errors=True)
+                    logger.info("Cleared Triton cache at %s", cache_dir)
+            except Exception:
+                pass
     except Exception:
         pass
 
@@ -936,16 +1060,50 @@ def fix_flex_gemm():
       5. flex_gemm source files on disk (tl.tensor | None -> None, itemsize -> bitwidth // 8)
       6. flex_gemm Triton kernel parameter annotations
     """
-    _fix_triton_dtype_itemsize()
-    _fix_triton_str_to_ty()
-    _fix_triton_semantic_or()
-    _fix_triton_chained_boolops()
-    _fix_triton_compare()
-    _fix_triton_if()
-    _fix_triton_static_assert()
-    _fix_triton_assert()
-    _patch_flex_gemm_sources()
-    _sanitize_flex_gemm_kernel_annotations()
+    try:
+        _fix_triton_dtype_itemsize()
+    except Exception:
+        pass
+    try:
+        _fix_triton_str_to_ty()
+    except Exception:
+        pass
+    try:
+        _fix_triton_semantic_or()
+    except Exception:
+        pass
+    try:
+        _fix_triton_chained_boolops()
+    except Exception:
+        pass
+    try:
+        _fix_triton_compare()
+    except Exception:
+        pass
+    try:
+        _fix_triton_if()
+    except Exception:
+        pass
+    try:
+        _fix_triton_static_assert()
+    except Exception:
+        pass
+    try:
+        _fix_triton_assert()
+    except Exception:
+        pass
+    try:
+        _fix_triton_reduce_or()
+    except Exception:
+        pass
+    try:
+        _patch_flex_gemm_sources()
+    except Exception:
+        pass
+    try:
+        _sanitize_flex_gemm_kernel_annotations()
+    except Exception:
+        pass
     try:
         from utils.flex_gemm_fallback import install_flex_gemm_shim
         return install_flex_gemm_shim()
@@ -953,9 +1111,19 @@ def fix_flex_gemm():
         try:
             from backend.utils.flex_gemm_fallback import install_flex_gemm_shim
             return install_flex_gemm_shim()
-        except Exception as e:
-            print(f"Failed to apply flex_gemm fix: {e}")
-            return False
+        except Exception:
+            try:
+                import sys
+                from pathlib import Path
+                backend_dir = str(Path(__file__).resolve().parents[1])
+                if backend_dir not in sys.path:
+                    sys.path.insert(0, backend_dir)
+                from utils.flex_gemm_fallback import install_flex_gemm_shim
+                return install_flex_gemm_shim()
+            except Exception as e:
+                import traceback
+                print(f"Failed to apply flex_gemm fix: {e}\n{traceback.format_exc()}")
+                return False
 
 
 def get_grid_sample_3d():

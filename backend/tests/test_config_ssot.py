@@ -59,7 +59,7 @@ def test_hi3d_and_pixal_manifest_resolutions_match_active_adapter_profiles():
     assert manifest["image_to_raw_mesh"]["pixal3d_image_to_raw_mesh"]["capabilities"]["preferred_resolution"] == 1536
     assert manifest["image_to_raw_mesh"]["pixal3d_image_to_3d"]["capabilities"]["output_resolution"] == 1536
     assert manifest["image_to_raw_mesh"]["pixal3d_image_to_3d"]["capabilities"]["preferred_resolution"] == 1536
-    assert manifest["image_to_raw_mesh"]["hi3d_image_to_raw_mesh"]["capabilities"]["output_resolution"] == 512
-    assert manifest["image_to_raw_mesh"]["hi3d_image_to_raw_mesh"]["capabilities"]["preferred_resolution"] == 512
-    assert manifest["image_to_textured_mesh"]["hi3d_image_to_textured_mesh"]["capabilities"]["output_resolution"] == 512
-    assert manifest["image_to_textured_mesh"]["hi3d_image_to_textured_mesh"]["capabilities"]["preferred_resolution"] == 512
+    assert manifest["image_to_raw_mesh"]["hi3d_image_to_raw_mesh"]["capabilities"]["output_resolution"] == 1024
+    assert manifest["image_to_raw_mesh"]["hi3d_image_to_raw_mesh"]["capabilities"]["preferred_resolution"] == 1024
+    assert manifest["image_to_textured_mesh"]["hi3d_image_to_textured_mesh"]["capabilities"]["output_resolution"] == 1024
+    assert manifest["image_to_textured_mesh"]["hi3d_image_to_textured_mesh"]["capabilities"]["preferred_resolution"] == 1024

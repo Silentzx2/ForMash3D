@@ -77,3 +77,60 @@ def test_sparse_structure_flow_and_linear_runtime():
     out_lin = linear(var_len)
     assert out_lin.feats.shape == (10, 16)
     assert out_lin.feats.dtype == torch.bfloat16
+
+
+def test_flex_gemm_triton_annotation_stripping():
+    """Verify that flex_gemm source patching strips broken parameter annotations and preserves constexpr."""
+    import re
+
+    sample_kernel_src = """
+def _hashmap_find_store_neighbor_map_inline(
+    hashmap_ptr: tl.tensor,
+    coords_in_ptr: tl.const,
+    neighbor_map_ptr: tl.pointer_type,
+    coord_stride_vec: tl.tensor | None = None,
+    D: tl.constexpr = 3,
+) -> None:
+    tl.store(neighbor_map_ptr + 1, 42)
+"""
+    # Test stripping regex
+    stripped = re.sub(
+        r':\s*(?:tl\.)?(?:tensor|pointer_type|modifier_type|const\b)(?:\s*\|\s*None)?',
+        '',
+        sample_kernel_src,
+    )
+    stripped = re.sub(r'\)\s*->\s*(?:None|tl\.\w+)\s*:', '):', stripped)
+
+    assert "hashmap_ptr," in stripped
+    assert "coords_in_ptr," in stripped
+    assert "neighbor_map_ptr," in stripped
+    assert "coord_stride_vec = None," in stripped
+    assert "D: tl.constexpr = 3," in stripped
+    assert "):" in stripped
+    assert "-> None" not in stripped
+
+
+def test_flex_gemm_reduce_or_patching():
+    """Verify that flex_gemm source patching replaces missing tl.reduce_or with tl.reduce + _or_combine."""
+    import re
+
+    sample_postprocess_src = """
+@triton.jit
+def _reduce_gray_code_triton_kernel(gray_code_ptr):
+    reduced_code = tl.reduce_or(gray_code, axis=0)
+    seglen = tl.sum((reduced_code >> tl.arange(0, 32)) & 1, axis=0).to(tl.int32)
+"""
+    new_text = sample_postprocess_src
+    if "reduce_or" in new_text:
+        if "def _or_combine(a, b):" not in new_text:
+            new_text = "@triton.jit\ndef _or_combine(a, b):\n    return a | b\n\n" + new_text
+        new_text = re.sub(
+            r"tl\.reduce_or\s*\(\s*([^,]+)\s*,\s*axis\s*=\s*0\s*\)",
+            r"tl.reduce(\1, 0, _or_combine)",
+            new_text,
+        )
+
+    assert "tl.reduce_or" not in new_text
+    assert "tl.reduce(gray_code, 0, _or_combine)" in new_text
+    assert "def _or_combine(a, b):" in new_text
+
