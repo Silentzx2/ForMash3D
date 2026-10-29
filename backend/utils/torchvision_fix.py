@@ -1025,17 +1025,50 @@ def fix_flex_gemm():
       5. flex_gemm source files on disk (tl.tensor | None -> None, itemsize -> bitwidth // 8)
       6. flex_gemm Triton kernel parameter annotations
     """
-    _fix_triton_dtype_itemsize()
-    _fix_triton_str_to_ty()
-    _fix_triton_semantic_or()
-    _fix_triton_chained_boolops()
-    _fix_triton_compare()
-    _fix_triton_if()
-    _fix_triton_static_assert()
-    _fix_triton_assert()
-    _fix_triton_reduce_or()
-    _patch_flex_gemm_sources()
-    _sanitize_flex_gemm_kernel_annotations()
+    try:
+        _fix_triton_dtype_itemsize()
+    except Exception:
+        pass
+    try:
+        _fix_triton_str_to_ty()
+    except Exception:
+        pass
+    try:
+        _fix_triton_semantic_or()
+    except Exception:
+        pass
+    try:
+        _fix_triton_chained_boolops()
+    except Exception:
+        pass
+    try:
+        _fix_triton_compare()
+    except Exception:
+        pass
+    try:
+        _fix_triton_if()
+    except Exception:
+        pass
+    try:
+        _fix_triton_static_assert()
+    except Exception:
+        pass
+    try:
+        _fix_triton_assert()
+    except Exception:
+        pass
+    try:
+        _fix_triton_reduce_or()
+    except Exception:
+        pass
+    try:
+        _patch_flex_gemm_sources()
+    except Exception:
+        pass
+    try:
+        _sanitize_flex_gemm_kernel_annotations()
+    except Exception:
+        pass
     try:
         from utils.flex_gemm_fallback import install_flex_gemm_shim
         return install_flex_gemm_shim()
@@ -1053,7 +1086,8 @@ def fix_flex_gemm():
                 from utils.flex_gemm_fallback import install_flex_gemm_shim
                 return install_flex_gemm_shim()
             except Exception as e:
-                print(f"Failed to apply flex_gemm fix: {e}")
+                import traceback
+                print(f"Failed to apply flex_gemm fix: {e}\n{traceback.format_exc()}")
                 return False
 
 
