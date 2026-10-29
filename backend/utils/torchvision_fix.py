@@ -820,6 +820,39 @@ def _fix_triton_assert():
         pass
 
 
+def _fix_triton_reduce_or():
+    """
+    Ensure `triton.language.reduce_or` exists for Triton 3.x compatibility.
+    In Triton 3.x, `reduce_or` is not an attribute of `triton.language`.
+    FlexGEMM post-processing uses `tl.reduce_or(gray_code, axis=0)`.
+    """
+    try:
+        import triton.language as tl
+        import triton.language.core as tlc
+        import triton.language.standard as tls
+
+        if not hasattr(tl, "reduce_or"):
+            @tl.jit
+            def _or_combine(a, b):
+                return a | b
+
+            @tlc._tensor_member_fn
+            @tlc.builtin
+            def reduce_or(input, axis=0, keep_dims=False, _builder=None, _generator=None):
+                scalar_ty = input.type.scalar
+                if not scalar_ty.is_int():
+                    raise ValueError("reduce_or only supported for integers")
+                return tlc.reduce(input, axis, _or_combine, keep_dims=keep_dims, _builder=_builder, _generator=_generator)
+
+            setattr(tl, "reduce_or", reduce_or)
+            setattr(tlc, "reduce_or", reduce_or)
+            if hasattr(tls, "__all__") and "reduce_or" not in tls.__all__:
+                setattr(tls, "reduce_or", reduce_or)
+            logger.debug("Registered triton.language.reduce_or builtin for Triton 3.x compat")
+    except Exception:
+        pass
+
+
 def _patch_flex_gemm_sources():
     """
     Patch syntax incompatibilities directly in installed flex_gemm source files on disk.
@@ -992,6 +1025,7 @@ def fix_flex_gemm():
     _fix_triton_if()
     _fix_triton_static_assert()
     _fix_triton_assert()
+    _fix_triton_reduce_or()
     _patch_flex_gemm_sources()
     _sanitize_flex_gemm_kernel_annotations()
     try:
