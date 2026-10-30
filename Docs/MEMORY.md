@@ -1,3 +1,9 @@
+## 2026-10-30 — Unique3D raw mesh initialization adjustment
+
+- `ForMesh3D-ThirdParty/Unique3D/scripts/multiview_inference.py`: `fast_geo()` now uses Screened Poisson depth 7 (the existing helper default) rather than 8. This is a targeted, low-risk initialization adjustment; whether it eliminates the reported shards still requires same-input GPU visual verification. No TRELLIS.2 code or profile was changed.
+
+---
+
 ## 2026-10-29 — TRELLIS.2 geometry-only raw inference
 
 - Reduced the adapter-owned sparse-structure and shape-SLat sampling schedule to 25 steps. The existing maximum-resolution cascade and token budget remain unchanged, including upstream resolution downshift when the token budget requires it.
