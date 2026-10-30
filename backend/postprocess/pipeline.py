@@ -28,8 +28,10 @@ from core.utils.file_utils import get_storage_base_dir, resolve_server_file_path
 from core.utils.log_formatters import format_banner, format_box, format_bytes
 from core.utils.artifact_utils import sha256_file
 from core.quality.evaluation import compare_meshes, quality_gate
+from core.config import get_quality_config
 from core.scheduler.resource_planner import configure_cpu_runtime, cpu_count
 from .config import blender_expr_argv, blender_runtime_available
+from .services.memory_safe_decimate import memory_safe_decimate
 from .meshio import apply_angle_weighted_normals, load_mesh, load_mesh_vertex_normals, mesh_stats
 from .physics import build_physics_metadata, collision_options_for_quality, normalize_physics_config
 from .services.auto_retopo import run_auto_retopo
@@ -1756,6 +1758,67 @@ def _build_result(
     return result
 
 
+def _enforce_mesh_limits(mesh: trimesh.Trimesh, model_id: str) -> trimesh.Trimesh:
+    """Decimate mesh if it exceeds per-model vertex/face caps from quality.yaml mesh.limits.
+    Also applies hole repair, winding fix, normal fix, and Taubin smoothing.
+
+    Runs ONCE after adapter extraction, BEFORE saving to master/source.glb.
+    After this, master/source.glb is immutable and never touched again.
+    """
+    cfg = get_quality_config()
+    mesh_cfg = cfg.get("mesh", {})
+
+    max_vertices = int(mesh_cfg.get("max_vertices_per_mesh", 500000))
+    max_faces = int(mesh_cfg.get("max_faces_per_mesh", 1000000))
+    crease_angle = float(
+        mesh_cfg.get("shared", {}).get("feature_edge_angle_deg", 35.0)
+    )
+
+    original_vertices = len(mesh.vertices)
+    original_faces = len(mesh.faces)
+
+    # Repair: fill holes, fix winding, fix normals — applies to every adapter output
+    try:
+        trimesh.repair.fill_holes(mesh)
+        trimesh.repair.fix_winding(mesh)
+        trimesh.repair.fix_normals(mesh)
+        trimesh.smoothing.filter_taubin(mesh, lamb=0.3, nu=-0.34, iterations=4)
+    except Exception as _t_repair_err:
+        logger.warning("[RAW SOURCE] Mesh repair failed for %s: %s", model_id, _t_repair_err)
+
+    # Re-measure after repair (hole fill can add faces)
+    original_vertices = len(mesh.vertices)
+    original_faces = len(mesh.faces)
+
+    if original_vertices <= max_vertices and original_faces <= max_faces:
+        return mesh  # Within caps — no decimation needed
+
+    # Decimate to stay under caps, protecting crease edges
+    target_faces = min(original_faces, max_faces)
+
+    mesh = memory_safe_decimate(
+        mesh,
+        target_faces=target_faces,
+        max_deviation_deg=45.0,
+        crease_angle_deg=crease_angle,
+        max_ram_fraction=0.80,
+    )
+
+    logger.warning(
+        "[RAW SOURCE] Enforced mesh size cap: %s mesh %d verts -> %d verts, "
+        "%d faces -> %d faces (cap: %d verts / %d faces)",
+        model_id,
+        original_vertices,
+        len(mesh.vertices),
+        original_faces,
+        len(mesh.faces),
+        max_vertices,
+        max_faces,
+    )
+
+    return mesh
+
+
 def run_postprocess_job(
     job_id: str,
     generation_result: Dict[str, Any],
@@ -1862,6 +1925,25 @@ def run_postprocess_job(
     if master_refreshed:
         logger.info(
             "[RAW SOURCE] Created/refreshed master/source.glb after SHA-256 identity comparison."
+        )
+
+    # Enforce raw mesh size cap — NO model may exceed 500K vertices / 1M faces
+    # in the immutable master. Decimate post-extraction if the adapter produced
+    # an oversized mesh (e.g. TripoSG ~3.4M vertices).
+    _raw_mesh = load_mesh(str(raw_path), Path(raw_path).name)
+    _enforced_mesh = _enforce_mesh_limits(_raw_mesh, job_inputs.get("model_preference", "unknown"))
+    if len(_enforced_mesh.vertices) < len(_raw_mesh.vertices) or len(_enforced_mesh.faces) < len(
+        _raw_mesh.faces
+    ):
+        _enforced_mesh.export(str(master_path))
+        master_source_sha256 = sha256_file(master_path)
+        logger.info(
+            "[RAW SOURCE] Mesh size cap enforced and saved to master/source.glb: "
+            "%d verts -> %d verts, %d faces -> %d faces",
+            len(_raw_mesh.vertices),
+            len(_enforced_mesh.vertices),
+            len(_raw_mesh.faces),
+            len(_enforced_mesh.faces),
         )
 
     asset_manifest = metadata_dir / "asset.json"
