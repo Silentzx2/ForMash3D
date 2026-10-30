@@ -1164,10 +1164,12 @@ trainers:
                 shutil.move(ret_mesh, final_output_path)
 
             # Filter out tiny disconnected floating debris and ensure clean raw geometry
+            # Note: MeshLab simple_clean_mesh already pruned small components before export;
+            # avoid expensive trimesh.split() here to prevent host RAM OOM on large meshes.
             try:
                 import trimesh
                 clean_mesh = trimesh.load(final_output_path, force="mesh", process=False)
-                if isinstance(clean_mesh, trimesh.Trimesh):
+                if isinstance(clean_mesh, trimesh.Trimesh) and len(clean_mesh.faces) < 250000:
                     comps = clean_mesh.split(only_watertight=False)
                     if len(comps) > 1:
                         total_f = len(clean_mesh.faces)
@@ -1176,8 +1178,8 @@ trainers:
                             clean_mesh = trimesh.util.concatenate(keep)
                         else:
                             clean_mesh = max(comps, key=lambda c: len(c.faces))
-                    clean_mesh.remove_unreferenced_vertices()
-                    clean_mesh.export(final_output_path)
+                        clean_mesh.remove_unreferenced_vertices()
+                        clean_mesh.export(final_output_path)
             except Exception as e_clean:
                 logger.warning(f"Post-cleanup of Unique3D mesh failed: {e_clean}")
 
