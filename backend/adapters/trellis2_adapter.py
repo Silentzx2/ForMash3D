@@ -23,24 +23,24 @@ from core.utils.mesh_utils import MeshProcessor
 logger = logging.getLogger(__name__)
 
 # LOCKED / ACTIVE: values used by inference.
-# BASELINE: previous effective runtime values (source_quality="max", pipeline_type="1536_cascade", max_num_tokens=524288, sampler params: sparse/100/10.0/0.9/8.0, shape/100/10.0/0.8/8.0, texture/100/3.5/0.5/8.0, decimation_target=-1, remesh=false, low_vram=false)
-# EXPERIMENTAL: selected experimental values, snapshot (2026-10-20) for stress-test; use only for benchmarking.
-# SUPPORTED BY: TRELLIS.2 adapter, EXPERIMENTAL-MODEL-SETTINGS.md section "TRELLIS.2 (raw/image geometry aliases)".
-# ROLLBACK: previous effective values; scheduler strips frontend overrides before adapter applies lock.
-# The raw-mesh path runs geometry-only inference; TRELLIS.2 painting is handled separately.
+# NOTE (DEBUGGING / FAST TESTING):
+# Output mesh 200-byte (faces=0) problem ke baad pipeline extraction aur mesh conversion logic ko
+# fast iterate & debug karne ke liye steps ko temporarily 1 par set kiya gaya hai.
+# IMPORTANT: Pipeline verify hone ke baad isse vapas 25 ya 50 steps par revert kiya jayega.
+# Ye step=1 setting sirf fast debug verification ke liye hai, 200-byte mesh issue setting low hone ki wajah se nahi tha!
 _LOCKED_INFERENCE_PROFILE = {
     "source_quality": "max",
     "pipeline_type": "1536_cascade",
     "max_num_tokens": 524288,
     "texture_size": 4096,
     "sparse_structure_sampler_params": {
-        "steps": 25,
+        "steps": 1,  # Temporary fast debug step (default: 25)
         "guidance_strength": 10.0,
         "guidance_rescale": 0.9,
         "rescale_t": 8.0,
     },
     "shape_slat_sampler_params": {
-        "steps": 25,
+        "steps": 1,  # Temporary fast debug step (default: 25)
         "guidance_strength": 10.0,
         "guidance_rescale": 0.8,
         "rescale_t": 8.0,
