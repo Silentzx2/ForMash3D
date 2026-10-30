@@ -132,6 +132,7 @@ interface WorkspaceContextType {
   runUVUnwrapGeneration: (customSettings?: { distortionThreshold?: number; packMethod?: string; outputFormat?: string; saveIndividualParts?: boolean; modelParameters?: Record<string, any> }) => Promise<void>;
   runSegmentation: (customSettings?: { numParts?: number; method?: string; hierarchical?: boolean; outputFormat?: string; modelParameters?: Record<string, any>; modelPreference?: string } | number) => Promise<void>;
   runMeshEditing: (customSettings?: { sourcePrompt?: string; targetPrompt?: string; resolution?: number; bbox?: any; outputFormat?: string; mode?: 'text' | 'image'; targetImageFileId?: string; targetImageBase64?: string; strength?: number }) => Promise<void>;
+  refineMesh: (opts?: { meshPath?: string; imagePath?: string; resolution?: number }) => Promise<void>;
   processBatchQueue: () => Promise<void>;
   cancelBatchProcessing: () => Promise<void>;
   retryFailedBatchItems: () => Promise<void>;
@@ -1996,6 +1997,42 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
     }
   }, [currentAsset, startTask]);
 
+  const refineMesh = useCallback(async (opts: { meshPath?: string; imagePath?: string; resolution?: number } = {}) => {
+    const asset = currentAsset;
+    if (!asset) {
+      toast.error('Refine failed', { description: 'No mesh loaded.' });
+      return;
+    }
+    const meshPath = opts.meshPath ?? asset.source?.viewUrl ?? asset.artifacts?.gameReady ?? asset.artifacts?.source ?? asset.thumbnail;
+    if (!meshPath) {
+      toast.error('Refine failed', { description: 'This mesh has no backend URL to refine.' });
+      return;
+    }
+
+    const localTaskId = startTask('refine', 'Refine with Hi3D');
+
+    try {
+      const data = await getApiClient().refineMesh({
+        jobId: asset.id,
+        meshPath,
+        imagePath: opts.imagePath ?? asset.referenceImage ?? asset.inputImage,
+        resolution: opts.resolution,
+      });
+      bindBackendJob(localTaskId, data.refinement_job_id, {
+        status: 'queued',
+        currentStep: 'Refining geometry with Hi3D...',
+      });
+      setExecutionStep('Refining geometry with Hi3D...');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Refine submission failed';
+      setIsExecuting(false);
+      setExecutionProgress(0);
+      setExecutionStep(message);
+      setActiveTask(prev => (prev ? { ...prev, status: 'failed', currentStep: message, errorMessage: message } : null));
+      toast.error('Refine failed', { description: message });
+    }
+  }, [currentAsset, startTask, bindBackendJob]);
+
    // Batch processing function
     const processBatchQueue = useCallback(async () => {
       const appStore = useAppStore.getState();
@@ -2439,6 +2476,7 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
       runRemeshGeneration, runTextureGeneration,
       runUVUnwrapGeneration, runSegmentation,
       runMeshEditing,
+      refineMesh,
       processBatchQueue,
       cancelBatchProcessing,
       retryFailedBatchItems,
@@ -2446,6 +2484,7 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
       runRemeshGeneration, runTextureGeneration,
       runUVUnwrapGeneration, runSegmentation,
       runMeshEditing,
+      refineMesh,
       processBatchQueue,
       cancelBatchProcessing,
       retryFailedBatchItems]);
