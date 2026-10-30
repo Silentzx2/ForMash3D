@@ -271,7 +271,7 @@ def test_trellis2_raw_pipeline_receives_adapter_locked_kwargs():
     assert profile["shape_slat_sampler_params"]["steps"] == 25
     assert profile["shape_slat_sampler_params"]["guidance_rescale"] == 0.8
     assert "tex_slat_sampler_params" not in profile
-    assert kwargs["raw_mesh_only"] is True
+    assert kwargs["raw_mesh_only"].value is True
 
 
 def test_paint3d_locks_sampler_settings_but_forwards_caller_seed():
