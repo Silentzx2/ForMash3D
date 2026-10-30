@@ -1,187 +1,241 @@
-# MASTER ARCHITECTURE & EXECUTION PLAN: 3D MESH REFINEMENT PIPELINE (HI3D POST-PROCESS & DETAIL ENHANCER)
+# MESH QUALITY PLAN — Post-Processing Pipeline + Raw Mesh Size Limits (Option A)
 
----
+## Goal
+Raw AI mesh (TRELLIS, TRELLIS.2, Hunyuan3D-Shape/Paint/DiT, TripoSG, Unique3D, Pixal3D, Hi3D) ko Tripo AI level quality tak lana — **sirf post-processing ke zariye**, koi adapter inference profile change nahi, koi SDF implement nahi.
 
-## 1. Executive Summary & Root Cause Analysis
+Raw mesh pehle adapter se generate hota hai (full quality, immutable), phir post-processing pipeline usko clean karta hai:
+- Holes fill karna
+- Jagged sharp edges ko smooth karna (Taubin smoothing, 4 iterations)
+- Non-manifold / winding fix
+- Curvature-aware decimation (crease protect >35°)
+- Quad-dominant retopology
+- Normal map baking (master → game_ready)
 
-### 1.1. Core Mathematical Nature of Hi3D (SPARC3D)
-Hi3D / SPARC3D is an autoregressive & diffusion-based **3D geometry enhancement and surface refinement pipeline**. By fundamental mathematical design:
-- It **does not generate raw 3D bounding geometry from scratch**.
-- It requires two compulsory inputs:
-  1. A **Reference 2D Image** (RGB with transparent background).
-  2. A **Coarse Bounding 3D Mesh** (`trimesh.Trimesh` representing the approximate volume, silhouette, and proportions of the object).
-- In the official research paper and reference repository (`Hi3D/demo/coarse_stage.py`), the authors state:
-  > *"SPARC3D refines a coarse mesh; it does not generate one. Any generator that returns a triangle `trimesh.Trimesh` in a roughly unit-scale frame works as input."*
+master/source.glb hamesha immutable rehta hai — kabhi mutate nahi hota.
 
-### 1.2. The Failure Mode Encountered
-When the user triggered Hi3D image-to-3D without an existing coarse mesh:
-1. `backend/adapters/hi3d_adapter.py` had a fallback `_generate_dummy_coarse_mesh()` which generated a small generic icosphere (`radius=0.5`).
-2. The diffusion model attempted to conform this round sphere to complex image contours.
-3. The surface collapsed and flattened during VAE decoding, creating a deformed, flat, line-like structure in the viewer instead of a real object.
+Raw mesh ka vertex/face count 500k se zyada nahi hona chahiye taaki server OOM na ho. Ye limit quality.yaml aur models.yaml mein mesh.limits ke zariye enforce hoti hai.
 
-### 1.3. The Solution
-We introduce an **Automated Two-Stage Generation & Refinement Architecture**:
-- **Stage 1 (Raw Generation)**: Models like TRELLIS.2, Pixal3D, Hunyuan3D, or TripoSG generate the base structure and overall shape.
-- **Stage 2 (Hi3D Refinement)**: The user clicks a dedicated **"✨ Refine with Hi3D (Ultra Detail)"** action directly in the 3D Mesh Viewer. Hi3D takes the generated base mesh + original source image, executes adaptive voxelization, runs Sparc3D diffusion passes (from resolution 64 up to 1024), and produces a crisp, high-density, production-ready mesh.
-- **Storage Lifecycle**: The base mesh is permanently archived with a `_legacy` or `_raw` suffix, while the newly refined mesh becomes the active primary asset in the viewer.
+## Scope (In Scope)
+- Post-processing pipeline: hole filling (`fill_holes`), winding fix (`fix_winding`), normal repair (`fix_normals`), Taubin smoothing (`lamb=0.3, nu=-0.34, iterations=4`)
+- Curvature-aware decimation: protect crease angles >35°, more polys on curved surfaces
+- Quad-dominant retopology (AutoRetopo), target polycount from smart_presets.yaml
+- Normal map baking: high-poly master → low-poly game_ready (OpenGL Y+ tangent space)
+- Frontend QualityBadge: Sharp / Clean / Needs Review
+- Frontend telemetry: triangle count, non-manifold edges, holes, UV utilization
+- Presets derived from backend smart_presets.yaml only (no hardcoded UI values)
+- Raw mesh size limits: `mesh.limits` in quality.yaml + `mesh_limits` per model in models.yaml
+- Code snippets and implementation guides for every fix — all wired code, no placeholders/mocks
 
----
+## Scope (Out of Scope)
+- Adapter inference profiles — NOT CHANGED (_LOCKED_INFERENCE_PROFILE stays exactly as-is)
+- SDF implementation — TripoSG's internal code, not ForMash3D's
+- Scheduler pre-flight validation — NOT IN THIS PLAN (limits enforced post-extraction, not pre-inference)
+- Multi-view image input — removed
+- Cloud, payment, mobile app, real-time collaboration — out of scope
 
-## 2. Mandatory Rules & Invariants (Ponytail Ultra & Gravitas)
+## Model-Wise Quality Gaps & Post-Processing Fixes
 
-1. **Model Code Direct Patching over Global Monkeypatching (SSOT Rule)**:
-   - NEVER monkeypatch global PyTorch, Triton, or Python runtime primitives (such as `tl.store`, `tl.load`, `torch.load`, or compiler AST visitors in `torchvision_fix.py`).
-   - Every model-specific patch or adapter customization must live strictly within `backend/adapters/<model>_adapter.py` or isolated inside `backend/thirdparty/<model>/`.
-2. **Immutability of Original Generations**:
-   - The coarse/base mesh generated by the primary model must never be destroyed or silently overwritten. It is backed up as `<model_id>_<hash>_legacy.glb` before refinement begins.
-3. **Adapter-Owned Refinement Schedule**:
-   - Refinement parameters (steps = 25, resolution ladder = 64 -> 1024, scheduler order) belong strictly to `_LOCKED_INFERENCE_PROFILE` inside `backend/adapters/hi3d_adapter.py`.
-   - The UI does not expose unbacked or arbitrary step sliders.
-4. **Isolated Process Safety**:
-   - Refinement tasks are queued through Redis and executed in the isolated worker process `worker_hi3d_image_to_raw_mesh_gpu0_0`. VRAM is reclaimed immediately upon completion.
-5. **No Visual / UI Regressions**:
-   - The 3D viewer must handle transitions cleanly with a non-blocking loading state, progress updates, and automatic canvas refresh upon job completion.
+### TRELLIS / TRELLIS.2
+**Issues:** Holes in mesh (dress/skirt gaps), jagged sharp edges, sparse voxel artifacts
+**Root cause:** `fill_holes = simplify != 0.0` meant holes never filled at default `simplify=0.0`. No repair after `to_trimesh()`.
+**Fix done (commit df6b01c4):** Unconditional `fill_holes`, `fix_winding`, `fix_normals`, Taubin smoothing (4 iterations) on textured + raw paths.
+**No adapter profile changes needed.**
 
----
+### Hunyuan3D-Shape-v2.1
+**Issues:** Non-manifold geometry, over-smoothed surfaces
+**Fix:** Same post-processing repair (hole fill, winding fix, normals, Taubin smoothing) applied after extraction — same as TRELLIS.
+**No adapter profile changes needed.**
 
-## 3. End-to-End System Architecture
+### Hunyuan3D-DiT-v2-mini-Turbo
+**Issues:** Low-poly output, face reducer caps
+**Fix:** Post-processing repair applied after extraction.
+**No adapter profile changes needed.**
 
-```mermaid
-flowchart TD
-    subgraph UI ["Frontend (Next.js / React)"]
-        A1["User Uploads Image"] --> A2["Selects Base Generator (TRELLIS.2 / Pixal3D)"]
-        A2 --> A3["Clicks 'Generate 3D'"]
-        A4["Mesh Viewer Loads base_mesh.glb"]
-        A4 --> A5["User Clicks '✨ Refine with Hi3D'"]
-        A6["Mesh Viewer Auto-Swaps to refined_mesh.glb"]
-    end
+### Hunyuan3D-Paint-v2.1
+**Issues:** Texture over-baked, low quality texture guide
+**Fix:** Separate mesh generation from texture stage; normal bake from high-poly master → low-poly game_ready.
+**No adapter profile changes needed.**
 
-    subgraph Backend_API ["Backend API Layer (FastAPI)"]
-        B1["POST /api/v1/generate/image-to-mesh"] --> B2["Enqueues Raw Gen Job in Redis"]
-        B3["POST /api/v1/generate/refine-mesh"] --> B4["Validates base_mesh.glb & original_image.png"]
-        B4 --> B5["Archives base_mesh.glb as base_mesh_legacy.glb"]
-        B5 --> B6["Enqueues Refinement Job in Redis with coarse_mesh_path"]
-    end
+### TripoSG
+**Issues:** Deviates from reference image, works bad with low-res/pixel-art, raw mesh can be ~3.4M vertices
+**Fix:** Post-processing repair only — no adapter changes. Raw mesh vertex cap at 500K via models.yaml mesh_limits.
+**No adapter profile changes needed.**
 
-    subgraph Scheduler_Workers ["Isolated Worker Subprocesses"]
-        C1["Raw Generator Worker (TRELLIS.2 / Pixal3D)"] -->|Generates| D1["Storage: base_mesh.glb"]
-        C2["Hi3D Worker (worker_hi3d_gpu0_0)"] -->|Loads original_image + base_mesh.glb| E1["Sparc3D Pipeline"]
-        E1 --> E2["1. Adaptive Voxelize (Mesh -> 64^3 Grid)"]
-        E2 --> E3["2. Guided SPARCDiffusion (25 steps)"]
-        E3 --> E4["3. Autoencoder Latent Decode (FP32 VAE)"]
-        E4 --> E5["4. Post-process & Export GLB"]
-        E5 -->|Saves| D2["Storage: refined_mesh.glb (Primary)"]
-    end
+### Unique3D
+**Issues:** Fragmented wisps, holes, collapsed surface (normal orientation, Poisson depth)
+**Fix done (commit a90561f):** Per-face normal flip + depth-8 Screened Poisson in `fast_geo()`. Post-processing repair applied on top.
+**No adapter profile changes needed.**
 
-    A3 --> B1
-    D1 --> A4
-    A5 --> B3
-    B2 --> C1
-    B6 --> C2
-    D2 --> A6
+### Pixal3D
+**Issues:** Messy topology, spiral lines, bad poly distribution
+**Fix:** Post-processing repair + retopology integration.
+**No adapter profile changes needed.**
+
+### Hi3D (Experimental)
+**Issues:** Needs coarse mesh input, dummy icosphere fallback causes collapse
+**Fix done:** Refinement route with `coarse_mesh_path`, `_legacy.glb` archival. Post-processing repair applies after refinement.
+**No adapter profile changes needed.**
+
+## Raw Mesh Size Limits — backend/config/quality.yaml
+
+Add a `mesh.limits` section. These are the SINGLE SOURCE OF TRUTH for all model vertex/face caps:
+
+```yaml
+quality:
+  mesh:
+    # Hard caps to prevent server OOM from runaway raw mesh generation.
+    # Raw mesh from any adapter must not exceed these limits.
+    max_vertices_per_mesh: 500000      # 500K vertices absolute ceiling for ANY model
+    max_faces_per_mesh: 1000000        # 1M faces absolute ceiling for ANY model
+    max_triangles_per_mesh: 1000000    # 1M triangles absolute ceiling for ANY model
+
+    # Per-model default targets (not hard caps, recommended defaults)
+    default_target_vertices: 200000
+    default_target_faces: 400000
+
+    # Decimation trigger: if raw output exceeds this, auto-decimate BEFORE
+    # saving to master/source.glb. Master stays immutable after this point.
+    decimation_trigger_vertices: 300000
+    decimation_trigger_faces: 600000
+
+    # Crease angle for edge-preserving decimation (shared SSOT)
+    shared:
+      feature_edge_angle_deg: 35.0
+
+    # Immutable raw mesh protection
+    immutable_master: true
+    master_path: "master/source.glb"
+    never_mutate_master: true
 ```
 
----
+## Per-Model Vertex/Face Caps — backend/config/models.yaml
 
-## 4. Detailed Component Implementation Specs
+Add `mesh_limits` to each model entry. These are HARD CAPS — raw mesh from adapter will not exceed these:
 
-### 4.1. Backend API: Dedicated Refinement Route
-**File**: `backend/api/routes/generation.py`
-- Create request schema `RefineMeshRequest`:
-  ```python
-  class RefineMeshRequest(BaseModel):
-      job_id: str = Field(..., description="Job ID of the original generation")
-      mesh_path: Optional[str] = Field(None, description="Direct path or URL of the mesh to refine")
-      image_path: Optional[str] = Field(None, description="Original source image path")
-      resolution: int = Field(default=1024, description="Target refinement resolution (512, 1024, 1536)")
-  ```
-- Endpoint logic:
-  1. Retrieve parent job record from database/Redis.
-  2. Verify source image exists on disk (if omitted, read from parent job metadata).
-  3. Verify coarse mesh `.glb` exists on disk.
-  4. Perform atomic copy: `mesh.glb` -> `mesh_legacy.glb`.
-  5. Enqueue new task for model `hi3d_image_to_raw_mesh` with parameters:
-     ```python
-     params = {
-         "reference_image_path": str(image_path),
-         "coarse_mesh_path": str(legacy_mesh_path),
-         "target_output_path": str(original_mesh_path),
-         "resolution": 1024,
-         "num_inference_steps": 25,
-     }
-     ```
-  6. Return `JobSubmitResponse` with `refinement_job_id`.
+```yaml
+image_to_raw_mesh:
+  triposg_image_to_raw_mesh:
+    mesh_limits:
+      max_vertices: 500000      # TripoSG was producing 3,434,000 — hard cap at 500K
+      max_faces: 1000000
+    vram_requirement: 8192
 
-### 4.2. Backend Adapter: `backend/adapters/hi3d_adapter.py`
-- **Coarse Mesh Normalization**:
-  In `_process_request(inputs)`:
-  - If `coarse_mesh_path` is passed, load mesh with `trimesh.load(..., force="mesh", process=False)`.
-  - Calculate mesh bounds and center:
-    ```python
-    # Center mesh to origin and normalize to unit bounding box [-0.5, 0.5]
-    vertices = coarse_mesh.vertices
-    center = (vertices.max(axis=0) + vertices.min(axis=0)) / 2.0
-    vertices -= center
-    scale = (vertices.max(axis=0) - vertices.min(axis=0)).max()
-    if scale > 0:
-        vertices /= scale
-    coarse_mesh.vertices = vertices
-    ```
-  - Pass the normalized `coarse_mesh` directly to `self.pipeline(image, coarse_mesh, resolution=1024, num_inference_steps=25)`.
-  - Ensure `_generate_dummy_coarse_mesh()` is completely bypassed when a real coarse mesh is supplied.
+  trellis2_image_to_raw_mesh:
+    mesh_limits:
+      max_vertices: 500000
+      max_faces: 1000000
+    vram_requirement: 23552
 
-### 4.3. Storage Asset Lifecycle & Rollback Safety
-**Directory**: `backend/storage/models/meshes/`
-- Standard naming convention:
-  - Base generation: `[model]_[job_id]_[hash].glb`
-  - Archived legacy: `[model]_[job_id]_[hash]_legacy.glb`
-  - Refined output: Overwrites `[model]_[job_id]_[hash].glb` (so existing frontend state and URLs stay valid) OR saves as `[model]_[job_id]_[hash]_refined.glb` with pointer update in job database.
+  trellis_image_to_raw_mesh:
+    mesh_limits:
+      max_vertices: 400000
+      max_faces: 800000
+    vram_requirement: 11776
 
-### 4.4. Frontend UI: Mesh Viewer Refine Action
-**Components**:
-- `features/workspace/components/MeshViewer/ViewerToolbar.tsx`
-- `features/workspace/components/MeshViewer/MeshViewer.tsx`
-- `features/workspace/context/WorkspaceContext.tsx`
+  hunyuan3d_shape_v21_image_to_raw_mesh:
+    mesh_limits:
+      max_vertices: 400000
+      max_faces: 800000
+    vram_requirement: 10240
 
-**UI Behavior**:
-1. When a 3D model finishes generating and is displayed in the canvas:
-   - A golden gradient button appears in the toolbar: **`✨ Refine with Hi3D`**.
-   - Hover tooltip explains: *"Run Hi3D surface diffusion to sharpen geometric features, add crisp micro-details, and polish topology."*
-2. Clicking the button:
-   - Triggers `POST /api/v1/generate/refine-mesh`.
-   - Displays an in-viewer status pill: `"Refining geometry with Hi3D... (Voxel Diffusion Pass)"`.
-   - Starts polling job status using the existing SSE / polling hook.
-3. Upon completion:
-   - Triggers a smooth Three.js asset swap: the viewer disposes of the old buffer geometry and mounts the new refined `.glb`.
-   - Displays a success toast: `"Mesh refined successfully! 6,166+ faces sharpened."`
-   - A secondary download button becomes available in the drawer: *"Download Original Coarse Mesh"*.
+  hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh:
+    mesh_limits:
+      max_vertices: 200000
+      max_faces: 400000
+    vram_requirement: 6144
 
----
+  unique3d_image_to_raw_mesh:
+    mesh_limits:
+      max_vertices: 300000
+      max_faces: 600000
+    vram_requirement: 10240
 
-## 5. Step-by-Step Execution Plan
+  pixal3d_image_to_raw_mesh:
+    mesh_limits:
+      max_vertices: 400000
+      max_faces: 800000
+    vram_requirement: 18432
 
-| Phase | Task Description | Target Files | Verification Method |
-|---|---|---|---|
-| **Phase 1** | Implement `POST /api/v1/generate/refine-mesh` endpoint and payload validation. | `backend/api/routes/generation.py`, `backend/schemas/` | Unit test with mocked job submission. |
-| **Phase 2** | Update `hi3d_adapter.py` with bounding normalization and real coarse mesh ingestion. | `backend/adapters/hi3d_adapter.py` | PyTest passing actual `.glb` into adapter. |
-| **Phase 3** | Implement storage backup helper (`_legacy.glb` archival). | `backend/core/storage/` | Verify both legacy and refined files exist on disk. |
-| **Phase 4** | Add "Refine with Hi3D" button and loading indicator in Viewer Toolbar. | `features/workspace/components/MeshViewer/ViewerToolbar.tsx` | UI verification with mock job state. |
-| **Phase 5** | Connect frontend API client to submit refinement and handle canvas reload. | `features/workspace/hooks/`, `features/workspace/context/` | End-to-end frontend typecheck and build test. |
-| **Phase 6** | End-to-end validation on Dual T4 GPUs (Kaggle). | Whole pipeline | TRELLIS base gen -> Hi3D Refinement -> Verified GLB. |
+  hi3d_image_to_raw_mesh:
+    mesh_limits:
+      max_vertices: 300000
+      max_faces: 600000
+    vram_requirement: 16384
 
----
+image_mesh_painting:
+  trellis_image_mesh_painting:
+    mesh_limits:
+      max_vertices: 500000
+      max_faces: 1000000
+    vram_requirement: 11776
 
-## 6. Measurable Acceptance Criteria
+  trellis2_image_mesh_painting:
+    mesh_limits:
+      max_vertices: 500000
+      max_faces: 1000000
+    vram_requirement: 23552
 
-1. **Geometry Validity**: Refined mesh must have valid watertight or clean manifold topology, zero non-finite vertices, and zero NaN values.
-2. **Visual Fidelity**: Refined mesh must demonstrably resolve sharp features, edges, and silhouettes matching the reference image, eliminating the deformed line/icosphere artifact.
-3. **Asset Preservation**: Original coarse mesh must remain accessible on disk as `*_legacy.glb`.
-4. **Zero Cross-Contamination**: Neither Hi3D nor TRELLIS.2 applies monkeypatches to shared PyTorch/Triton modules.
-5. **Test Suite Green**: All backend regression tests must pass:
-   ```bash
-   /opt/conda/envs/3daigc-api/bin/pytest backend/tests/ -q
-   ```
-6. **Frontend Integrity**: TypeScript compilation and ESLint must pass without warnings or errors:
-   ```bash
-   npm run lint && tsc --noEmit
-   ```
+  hunyuan3d_paint_v21_image_mesh_painting:
+    mesh_limits:
+      max_vertices: 300000
+      max_faces: 600000
+    vram_requirement: 12000
+
+  paint3d:
+    mesh_limits:
+      max_vertices: 400000
+      max_faces: 800000
+    vram_requirement: 12000
+```
+
+## Phase-Wise Execution Plan
+
+### Phase 1: Post-Processing Hardening
+1. Unconditional `trimesh.repair.fill_holes()` after every mesh extraction — DONE for TRELLIS
+2. `fix_winding()` + `fix_normals()` unconditionally — DONE for TRELLIS
+3. Taubin smoothing `lamb=0.3, nu=-0.34, iterations=4` — DONE for TRELLIS (was 2, too gentle)
+4. Apply same repair to Hunyuan-Shape, Hunyuan-DiT, Hunyuan-Paint, TripoSG, Unique3D, Pixal3D, Hi3D adapters
+
+### Phase 2: Decimation & Retopology
+1. Curvature-aware decimation: protect crease angles (>35°), more polys on curved surfaces
+2. Target polycount presets: mobile 20K, game_ready 50K, cinematic 200K (from smart_presets.yaml)
+3. Quad-dominant retopology (AutoRetopo) with target face count
+4. Edge-preserving smoothing — protect sharp features while smoothing flat areas
+
+### Phase 3: Normal Map Baking
+1. High-poly → low-poly normal map bake (OpenGL Y+ tangent space)
+2. Cage/ray distance from quality.yaml (`cage_extrusion=0.02`, `max_ray_distance=0.05`)
+3. UV atlas utilization >= 60% (from quality.yaml)
+4. Packed RMA channels: roughness=G, metallic=B
+5. Flat face normal decode verification (~(0,0,1))
+
+### Phase 4: Frontend Quality UX
+1. QualityBadge: Sharp (feature edge retention >= 0.85), Clean (gate pass), Needs Review
+2. Telemetry: triangle count, non-manifold edges, holes, UV utilization
+3. Presets derived from backend smart_presets.yaml only (no hardcoded UI values)
+4. No inference sliders — adapter-owned
+5. No low-VRAM toggle — scheduler decides
+
+## Single Source of Truth (SSOT)
+- `backend/config/quality.yaml`: hole repair, decimation, gate thresholds, UV, bake, seeds, mesh.limits
+- `backend/config/smart_presets.yaml`: intent presets (mobile/game_ready/cinematic/animation/3d_print/native)
+- `backend/config/models.yaml`: VRAM, capabilities, model facts, mesh_limits per model
+- Frontend mirrors only via `constants/smartPresetFallback.json` guarded by parity test
+
+## Verification (Honest Reporting)
+- `bun tsc --noEmit`: frontend typecheck — NOT RUN YET
+- `python3 -m compileall backend/`: Python syntax — NOT RUN YET
+- `pytest backend/tests/`: backend contract tests — NOT RUN (no torch/GPU)
+- GPU inference / visual quality vs Tripo: NOT RUN (requires CUDA host + checkpoints)
+- Report as `NOT RUN`, never assume passing
+
+## What is NOT in this plan
+- Adapter inference profile changes — _LOCKED_INFERENCE_PROFILE stays as-is
+- SDF implementation — TripoSG's internal code
+- Scheduler pre-flight validation — not in Option A (limits enforced post-extraction)
+- Multi-view / Zero123++ — removed
+- Cloud, payment, mobile, social — out of scope
+
+## Git State
+- `dev` branch: working tree clean
+- Push: NOT DONE — waiting for your review and confirm after you read this plan

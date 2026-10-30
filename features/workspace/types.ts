@@ -19,7 +19,7 @@ export type ToolType =
 export interface ActiveTask {
   id: string;
   isLocal?: boolean;
-  type: 'image-to-3d' | 'segment' | 'remesh' | 'texture' | 'animation' | 'rigging' | 'uv' | 'edit';
+  type: 'image-to-3d' | 'segment' | 'remesh' | 'texture' | 'animation' | 'rigging' | 'uv' | 'edit' | 'refine';
   title: string;
   inputImage?: string;
   inputImageName?: string;

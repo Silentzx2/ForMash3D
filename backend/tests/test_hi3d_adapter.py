@@ -384,3 +384,150 @@ def test_process_request_preserves_transparent_reference_image(
     assert passed_image.mode == "RGBA"
     assert np.asarray(passed_image.getchannel("A")).min() == 0
     assert result["success"] is True
+
+
+def test_refine_passes_real_coarse_mesh_to_pipeline_bypassing_dummy_fallback(
+    sample_image: Path, sample_mesh: Path, tmp_path: Path
+):
+    """A supplied coarse mesh is loaded and forwarded to the pipeline; the dummy envelope path is skipped."""
+    adapter = Hi3DImageToRawMeshAdapter()
+    adapter.path_generator.base_output_dir = tmp_path / "outputs"
+
+    mock_pipeline = MagicMock()
+    mock_output = MagicMock()
+    mock_output.mesh = trimesh.creation.icosphere(subdivisions=1, radius=0.5)
+    mock_output.resolution = _LOCKED_INFERENCE_PROFILE["resolution"]
+    mock_pipeline.return_value = mock_output
+    adapter.pipeline = mock_pipeline
+    adapter.status = ModelStatus.LOADED
+
+    with patch.object(
+        adapter, "_generate_dummy_coarse_mesh", return_value=trimesh.creation.icosphere()
+    ) as dummy:
+        result = adapter._process_request(
+            {
+                "image_path": str(sample_image),
+                "coarse_mesh_path": str(sample_mesh),
+                "output_path": str(tmp_path / "refined.glb"),
+            }
+        )
+        dummy.assert_not_called()
+
+    assert result["success"] is True
+    passed_image, passed_coarse_mesh = mock_pipeline.call_args.args[0], mock_pipeline.call_args.args[1]
+    assert isinstance(passed_image, Image.Image)
+    assert isinstance(passed_coarse_mesh, trimesh.Trimesh)
+    assert len(passed_coarse_mesh.vertices) == 8  # unit box
+
+
+@pytest.mark.parametrize("resolution", [512, 1024, 1536])
+def test_refine_accepts_locked_profile_resolutions(
+    sample_image: Path, sample_mesh: Path, tmp_path: Path, resolution: int
+):
+    """Requested resolutions 512/1024/1536 reach the pipeline unchanged."""
+    adapter = Hi3DImageToRawMeshAdapter()
+    adapter.path_generator.base_output_dir = tmp_path / "outputs"
+
+    mock_pipeline = MagicMock()
+    mock_output = MagicMock()
+    mock_output.mesh = trimesh.creation.icosphere(subdivisions=1, radius=0.5)
+    mock_output.resolution = resolution
+    mock_pipeline.return_value = mock_output
+    adapter.pipeline = mock_pipeline
+    adapter.status = ModelStatus.LOADED
+
+    adapter._process_request(
+        {
+            "image_path": str(sample_image),
+            "coarse_mesh_path": str(sample_mesh),
+            "resolution": resolution,
+            "output_path": str(tmp_path / f"refined_{resolution}.glb"),
+        }
+    )
+    assert mock_pipeline.call_args.kwargs["resolution"] == resolution
+
+
+def test_refine_invalid_resolution_defaults_to_1024(
+    sample_image: Path, sample_mesh: Path, tmp_path: Path
+):
+    """Resolutions outside the locked profile fall back to the production default (1024)."""
+    adapter = Hi3DImageToRawMeshAdapter()
+    adapter.path_generator.base_output_dir = tmp_path / "outputs"
+
+    mock_pipeline = MagicMock()
+    mock_output = MagicMock()
+    mock_output.mesh = trimesh.creation.icosphere(subdivisions=1, radius=0.5)
+    mock_output.resolution = 1024
+    mock_pipeline.return_value = mock_output
+    adapter.pipeline = mock_pipeline
+    adapter.status = ModelStatus.LOADED
+
+    adapter._process_request(
+        {
+            "image_path": str(sample_image),
+            "coarse_mesh_path": str(sample_mesh),
+            "resolution": 9999,
+            "output_path": str(tmp_path / "refined_fallback.glb"),
+        }
+    )
+    assert mock_pipeline.call_args.kwargs["resolution"] == 1024
+
+
+def test_refine_num_inference_steps_defaults_to_locked_profile(
+    sample_image: Path, sample_mesh: Path, tmp_path: Path
+):
+    """Inference steps default to the locked profile (25) and honor explicit overrides."""
+    adapter = Hi3DImageToRawMeshAdapter()
+    adapter.path_generator.base_output_dir = tmp_path / "outputs"
+
+    mock_pipeline = MagicMock()
+    mock_output = MagicMock()
+    mock_output.mesh = trimesh.creation.icosphere(subdivisions=1, radius=0.5)
+    mock_output.resolution = _LOCKED_INFERENCE_PROFILE["resolution"]
+    mock_pipeline.return_value = mock_output
+    adapter.pipeline = mock_pipeline
+    adapter.status = ModelStatus.LOADED
+
+    adapter._process_request(
+        {
+            "image_path": str(sample_image),
+            "coarse_mesh_path": str(sample_mesh),
+            "output_path": str(tmp_path / "refined_steps.glb"),
+        }
+    )
+    assert mock_pipeline.call_args.kwargs["num_inference_steps"] == 25
+
+    adapter._process_request(
+        {
+            "image_path": str(sample_image),
+            "coarse_mesh_path": str(sample_mesh),
+            "num_inference_steps": 10,
+            "output_path": str(tmp_path / "refined_steps_override.glb"),
+        }
+    )
+    assert mock_pipeline.call_args.kwargs["num_inference_steps"] == 10
+
+
+def test_refine_output_format_defaults_to_glb(
+    sample_image: Path, sample_mesh: Path, tmp_path: Path
+):
+    """Refinement output defaults to GLB when no format is requested."""
+    adapter = Hi3DImageToRawMeshAdapter()
+    adapter.path_generator.base_output_dir = tmp_path / "outputs"
+
+    mock_pipeline = MagicMock()
+    mock_output = MagicMock()
+    mock_output.mesh = trimesh.creation.icosphere(subdivisions=1, radius=0.5)
+    mock_output.resolution = _LOCKED_INFERENCE_PROFILE["resolution"]
+    mock_pipeline.return_value = mock_output
+    adapter.pipeline = mock_pipeline
+    adapter.status = ModelStatus.LOADED
+
+    result = adapter._process_request(
+        {
+            "image_path": str(sample_image),
+            "coarse_mesh_path": str(sample_mesh),
+        }
+    )
+    assert result["success"] is True
+    assert Path(result["output_mesh_path"]).suffix == ".glb"

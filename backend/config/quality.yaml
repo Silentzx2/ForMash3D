@@ -142,6 +142,33 @@ limits:
   memory_safe_dispatch_triangles: 2000000
   uv_scan_max_faces: 60000
 
+mesh:
+  # Hard caps to prevent server OOM from runaway raw mesh generation.
+  # Raw mesh from ANY adapter must not exceed these vertex/face caps.
+  # Enforced post-extraction in postprocess/pipeline.py::_enforce_mesh_limits(),
+  # BEFORE saving to immutable master/source.glb.
+  max_vertices_per_mesh: 500000      # 500K vertices absolute ceiling for ANY model
+  max_faces_per_mesh: 1000000        # 1M faces absolute ceiling for ANY model
+  max_triangles_per_mesh: 1000000    # 1M triangles absolute ceiling for ANY model
+
+  # Per-model default targets (not hard caps, recommended defaults)
+  default_target_vertices: 200000
+  default_target_faces: 400000
+
+  # Decimation trigger: if raw output exceeds this, auto-decimate BEFORE
+  # saving to master/source.glb. Master stays immutable after this point.
+  decimation_trigger_vertices: 300000
+  decimation_trigger_faces: 600000
+
+  # Crease angle for edge-preserving decimation (shared SSOT)
+  shared:
+    feature_edge_angle_deg: 35.0
+
+  # Immutable raw mesh protection
+  immutable_master: true
+  master_path: "master/source.glb"
+  never_mutate_master: true
+
 badge:
   sharp_min_score: 0.85
   clean_min_score: 0.0
@@ -151,4 +178,4 @@ tiers:
   - balanced
   - high
 
-default_tier: balanced
+default_tier: high

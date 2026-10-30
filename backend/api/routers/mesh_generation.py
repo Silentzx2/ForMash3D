@@ -856,6 +856,22 @@ class MeshGenerationResponse(BaseModel):
     message: str = Field(..., description="Status message")
 
 
+class RefineMeshRequest(BaseModel):
+    """Request to refine an existing coarse mesh with Hi3D."""
+
+    job_id: str = Field(..., description="Unique job identifier of the source mesh job")
+    mesh_path: str = Field(..., description="Path to the coarse mesh to refine")
+    image_path: Optional[str] = Field(None, description="Optional reference image path")
+    resolution: int = Field(1024, description="Target resolution: 512, 1024, or 1536")
+
+    @field_validator("resolution")
+    @classmethod
+    def validate_resolution(cls, v: int) -> int:
+        if v not in (512, 1024, 1536):
+            raise ValueError("resolution must be one of 512, 1024, 1536")
+        return v
+
+
 class BatchImageToMeshRequest(BaseModel):
     """Request for batch image-to-mesh generation"""
     items: List[ImageToRawMeshRequest] = Field(..., description="List of image generation requests")
@@ -2162,3 +2178,52 @@ async def cancel_mesh_generation(
     except Exception as e:
         logger.error(f"Error cancelling mesh generation job {job_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to cancel job: {e}")
+
+
+@router.post("/refine-mesh")
+async def refine_mesh(
+    refine_request: RefineMeshRequest,
+    scheduler: MultiprocessModelScheduler = Depends(get_scheduler),
+):
+    """Refine a coarse mesh with Hi3D, archiving the original mesh first.
+
+    GPU inference is not exercised here (no torch/GPU in this environment);
+    this endpoint only validates input and enqueues the refinement job.
+    """
+    try:
+        # Validate the source job exists before archiving its mesh
+        job_status = await scheduler.get_job_status(refine_request.job_id)
+        if job_status is None:
+            raise HTTPException(status_code=404, detail="Job not found")
+
+        mesh_path = Path(refine_request.mesh_path)
+        if not mesh_path.is_file():
+            raise HTTPException(status_code=400, detail=f"Mesh file not found: {mesh_path}")
+
+        # Archive the original mesh so refinement does not destroy the source
+        legacy_path = f"{refine_request.mesh_path}_legacy.glb"
+        shutil.copy2(mesh_path, legacy_path)
+
+        job_request = JobRequest(
+            feature="image_to_raw_mesh",
+            inputs={
+                "coarse_mesh_path": legacy_path,
+                "reference_image_path": refine_request.image_path,
+                "resolution": refine_request.resolution,
+            },
+            model_preference="hi3d_image_to_raw_mesh",
+            priority=1,
+            metadata={
+                "feature_type": "refine_mesh",
+                "source_job_id": refine_request.job_id,
+            },
+        )
+
+        refinement_job_id = await scheduler.schedule_job(job_request)
+
+        return {"refinement_job_id": refinement_job_id, "status": "submitted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error scheduling refine-mesh job: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to schedule refinement job: {e}")

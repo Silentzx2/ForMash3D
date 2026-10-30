@@ -12,6 +12,7 @@
 - Inference steps, guidance, samplers, extraction resolution, decoder choice, and low-VRAM mode are not UI controls or request-side adapter overrides. Resource placement is selected from runtime capability and scheduler resource plans.
 - `enable_postprocess: false` returns raw model output and disables derivative-only controls.
 - The raw result is persisted as `master/source.glb` before any derivative operation; post-processing never mutates it.
+- Hi3D refinement (`POST /mesh-generation/refine-mesh`) archives the source mesh as `<mesh_path>_legacy.glb` before enqueueing, so the original coarse mesh is never destroyed; the refined mesh becomes the active asset and is addressable through the same job download API.
 
 ## Effective flow
 
@@ -24,6 +25,13 @@ image + production intent
   → immutable master
   → optional repair / decimation / UV / bake / texture / LOD / collision / QA
   → artifact manifest and viewer URLs
+
+Hi3D refinement (optional second stage):
+  existing job + coarse mesh + reference image
+  → POST /mesh-generation/refine-mesh (validates job + mesh, archives <mesh>_legacy.glb)
+  → scheduler enqueues hi3d_image_to_raw_mesh with coarse_mesh_path=<legacy>
+  → adapter-owned Hi3D refinement inference
+  → refined mesh replaces active asset in viewer (mesh_url from completed job)
 ```
 
 ## Verification

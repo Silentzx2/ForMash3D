@@ -699,6 +699,25 @@ class ApiClient {
     return response.data;
   }
 
+  // Mesh Refinement Endpoints (Hi3D)
+  async refineMesh(request: {
+    jobId: string;
+    meshPath: string;
+    imagePath?: string;
+    resolution?: number;
+  }): Promise<{ refinement_job_id: string; status: string }> {
+    const response = await this.client.post<{ refinement_job_id: string; status: string }>(
+      '/api/v1/mesh-generation/refine-mesh',
+      {
+        job_id: request.jobId,
+        mesh_path: request.meshPath,
+        ...(request.imagePath !== undefined ? { image_path: request.imagePath } : {}),
+        ...(request.resolution !== undefined ? { resolution: request.resolution } : {}),
+      }
+    );
+    return response.data;
+  }
+
   // Motion Generation Endpoints (ARDY)
   async generateMotion(request: MotionGenerationRequest): Promise<BaseApiResponse> {
     const response = await this.client.post<BaseApiResponse>(
