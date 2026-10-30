@@ -663,6 +663,16 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
                         forward_rot=False,
                         postprocess_mode=postprocess_mode,
                     )
+                # Repair sparse-voxel boundary holes and apply gentle smoothing
+                # regardless of simplify setting — raw TRELLIS output has holes
+                # and jagged edges that must be cleaned before export.
+                try:
+                    trimesh.repair.fill_holes(mesh)
+                    trimesh.repair.fix_winding(mesh)
+                    trimesh.repair.fix_normals(mesh)
+                    trimesh.smoothing.filter_taubin(mesh, lamb=0.3, nu=-0.34, iterations=4)
+                except Exception as _t_repair_err:
+                    logger.warning("TRELLIS textured mesh repair failed: %s", _t_repair_err)
                 has_texture = True
             else:
                 # Raw image-to-3D geometry generation: untextured raw mesh without texture bake
@@ -705,9 +715,9 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
                     trimesh.repair.fill_holes(mesh)
                     trimesh.repair.fix_winding(mesh)
                     trimesh.repair.fix_normals(mesh)
-                    trimesh.smoothing.filter_taubin(mesh, lamb=0.3, nu=-0.34, iterations=2)
+                    trimesh.smoothing.filter_taubin(mesh, lamb=0.3, nu=-0.34, iterations=4)
                 except Exception as _t_repair_err:
-                    logger.debug("TRELLIS-1 subtle repair note: %s", _t_repair_err)
+                    logger.warning("TRELLIS raw mesh repair failed: %s", _t_repair_err)
                 if hasattr(mesh, "vertex_normals"):
                     _ = mesh.vertex_normals
                 has_texture = False
