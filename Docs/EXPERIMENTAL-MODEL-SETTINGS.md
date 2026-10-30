@@ -27,13 +27,13 @@ Hi3D v1.0 has been integrated as an **experimental model** following explicit us
   - `hi3d_image_to_textured_mesh` (Alias: routes to raw geometry with untextured export when `apply_texture=False`)
 - **Experimental Flag:** Explicitly marked `experimental: true` across backend manifests, model factory, adapter instance, and frontend definitions (`[Experimental]` label/badge).
 - **Locked Inference Profile:**
-  - `resolution`: `1024` (ladder support: 512, 1024, 1536)
-  - `num_inference_steps`: `25` (Heun flow-matching scheduler)
-  - `seed`: `42`
+  - `resolution`: `1024` (adapter-enforced; request-side resolution values are ignored)
+  - `num_inference_steps`: `25` (Heun flow-matching scheduler; request-side overrides are ignored)
+  - `seed`: `42` default (a caller-supplied seed is forwarded)
   - `sequential_cpu_offload`: `False` (supported for memory-constrained environments)
   - `fp16`: `True`
   - `apply_texture`: `False` (produces geometry only; untextured raw mesh exported)
-- **Hardware Prerequisites:** Linux, Python 3.10, NVIDIA GPU with CUDA compute capability >= 8.0 (Ampere+), 16 GB VRAM reservation. No native CPU inference path exists in upstream kernels; graceful hardware requirement validation and errors are enforced.
+- **Hardware Prerequisites:** Linux, Python 3.10, NVIDIA GPU, and a 16 GB VRAM reservation in the model manifest. The current adapter guard enforces CUDA compute capability >= 7.0 (Volta+); that guard is not a guarantee that every CUDA/runtime combination is compatible. No CPU inference path is provided. Verify actual pipeline loading and inference on the target GPU before deployment.
 
 
 

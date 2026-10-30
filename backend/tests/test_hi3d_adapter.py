@@ -250,10 +250,12 @@ def test_parameter_schema_and_supported_formats():
     schema = adapter.get_parameter_schema()
     params = schema["parameters"]
     assert "resolution" in params
-    assert params["resolution"]["default"] in (512, 1024)
-    assert params["resolution"]["enum"] == [512, 1024, 1536]
+    assert params["resolution"]["default"] == 1024
+    assert params["resolution"]["enum"] == [1024]
     assert params["resolution"]["readOnly"] is True
     assert "num_inference_steps" in params
+    assert params["num_inference_steps"]["default"] == 25
+    assert params["num_inference_steps"]["readOnly"] is True
     assert "apply_texture" in params
     assert params["apply_texture"]["default"] is False
 
@@ -420,37 +422,11 @@ def test_refine_passes_real_coarse_mesh_to_pipeline_bypassing_dummy_fallback(
     assert len(passed_coarse_mesh.vertices) == 8  # unit box
 
 
-@pytest.mark.parametrize("resolution", [512, 1024, 1536])
-def test_refine_accepts_locked_profile_resolutions(
-    sample_image: Path, sample_mesh: Path, tmp_path: Path, resolution: int
+@pytest.mark.parametrize("requested_resolution", [512, 1024, 1536, 9999])
+def test_refine_enforces_locked_profile_resolution(
+    sample_image: Path, sample_mesh: Path, tmp_path: Path, requested_resolution: int
 ):
-    """Requested resolutions 512/1024/1536 reach the pipeline unchanged."""
-    adapter = Hi3DImageToRawMeshAdapter()
-    adapter.path_generator.base_output_dir = tmp_path / "outputs"
-
-    mock_pipeline = MagicMock()
-    mock_output = MagicMock()
-    mock_output.mesh = trimesh.creation.icosphere(subdivisions=1, radius=0.5)
-    mock_output.resolution = resolution
-    mock_pipeline.return_value = mock_output
-    adapter.pipeline = mock_pipeline
-    adapter.status = ModelStatus.LOADED
-
-    adapter._process_request(
-        {
-            "image_path": str(sample_image),
-            "coarse_mesh_path": str(sample_mesh),
-            "resolution": resolution,
-            "output_path": str(tmp_path / f"refined_{resolution}.glb"),
-        }
-    )
-    assert mock_pipeline.call_args.kwargs["resolution"] == resolution
-
-
-def test_refine_invalid_resolution_defaults_to_1024(
-    sample_image: Path, sample_mesh: Path, tmp_path: Path
-):
-    """Resolutions outside the locked profile fall back to the production default (1024)."""
+    """Hi3D always uses its pinned production resolution, regardless of request input."""
     adapter = Hi3DImageToRawMeshAdapter()
     adapter.path_generator.base_output_dir = tmp_path / "outputs"
 
@@ -466,17 +442,17 @@ def test_refine_invalid_resolution_defaults_to_1024(
         {
             "image_path": str(sample_image),
             "coarse_mesh_path": str(sample_mesh),
-            "resolution": 9999,
-            "output_path": str(tmp_path / "refined_fallback.glb"),
+            "resolution": requested_resolution,
+            "output_path": str(tmp_path / f"refined_{requested_resolution}.glb"),
         }
     )
     assert mock_pipeline.call_args.kwargs["resolution"] == 1024
 
 
-def test_refine_num_inference_steps_defaults_to_locked_profile(
+def test_refine_enforces_locked_steps_and_forwards_caller_seed(
     sample_image: Path, sample_mesh: Path, tmp_path: Path
 ):
-    """Inference steps default to the locked profile (25) and honor explicit overrides."""
+    """Inference steps remain pinned at 25 while the caller-controlled seed is forwarded."""
     adapter = Hi3DImageToRawMeshAdapter()
     adapter.path_generator.base_output_dir = tmp_path / "outputs"
 
@@ -502,10 +478,12 @@ def test_refine_num_inference_steps_defaults_to_locked_profile(
             "image_path": str(sample_image),
             "coarse_mesh_path": str(sample_mesh),
             "num_inference_steps": 10,
+            "seed": 1234,
             "output_path": str(tmp_path / "refined_steps_override.glb"),
         }
     )
-    assert mock_pipeline.call_args.kwargs["num_inference_steps"] == 10
+    assert mock_pipeline.call_args.kwargs["num_inference_steps"] == 25
+    assert mock_pipeline.call_args.kwargs["seed"] == 1234
 
 
 def test_refine_output_format_defaults_to_glb(

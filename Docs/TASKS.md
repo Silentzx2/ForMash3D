@@ -236,6 +236,20 @@ image_mesh_painting:
 - Multi-view / Zero123++ — removed
 - Cloud, payment, mobile, social — out of scope
 
-## Git State
-- `dev` branch: working tree clean
-- Push: NOT DONE — waiting for your review and confirm after you read this plan
+## Current Dev Status — 2026-10-30
+
+- The shared post-processing path now includes the mesh-repair and raw-mesh-limit work recorded in the current `dev` history. The configured global guard is 500K vertices / 1M faces; it is applied after model extraction and before the immutable master is written.
+- **Important limitation:** a post-extraction cap is not a scheduler pre-flight budget. It cannot prevent every memory spike or OOM that occurs while a model is producing its raw mesh.
+- Hi3D is experimental. Its adapter profile is pinned to resolution `1024` and `25` inference steps. The caller seed remains configurable; request-side resolution and step overrides are ignored.
+- Model registration and checkpoint presence are not production-readiness proof. Some model pipelines are reported to fail during initialization/loading, while some others may complete with broken or unusable geometry. These reports are not yet mapped to a reproducible per-model failure matrix.
+- Hardware-backed inference, checkpoint loading, real peak VRAM, and visual quality verification must be recorded as `NOT RUN` until performed on the target CUDA environment.
+
+### Follow-up validation tasks
+
+1. Build a per-model startup matrix: dependency import, checkpoint completeness, pipeline initialization, target GPU, VRAM reservation, and failure traceback.
+2. Run representative image-to-mesh smoke tests for each enabled model and record whether the raw GLB loads, has finite vertices, valid face indices, connected components, holes, and non-manifold counts.
+3. Test post-processing separately from raw inference so adapter failures are not confused with pipeline failures.
+4. Save representative broken outputs and logs as regression fixtures where licensing and storage permit; add CPU-safe contract tests for each reproduced failure.
+5. Record GPU device/driver/CUDA/PyTorch versions, cold-load time, peak VRAM, inference time, and visual review before marking a model production-ready.
+
+See [MODEL-STATUS.md](MODEL-STATUS.md) for readiness definitions, current limitations, and the triage procedure.

@@ -49,3 +49,16 @@
 - CUDA/GPU inference still works on hosts with NVIDIA GPUs when run with `--gpu` or auto-detected CUDA.
 - Model adapters are importable at runtime only when their heavy ML dependencies were installed; a GPU-mode adapter used in CPU mode degrades gracefully at inference time rather than breaking setup.
 - Verification: `scripts/tests/script_test.sh` resolver tests + static grep test run in Backend Runtime Contract CI; `bash -n` passes on all edited scripts.
+
+
+## ADR-101: Separate Model Registration from Runtime and Output Readiness (2026-10-30)
+
+**Context:** The model manifest and `GET /system/models` expose enabled/registered model IDs, but deployments can still encounter missing or incompatible runtime dependencies, incomplete checkpoints, GPU/resource incompatibility, pipeline initialization failures, or invalid generated geometry.
+
+**Decision:**
+1. Treat catalog registration, checkpoint availability, pipeline initialization, successful inference, and mesh-quality validation as separate lifecycle states.
+2. Do not describe every enabled model as production-ready unless a supported-host load/inference smoke test and output-quality review are recorded for that model.
+3. Preserve initialization tracebacks in backend logs and expose actionable job/API error states; do not translate load failures into successful/empty mesh results.
+4. Track model-specific evidence and unresolved reports in `Docs/MODEL-STATUS.md`.
+
+**Consequences:** The available-model catalog remains a capability/manifest listing. Production readiness requires model-specific runtime and geometry evidence; CPU-only CI is not sufficient.

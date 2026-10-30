@@ -510,16 +510,19 @@ class Hi3DAdapter(ImageToMeshModel):
             inputs: Dictionary containing:
                 - image_paths / reference_image_path / image_path: Image input (required)
                 - coarse_mesh_path / coarse_mesh / mesh_path: Coarse mesh input (optional)
-                - resolution: Target resolution (512, 1024, 1536)
-                - num_inference_steps: Denoising steps (default 25)
-                - seed: Random seed
+                - resolution: Adapter-locked production resolution (1024); request overrides are ignored
+                - num_inference_steps: Adapter-locked production schedule (25); request overrides are ignored
+                - seed: Caller-controlled random seed (default 42)
                 - apply_texture: When False (default), exports clean untextured raw mesh
                 - output_format: 'glb' or 'obj' (default: 'glb')
 
         Returns:
             Dictionary containing success, output_mesh_path, and generation_info.
         """
+        requested_seed = inputs.get("seed")
         inputs = {**inputs, **_LOCKED_INFERENCE_PROFILE}
+        if requested_seed is not None:
+            inputs["seed"] = requested_seed
         self.status = ModelStatus.PROCESSING
 
         # Resolve image
@@ -662,15 +665,15 @@ class Hi3DAdapter(ImageToMeshModel):
             "parameters": {
                 "resolution": {
                     "type": "integer",
-                    "description": "Hi3D target mesh resolution rung (512, 1024, or 1536)",
+                    "description": "Adapter-locked Hi3D production resolution; request overrides are ignored",
                     "default": _LOCKED_INFERENCE_PROFILE["resolution"],
-                    "enum": [512, 1024, 1536],
+                    "enum": [_LOCKED_INFERENCE_PROFILE["resolution"]],
                     "readOnly": True,
                     "required": False,
                 },
                 "num_inference_steps": {
                     "type": "integer",
-                    "description": "Flow matching scheduler inference steps per pass",
+                    "description": "Adapter-locked flow matching scheduler steps per pass; request overrides are ignored",
                     "default": _LOCKED_INFERENCE_PROFILE["num_inference_steps"],
                     "readOnly": True,
                     "required": False,
