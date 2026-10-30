@@ -1,3 +1,7 @@
+## 2026-10-30 — Unique3D Poisson initialization depth
+
+- Reduced Unique3D's `fast_geo()` Screened Poisson reconstruction depth from 8 to the helper's default value of 7 to avoid the unverified higher-detail closure setting while preserving the existing reconstruction pipeline. No TRELLIS.2 files or settings were changed. GPU visual verification: NOT RUN.
+
 ## 2026-10-29 — TRELLIS.2 geometry-only generation
 
 - Set the adapter-owned sparse-structure and shape-SLat schedules to 25 steps while preserving the existing maximum-resolution cascade and token budget.
