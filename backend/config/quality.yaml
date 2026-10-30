@@ -178,4 +178,4 @@ tiers:
   - balanced
   - high
 
-default_tier: balanced
+default_tier: high
