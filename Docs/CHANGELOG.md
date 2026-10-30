@@ -1,3 +1,10 @@
+## 2026-10-30 — Model readiness disclosure
+
+- Documented that manifest registration and checkpoint presence do not guarantee successful pipeline loading or valid mesh output.
+- Recorded reported pipeline initialization/loading failures and broken-mesh outputs as unresolved, not yet attributed to specific model IDs.
+- Added model-by-model GPU validation, mesh-quality, and triage requirements.
+- GPU inference, checkpoint-load coverage, peak VRAM, and visual quality remain unverified unless explicitly recorded on supported hardware.
+
 ## 2026-10-30 — Unique3D Poisson initialization depth
 
 - Reduced Unique3D's `fast_geo()` Screened Poisson reconstruction depth from 8 to the helper's default value of 7 to avoid the unverified higher-detail closure setting while preserving the existing reconstruction pipeline. No TRELLIS.2 files or settings were changed. GPU visual verification: NOT RUN.

@@ -108,6 +108,9 @@ ForMesh3D unifies neural 3D generation, asset finishing, validation, and export 
 | QA & Diagnostics | Geometry, UV/material, and production-budget quality tracing |
 | Engine Export | GLB/FBX game-ready packages plus LOD and collision assets |
 
+> [!WARNING]
+> **Model readiness is not uniform.** A model being registered or enabled in `backend/config/models.yaml` does not guarantee that its checkpoint will load or that inference will produce a valid mesh on every deployment. Some model pipelines are reported to fail during initialization/loading, while others can complete with broken or unusable geometry. Model-specific GPU validation is incomplete; do not treat the catalog as a production-readiness guarantee. See [Docs/MODEL-STATUS.md](Docs/MODEL-STATUS.md) for current limitations and the validation checklist.
+
 ## 🔄 End-to-End Asset Generation Pipeline
 
 ForMesh3D enforces an **immutable master preservation architecture**. The raw neural model output is immediately snapshotted at `master/source.glb` before any downstream finishing operations, guaranteeing zero accidental loss of fine surface detail:

@@ -594,6 +594,8 @@ The active catalog is sourced from `backend/config/models.yaml`. Text-conditione
 | Pixal3D | `pixal3d_image_to_raw_mesh`; `pixal3d_image_to_3d` | Image → Raw Mesh (O-Voxel) | ~18 GB |
 | TaoFlowForge | `taoflowforge_image_to_raw_mesh` | Image → Raw Mesh (progressive native mesh) | ~20 GB; registered but disabled by default |
 
+**Readiness caveat:** this table describes manifest registration and declared resource budgets, not verified runtime readiness or mesh quality. A registered/enabled model can still fail checkpoint or pipeline initialization, and a completed inference can still produce invalid geometry. Current reported limitations and the model-by-model verification boundary are tracked in [MODEL-STATUS.md](MODEL-STATUS.md).
+
 ## 8.1 Raw Generation Fidelity / Official Parity Contract
 
 

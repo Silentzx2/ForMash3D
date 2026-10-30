@@ -6,6 +6,9 @@
 
 ## Request invariants
 
+- Model catalog registration, checkpoint presence, runtime pipeline load, successful inference, and valid mesh quality are separate states. A model appearing in `GET /system/models` must not be presented as a guarantee of successful generation.
+- Runtime load failures must preserve the original exception in backend logs and surface a concise `MODEL_NOT_READY`, `MODEL_LOAD_ERROR`, or resource error to the job/API caller. A successful inference is not a mesh-quality pass; inspect production status, degraded reasons, and quality telemetry.
+
 - The input is one image reference: file ID, data URI, or server-resolved path.
 - `model_parameters` carries the caller-controlled seed only.
 - Intent, target polycount, topology, texture, normal baking, LOD, repair, rigging, physics, and export settings are production controls.

@@ -679,6 +679,8 @@ GET /api/v1/system/models
 
 Only models with `enabled: true` in `backend/config/models.yaml` are listed; `taoflowforge_image_to_raw_mesh` is registered but disabled. `GET /api/v1/system/models?feature=<feature>` narrows the response to one feature, and `GET /api/v1/system/features` lists the supported features with their model counts.
 
+> **Important:** this endpoint is a manifest/catalog view. An entry in `available_models` or a positive weights indicator is not proof that all runtime dependencies are importable, the full checkpoint can load, the model fits the current GPU, or the produced geometry passes quality checks. Some model pipelines are reported to fail during initialization/loading; some others can return broken geometry. See [MODEL-STATUS.md](MODEL-STATUS.md) before treating a catalog entry as production-ready.
+
 ### Production generation controls
 
 The image-to-raw and image-to-textured generation contracts accept the same production controls used by the workspace:
