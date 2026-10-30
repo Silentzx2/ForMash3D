@@ -1163,6 +1163,18 @@ trainers:
             else:
                 shutil.move(ret_mesh, final_output_path)
 
+            # Decimate high poly mesh if it exceeds target budget (e.g. 500k tris)
+            try:
+                import trimesh
+                raw_trimesh = trimesh.load(final_output_path, force="mesh", process=False)
+                if isinstance(raw_trimesh, trimesh.Trimesh) and len(raw_trimesh.faces) > 500000:
+                    decimated = self.mesh_processor.decimate_mesh(raw_trimesh, target_faces=500000)
+                    if decimated is not None and len(decimated.faces) > 0:
+                        decimated.export(final_output_path)
+                        logger.info(f"Unique3D raw mesh decimated from {len(raw_trimesh.faces)} to {len(decimated.faces)} faces")
+            except Exception as e_dec:
+                logger.warning(f"Optional decimation of Unique3D mesh failed: {e_dec}")
+
             # Filter out tiny disconnected floating debris and ensure clean raw geometry
             # Note: MeshLab simple_clean_mesh already pruned small components before export;
             # avoid expensive trimesh.split() here to prevent host RAM OOM on large meshes.
