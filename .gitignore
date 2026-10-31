@@ -1,0 +1,103 @@
+# HuggingFace token (stored with 0o600 permissions, but plaintext on disk)
+.hf_token
+backend/.hf_token
+
+# Dependencies
+node_modules/
+
+# Next.js
+.next/
+out/
+
+# Coverage
+assets/ui-audit 
+skills-lock.json
+.brain/
+coverage/
+
+# Python
+.venv/
+backend/run/
+backend/venv/
+backend/.venv/
+backend/output/
+backend/outputs/
+output/
+outputs/
+venv/
+*.pyc
+__pycache__/
+*.py[cod]
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+.pids
+
+# Cloudflare
+scripts/.cloudflare_tunnels/*.pid
+scripts/.cloudflare_tunnels/*.url
+
+# IDE
+.vscode/
+.idea/
+.opencode
+
+# Local runtime artifacts
+*.bak
+*.dir
+*.dat
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
+dist/
+build/
+
+# Docker
+*.tar
+
+# Machine-local MCP config — only commit if project-level registration is requested
+.mcp.json
+
+# Local planning and prompt specs
+ForMash3D_OFFICIAL_MODEL_IMPLEMENTATION_PARITY.md
+ForMash3D_FINAL_CROSS_MODEL_3D_QUALITY_BUG_FIX.md
+
+# Database
+*.db
+tsconfig.tsbuildinfo
+
+ai-dev*.tar
+.runtime_cache/
+storage/
+next-env.d.ts
+.kilo/plans/*
+scripts/.cloudflare_tunnels
+.opencode/opencode.json
+.blackboxcli/
+.kilo/
+.agents
+scratch/
+LEGACY_BACKEND/
+
+# Generated deliverables and archive artifacts
+deliverables/
+
+.wheels/
+wheels/
+wheel_build.log
+
+# ComfyUI Engine directory (created by setup.sh / install_comfyui.sh)
+ENGINE/
+REF
+uploads/
+3daigc-api/
+

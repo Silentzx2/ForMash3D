@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: "If you use ForMesh3D in your research, game development, or visual effects pipelines, please cite it as below."
+title: "ForMesh3D: Open-Source, Self-Hosted Generative 3D Asset Creation Platform"
+abstract: "ForMesh3D is an open-source, self-hosted AI 3D asset generation studio serving as a private, GPU-accelerated alternative to cloud services like Tripo AI and Meshy. It unifies 23 neural shape, texture, and motion models with an automated game-ready post-processing pipeline featuring quad retopology, PBR texturing, multi-tier LODs, and physics colliders."
+authors:
+  - name: "ForMesh3D Contributors"
+repository-code: "https://github.com/Silentzx2/ForMesh3D"
+url: "https://github.com/Silentzx2/ForMesh3D"
+keywords:
+  - "3d-generation"
+  - "3d-mesh-generation"
+  - "image-to-3d"
+  - "generative-ai"
+  - "neural-3d"
+  - "quad-retopology"
+  - "pbr-textures"
+  - "self-hosted"
+license: "Apache-2.0"
+version: "0.2.0"
+date-released: "2026-09-30"

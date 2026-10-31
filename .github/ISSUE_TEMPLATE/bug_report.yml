@@ -1,0 +1,65 @@
+name: Bug Report
+description: Create a report to help us fix a bug or unexpected behavior in ForMesh 3D.
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting an issue! Please provide as much relevant technical context as possible.
+        **Do not include passwords, API keys, HF tokens, or private system credentials.**
+  - type: input
+    id: version
+    attributes:
+      label: ForMesh 3D Version / Git Commit
+      description: What git commit hash or version are you running? (Run `git rev-parse --short HEAD`)
+      placeholder: "e.g. b71b9f0"
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Operating Environment
+      options:
+        - Ubuntu 24.04 LTS
+        - Ubuntu 22.04 LTS
+        - Ubuntu 20.04 LTS
+        - Other Linux Distribution
+        - WSL2 (Windows Subsystem for Linux)
+        - Docker / Container
+        - Google Colab / Cloud GPU (RunPod, Vast.ai, etc.)
+    validations:
+      required: true
+  - type: input
+    id: gpu_specs
+    attributes:
+      label: GPU & Driver Specifications
+      description: Output of `nvidia-smi` (GPU model, VRAM, Driver version, CUDA version).
+      placeholder: "e.g. RTX 4090 24GB, Driver 550.54, CUDA 12.4"
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Description of the Problem
+      description: A clear and concise description of what the bug is.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: How can maintainers or contributors reproduce this issue?
+      placeholder: |
+        1. Start backend with `...`
+        2. Open `...` in browser
+        3. Upload image `...`
+        4. Select model `...`
+        5. Observe error `...`
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs or Error Stack Traces
+      description: Copy and paste relevant logs from `logs/app.log` or browser console.
+      render: shell

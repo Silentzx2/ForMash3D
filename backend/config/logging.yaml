@@ -1,0 +1,69 @@
+# All Python services and workers write to repository-root logs/master.log.
+# core.config.setup_logging resolves the filename absolutely so CWD does not matter.
+version: 1
+disable_existing_loggers: false
+
+formatters:
+  default:
+    format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    datefmt: "%Y-%m-%d %H:%M:%S"
+  detailed:
+    format: "%(asctime)s - %(name)s - %(levelname)s - %(module)s:%(lineno)d - %(funcName)s - %(message)s"
+    datefmt: "%Y-%m-%d %H:%M:%S"
+  simple:
+    format: "%(levelname)s - %(name)s - %(message)s"
+
+handlers:
+  master_file:
+    class: logging.FileHandler
+    level: DEBUG
+    formatter: detailed
+    filename: logs/master.log
+    mode: a
+    encoding: utf-8
+
+loggers:
+  "":  # Root logger
+    level: INFO
+    handlers: [master_file]
+    propagate: false
+  api:
+    level: INFO
+    handlers: [master_file]
+    propagate: false
+  core.scheduler:
+    level: DEBUG
+    handlers: [master_file]
+    propagate: false
+  core.models:
+    level: INFO
+    handlers: [master_file]
+    propagate: false
+  core:
+    level: INFO
+    handlers: [master_file]
+    propagate: false
+  adapters:
+    level: INFO
+    handlers: [master_file]
+    propagate: false
+  postprocess:
+    level: INFO
+    handlers: [master_file]
+    propagate: false
+  uvicorn:
+    level: INFO
+    handlers: [master_file]
+    propagate: false
+  uvicorn.access:
+    level: INFO
+    handlers: [master_file]
+    propagate: false
+  uvicorn.error:
+    level: INFO
+    handlers: [master_file]
+    propagate: false
+
+root:
+  level: INFO
+  handlers: [master_file]

@@ -1,0 +1,7 @@
+# ── Requirements split by compute mode ────────────────────────
+# CPU mode:   installs requirements-core.txt only (no cu124 index)
+# CUDA mode:  installs requirements-core.txt + requirements-models.txt (with cu124 index)
+# GPU/CUDA wheels live in backend/thirdparty/wheels/ (--find-links).
+
+-r requirements-core.txt
+-r requirements-models.txt

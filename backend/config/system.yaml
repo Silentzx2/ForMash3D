@@ -1,0 +1,27 @@
+
+# Logging configuration
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: null  # Runtime logging is centralized at repository-root logs/master.log
+  stream:
+    default_tail_lines: 1000
+    max_tail_lines: 5000
+    max_tail_scan_bytes: 8388608
+    idle_poll_min_ms: 10
+    idle_poll_max_ms: 80
+    heartbeat_seconds: 15
+
+# Security configuration
+security:
+  rate_limit_enabled: false
+  rate_limit_per_minute: 0
+  cors_origins: ["*"]
+  api_key_required: false
+
+# Environment settings
+environment: "production"
+debug: false
+
+# Essential configuration parameters (can be overridden via CLI or env vars)
+user_auth_enabled: false

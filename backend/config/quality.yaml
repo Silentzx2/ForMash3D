@@ -1,0 +1,181 @@
+# Canonical tunable values for generation planning and post-processing.
+# Model identity, repository, capability and VRAM data belong in models.yaml.
+
+shared:
+  feature_edge_angle_deg: 35.0
+
+holes:
+  max_hole_vertices: 50
+  max_hole_perimeter: 0.5
+
+gate:
+  strict: false
+  max_native_mesh_normalized_drift: 0.15
+  max_non_manifold_edges: 0
+  max_non_manifold_vertices: 0
+  max_holes: 0
+  max_floater_ratio: 0.005
+  max_degenerate_faces: 0
+  min_aspect_ratio_p1: 0.05
+  min_aspect_ratio_p5: 0.10
+
+surface_comparison:
+  sample_count: 4096
+  fscore_diagonal_fraction: 0.005
+  minimum_fscore_threshold: 0.00001
+  local_density_neighbor_count: 16
+
+physics:
+  defaults:
+    body_type: auto
+    mass_mode: auto
+    mass_kg: 1.0
+    density_mode: auto
+    density_kg_m3: 500.0
+    friction: 0.5
+    restitution: 0.1
+    linear_damping: 0.05
+    angular_damping: 0.05
+    gravity_enabled: true
+    fallback_volume_m3: 0.001
+  limits:
+    mass_kg: {min: 0.01, max: 100000.0}
+    density_kg_m3: {min: 0.01, max: 20000.0}
+    friction: {min: 0.0, max: 2.0}
+    restitution: {min: 0.0, max: 1.0}
+    linear_damping: {min: 0.0, max: 100.0}
+    angular_damping: {min: 0.0, max: 100.0}
+  thresholds:
+    minimum_valid_volume_m3: 0.000000001
+  default_collision_quality: balanced
+  collision_quality_profiles:
+    fast:
+      method: decomposition
+      max_hulls: 4
+      threshold: 0.35
+      input_faces: 750
+      max_hull_vertices: 32
+      resolution: 600
+      mcts_nodes: 4
+      mcts_iterations: 20
+      mcts_max_depth: 1
+      preprocess_resolution: 40
+      seed: 0
+    balanced:
+      method: decomposition
+      max_hulls: 8
+      threshold: 0.25
+      input_faces: 1000
+      max_hull_vertices: 64
+      resolution: 1000
+      mcts_nodes: 6
+      mcts_iterations: 40
+      mcts_max_depth: 2
+      preprocess_resolution: 50
+      seed: 0
+    precise:
+      method: decomposition
+      max_hulls: 16
+      threshold: 0.20
+      input_faces: 1400
+      max_hull_vertices: 64
+      resolution: 1200
+      mcts_nodes: 8
+      mcts_iterations: 60
+      mcts_max_depth: 3
+      preprocess_resolution: 60
+      seed: 0
+
+decimation:
+  memory_safe_threshold_triangles: 2000000
+  max_deviation_deg: 45.0
+  max_ram_fraction: 0.80
+
+uv:
+  partuv_triangle_threshold: 500000
+  partuv_vram_requirement_gb: 7.0
+  default_backend: auto
+  fallback_backend: xatlas
+  max_chart_size: 4096
+
+bake:
+  normal_space: TANGENT
+  convention: OPENGL
+  max_ray_distance: 0.05
+  cage_extrusion: 0.02
+  texture_size: 1024
+  gutter_dilation_pixels: 4
+  min_uv_utilization: 0.60
+
+seeds:
+  base_seed: 42891
+  seed_step: 1337
+  max_candidates: 4
+  seed_count_by_tier:
+    fast: 1
+    balanced: 2
+    high: 3
+  early_stop_score: 0.85
+  weights:
+    feature_edge_retention: 0.40
+    hole_count: 0.20
+    component_floater_ratio: 0.15
+    degenerate_face_ratio: 0.10
+    triangle_count: 0.05
+    aspect_ratio_p5: 0.10
+  ranges:
+    feature_edge_retention: [0.0, 1.0]
+    hole_count: [0.0, 50.0]
+    component_floater_ratio: [0.0, 0.2]
+    degenerate_face_ratio: [0.0, 0.05]
+    triangle_count: [1000.0, 1000000.0]
+    aspect_ratio_p5: [0.0, 1.0]
+  inverted:
+    - hole_count
+    - component_floater_ratio
+    - degenerate_face_ratio
+    - triangle_count
+    - aspect_ratio_p5
+
+limits:
+  max_production_faces: 2000000
+  memory_safe_dispatch_triangles: 2000000
+  uv_scan_max_faces: 60000
+
+mesh:
+  # Hard caps to prevent server OOM from runaway raw mesh generation.
+  # Raw mesh from ANY adapter must not exceed these vertex/face caps.
+  # Enforced post-extraction in postprocess/pipeline.py::_enforce_mesh_limits(),
+  # BEFORE saving to immutable master/source.glb.
+  max_vertices_per_mesh: 500000      # 500K vertices absolute ceiling for ANY model
+  max_faces_per_mesh: 1000000        # 1M faces absolute ceiling for ANY model
+  max_triangles_per_mesh: 1000000    # 1M triangles absolute ceiling for ANY model
+
+  # Per-model default targets (not hard caps, recommended defaults)
+  default_target_vertices: 200000
+  default_target_faces: 400000
+
+  # Decimation trigger: if raw output exceeds this, auto-decimate BEFORE
+  # saving to master/source.glb. Master stays immutable after this point.
+  decimation_trigger_vertices: 300000
+  decimation_trigger_faces: 600000
+
+  # Crease angle for edge-preserving decimation (shared SSOT)
+  shared:
+    feature_edge_angle_deg: 35.0
+
+  # Immutable raw mesh protection
+  immutable_master: true
+  master_path: "master/source.glb"
+  never_mutate_master: true
+
+badge:
+  sharp_min_score: 0.85
+  clean_min_score: 0.0
+
+tiers:
+  - fast
+  - balanced
+  - high
+
+default_tier: high

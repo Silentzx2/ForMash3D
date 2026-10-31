@@ -1,0 +1,349 @@
+"""Stage 2 - clean topology via field-adaptive isotropic remeshing.
+
+Isotropic explicit remeshing (split/collapse/flip/smooth + reproject) turns the
+dense marching-cubes shell into evenly-spaced, near-equilateral triangles. With
+`adaptive=True` the target edge length is modulated by local curvature, so spikes,
+claws and the head get more resolution while flat areas (belly, flanks) stay light
+- the hallmark of good low-poly topology.
+
+Because adaptive density makes the final face count hard to predict from a single
+edge-length, we run a short calibration loop: estimate L from the area budget, then
+rescale L by sqrt(actual/target) and remesh again. Two passes land within a few
+percent of the requested budget on typical meshes.
+
+If a `quadriflow` binary is on PATH it can be used instead (field-aligned pure-quad
+output); otherwise we optionally post-process tris into quad-dominant topology with
+MeshLab's curvature-aware pairing.
+"""
+from __future__ import annotations
+import shutil, subprocess, tempfile, os
+import numpy as np
+import trimesh
+try:
+    import pymeshlab as ml
+except Exception:
+    ml = None
+
+
+def _edge_len_for_faces(V, F, target_faces):
+    area = float(trimesh.Trimesh(V, F, process=False).area)
+    return float(np.sqrt(4.0 * area / (max(1, target_faces) * np.sqrt(3.0))))
+
+
+def isotropic_remesh(V, F, target_faces, adaptive=True, iters=10,
+                      feature_deg=30.0, calibrate_passes=2, verbose=False,
+                      smoothflag=True, reproject=True, checksurfdist=False,
+                      maxsurfdist_pct=1.0):
+    """Remesh to ~target_faces. Each calibration pass remeshes the *same source*
+    with a corrected edge length (n ~ 1/L^2), and we keep the pass closest to the
+    budget so adaptive density can't make us drift.
+
+    For hard-surface models, set a low `feature_deg` (crease edges below this angle
+    are kept sharp), `smoothflag=False` (don't round structural edges) and
+    `reproject=True` with `checksurfdist=True` (stay glued to the original surface).
+    """
+    # Check if pymeshlab has the required method (API changed in newer versions)
+    has_iso_remesh = ml is not None and hasattr(ml.MeshSet, 'meshing_isotropic_explicit_remeshing')
+    if not has_iso_remesh:
+        # Fall back to fast decimation if isotropic remeshing is not available
+        return _fast_decimate_fallback(V, F, target_faces)
+
+    L = _edge_len_for_faces(V, F, target_faces)
+    Vsrc, Fsrc = np.asarray(V, float), np.asarray(F, np.int64)
+    best = None
+    for p in range(1 + max(0, calibrate_passes)):
+        ms = ml.MeshSet()
+        ms.add_mesh(ml.Mesh(Vsrc, Fsrc))
+        ms.meshing_isotropic_explicit_remeshing(
+            iterations=int(iters), adaptive=bool(adaptive),
+            targetlen=ml.PureValue(L), featuredeg=float(feature_deg),
+            smoothflag=bool(smoothflag), reprojectflag=bool(reproject),
+            checksurfdist=bool(checksurfdist),
+            maxsurfdist=ml.PercentageValue(float(maxsurfdist_pct)))
+        mm = ms.current_mesh()
+        Vc, Fc = np.asarray(mm.vertex_matrix()), np.asarray(mm.face_matrix())
+        n = len(Fc)
+        if verbose:
+            print(f"    remesh pass {p}: L={L:.5f} -> {n} faces")
+        if n == 0:
+            break
+        err = abs(n - target_faces) / float(target_faces)
+        if best is None or err < best[0]:
+            best = (err, Vc, Fc)
+        if err < 0.05 or p == calibrate_passes:
+            break
+        L *= np.sqrt(n / float(target_faces))   # bigger edges -> fewer faces
+    _, Vb, Fb = best
+    return np.ascontiguousarray(Vb), np.ascontiguousarray(Fb.astype(np.int64))
+
+
+def _fast_decimate_fallback(V, F, target_faces):
+    try:
+        import fast_simplification
+        if len(F) <= target_faces:
+            return np.ascontiguousarray(V), np.ascontiguousarray(F.astype(np.int64))
+        red = max(0.01, min(0.99, 1.0 - (float(target_faces) / float(len(F)))))
+        v_out, f_out = fast_simplification.simplify(
+            np.asarray(V, dtype=np.float64),
+            np.asarray(F, dtype=np.int64),
+            target_reduction=red,
+        )
+        return np.ascontiguousarray(v_out), np.ascontiguousarray(f_out.astype(np.int64))
+    except Exception:
+        return np.ascontiguousarray(V), np.ascontiguousarray(F.astype(np.int64))
+
+
+def pre_decimate(V, F, target_faces, verbose=False):
+    """Fast, robust coarse decimation to make a huge input tractable for remeshing."""
+    if ml is not None:
+        try:
+            ms = ml.MeshSet()
+            ms.add_mesh(ml.Mesh(np.asarray(V, float), np.asarray(F, np.int64)))
+            ms.meshing_decimation_quadric_edge_collapse(
+                targetfacenum=int(target_faces), qualitythr=0.3,
+                preservenormal=True, optimalplacement=True, autoclean=True)
+            mm = ms.current_mesh()
+            if verbose:
+                print(f"    pre-decimate -> {mm.face_number()} faces")
+            return np.ascontiguousarray(mm.vertex_matrix()), \
+                np.ascontiguousarray(mm.face_matrix().astype(np.int64))
+        except Exception:
+            pass
+    return _fast_decimate_fallback(V, F, target_faces)
+
+
+def decimate_to_target(V, F, target_faces, preserve_boundary=True):
+    """Quadric edge-collapse decimation to an exact face budget."""
+    if ml is not None:
+        try:
+            ms = ml.MeshSet()
+            ms.add_mesh(ml.Mesh(np.asarray(V, float), np.asarray(F, np.int64)))
+            ms.meshing_decimation_quadric_edge_collapse(
+                targetfacenum=int(target_faces),
+                qualitythr=0.5, preserveboundary=bool(preserve_boundary),
+                preservenormal=True, preservetopology=True, optimalplacement=True,
+                planarquadric=True, autoclean=True)
+            if ms.current_mesh().face_number() > target_faces * 1.2:
+                ms.meshing_decimation_quadric_edge_collapse(
+                    targetfacenum=int(target_faces),
+                    qualitythr=0.5, preserveboundary=bool(preserve_boundary),
+                    preservenormal=True, preservetopology=False, optimalplacement=True,
+                    planarquadric=True, autoclean=True)
+            mm = ms.current_mesh()
+            return np.ascontiguousarray(mm.vertex_matrix()), \
+                np.ascontiguousarray(mm.face_matrix().astype(np.int64))
+        except Exception:
+            pass
+    return _fast_decimate_fallback(V, F, target_faces)
+
+
+def finalize_watertight(V, F, close_holes=1000, verbose=False):
+    """Clean up after decimation + projection while preserving connectivity.
+
+    The marching-cubes shell is watertight by construction, but two later stages can
+    poke small holes in it: decimate_to_target drops `preservetopology` on stubborn
+    fragmented meshes (which can leave a non-manifold edge/vertex), and projection can
+    fold a tight concave crease (between fingers, say) into a local self-intersection.
+    We seal those without shredding the shell:
+
+      1. drop zero-area faces, weld coincident verts, remove orphans;
+      2. if already closed -> done;
+      3. *split* (never delete) non-manifold edges/vertices so every hole boundary
+         becomes a clean manifold loop close_holes can identify. Splitting duplicates
+         a vertex but keeps all faces, so - unlike face-removing non-manifold repair -
+         it never cuts the thin bridges that hold a multi-part figure (warrior + weapon
+         + shield) together as one shell;
+      4. close holes by *adding* faces, escalating from refusing self-intersections to
+         tolerating them (the crease case above only closes on the tolerant pass);
+      5. trimesh fill_holes as a final fallback for anything pymeshlab left open.
+    """
+    import trimesh as _tm
+
+    def _wrap(v, f):
+        m = _tm.Trimesh(np.asarray(v, float), np.asarray(f, np.int64), process=False)
+        m.update_faces(m.nondegenerate_faces())
+        m.merge_vertices()
+        m.remove_unreferenced_vertices()
+        return m
+
+    def _boundary_edges(m):
+        try:
+            _, counts = np.unique(m.edges_sorted, axis=0, return_counts=True)
+            return int((counts == 1).sum())
+        except Exception:
+            return -1
+
+    def _out(m):
+        return np.ascontiguousarray(m.vertices), np.ascontiguousarray(m.faces.astype(np.int64))
+
+    m = _wrap(V, F)
+    if m.is_watertight:
+        return _out(m)
+    if verbose:
+        print(f"    [finalize] {_boundary_edges(m)} boundary edges before sealing")
+
+    ms = ml.MeshSet()
+    ms.add_mesh(ml.Mesh(np.asarray(m.vertices, float), np.asarray(m.faces, np.int64)))
+
+    # Split (do NOT remove) non-manifold elements so hole boundaries are clean loops.
+    # Only the vertex-splitting variants are attempted; we never fall through to the
+    # face-removing default.
+    for fn, variants in (
+        ("meshing_repair_non_manifold_edges", ({"method": "Split Vertices"}, {"method": 1})),
+        ("meshing_repair_non_manifold_vertices", ({},)),
+    ):
+        filt = getattr(ms, fn, None)
+        if filt is None:
+            continue
+        for kwargs in variants:
+            try:
+                filt(**kwargs)
+                break
+            except Exception:
+                continue
+
+    for selfintersection in (False, True):
+        try:
+            ms.meshing_close_holes(maxholesize=int(close_holes),
+                                   selfintersection=selfintersection)
+        except Exception:
+            pass
+
+    mm = ms.current_mesh()
+    m = _wrap(mm.vertex_matrix(), mm.face_matrix())
+    if not m.is_watertight:
+        try:
+            m.fill_holes()
+            m.remove_unreferenced_vertices()
+        except Exception:
+            pass
+    if verbose:
+        remaining = _boundary_edges(m)
+        print(f"    [finalize] watertight={m.is_watertight}"
+              + ("" if m.is_watertight else f", {remaining} boundary edges remain"))
+    return _out(m)
+
+
+def clean_slivers(V, F, min_quality=0.02):
+    """Drop degenerate / extreme-sliver faces and unreferenced vertices."""
+    import trimesh as _tm
+    m = _tm.Trimesh(np.asarray(V, float), np.asarray(F, np.int64), process=False)
+    tri = m.triangles
+    e0 = np.linalg.norm(tri[:, 1] - tri[:, 0], axis=1)
+    e1 = np.linalg.norm(tri[:, 2] - tri[:, 1], axis=1)
+    e2 = np.linalg.norm(tri[:, 0] - tri[:, 2], axis=1)
+    longest = np.maximum.reduce([e0, e1, e2]) + 1e-12
+    quality = (2.0 * m.area_faces) / (longest * longest)   # ~ height/base, 0 == degenerate
+    keep = quality > min_quality
+    m.update_faces(keep)
+    m.remove_unreferenced_vertices()
+    return np.ascontiguousarray(m.vertices), np.ascontiguousarray(m.faces.astype(np.int64))
+
+
+def pair_triangles_to_quads(V: np.ndarray, F: np.ndarray, max_dihedral_deg: float = 35.0) -> tuple[np.ndarray, list[list[int]]]:
+    """Pure-Python curvature-aware greedy triangle pairing to quad-dominant polygon list."""
+    if len(F) == 0:
+        return np.asarray(V), []
+    try:
+        m = trimesh.Trimesh(V, F, process=False)
+        face_normals = m.face_normals
+        adj = m.face_adjacency
+        adj_edges = m.face_adjacency_edges
+        if len(adj) == 0:
+            return np.asarray(V), [list(f) for f in F]
+
+        cos_thresh = np.cos(np.radians(max_dihedral_deg))
+        dots = np.sum(face_normals[adj[:, 0]] * face_normals[adj[:, 1]], axis=1)
+        valid_mask = dots >= cos_thresh
+
+        valid_adj = adj[valid_mask]
+        valid_edges = adj_edges[valid_mask]
+        valid_dots = dots[valid_mask]
+
+        order = np.argsort(-valid_dots)
+        used_faces = set()
+        quad_polys = []
+
+        for idx in order:
+            f1, f2 = int(valid_adj[idx, 0]), int(valid_adj[idx, 1])
+            if f1 in used_faces or f2 in used_faces:
+                continue
+
+            u, v = int(valid_edges[idx, 0]), int(valid_edges[idx, 1])
+            f1_verts = [int(x) for x in F[f1]]
+            f2_verts = [int(x) for x in F[f2]]
+            try:
+                w1 = next(vert for vert in f1_verts if vert not in (u, v))
+                w2 = next(vert for vert in f2_verts if vert not in (u, v))
+            except StopIteration:
+                continue
+
+            idx_u = f1_verts.index(u)
+            if f1_verts[(idx_u + 1) % 3] == v:
+                quad = [u, w2, v, w1]
+            else:
+                quad = [v, w2, u, w1]
+
+            pts = V[quad]
+            e0 = pts[1] - pts[0]
+            e1 = pts[2] - pts[1]
+            e2 = pts[3] - pts[2]
+            e3 = pts[0] - pts[3]
+            avg_n = (face_normals[f1] + face_normals[f2]) * 0.5
+
+            c0 = float(np.dot(np.cross(e0, -e3), avg_n))
+            c1 = float(np.dot(np.cross(e1, -e0), avg_n))
+            c2 = float(np.dot(np.cross(e2, -e1), avg_n))
+            c3 = float(np.dot(np.cross(e3, -e2), avg_n))
+
+            if c0 > 0 and c1 > 0 and c2 > 0 and c3 > 0:
+                used_faces.add(f1)
+                used_faces.add(f2)
+                quad_polys.append(quad)
+
+        for fi in range(len(F)):
+            if fi not in used_faces:
+                quad_polys.append([int(x) for x in F[fi]])
+
+        return np.asarray(V), quad_polys
+    except Exception:
+        return np.asarray(V), [list(f) for f in F]
+
+
+def to_quad_dominant(V, F):
+    if ml is not None:
+        try:
+            ms = ml.MeshSet()
+            ms.add_mesh(ml.Mesh(np.asarray(V, float), np.asarray(F, np.int64)))
+            # align edges to curvature first, then pair triangles into quads
+            try:
+                ms.meshing_edge_flip_by_curvature_optimization(iterations=2)
+            except Exception:
+                pass
+            ms.meshing_tri_to_quad_by_smart_triangle_pairing()
+            mm = ms.current_mesh()
+            try:
+                polys = mm.polygonal_face_list()
+                return np.asarray(mm.vertex_matrix()), polys
+            except Exception:
+                return np.asarray(mm.vertex_matrix()), np.asarray(mm.face_matrix())
+        except Exception:
+            pass
+    return pair_triangles_to_quads(V, F)
+
+
+def quadriflow_available():
+    return shutil.which("quadriflow") is not None
+
+
+def quadriflow_remesh(V, F, target_faces):
+    """Optional: use an external QuadriFlow binary for field-aligned pure quads."""
+    if not quadriflow_available():
+        raise RuntimeError("quadriflow binary not found on PATH")
+    with tempfile.TemporaryDirectory() as d:
+        inp, out = os.path.join(d, "in.obj"), os.path.join(d, "out.obj")
+        trimesh.Trimesh(V, F, process=False).export(inp)
+        subprocess.run(["quadriflow", "-i", inp, "-o", out,
+                        "-f", str(int(target_faces))], check=True)
+        m = trimesh.load(out, process=False)
+    return np.asarray(m.vertices), np.asarray(m.faces)

@@ -1,0 +1,67 @@
+{
+  "metadata": {
+    "title": "ForMesh3D Parity Scorecard",
+    "columns": [
+      "ForMash3D",
+      "Tripo",
+      "Meshy",
+      "Hyper3D"
+    ],
+    "rows": [
+      "sharpness",
+      "topology_cleanliness",
+      "uv_quality",
+      "texture_quality",
+      "speed",
+      "failure_rate"
+    ],
+    "policy": "Every cell is either a measured number with a source file or null. Qualitative marketing strings are prohibited."
+  },
+  "scorecard": {
+    "sharpness": {
+      "ForMash3D": {
+        "value": 1.0,
+        "source": "Docs/baseline_vs_now_benchmark.json"
+      },
+      "Tripo": null,
+      "Meshy": null,
+      "Hyper3D": null
+    },
+    "topology_cleanliness": {
+      "ForMash3D": {
+        "value": 1.0,
+        "source": "Docs/baseline_vs_now_benchmark.json"
+      },
+      "Tripo": null,
+      "Meshy": null,
+      "Hyper3D": null
+    },
+    "uv_quality": {
+      "ForMash3D": {
+        "value": 0.7595,
+        "source": "Docs/baseline_vs_now_benchmark.json"
+      },
+      "Tripo": null,
+      "Meshy": null,
+      "Hyper3D": null
+    },
+    "texture_quality": {
+      "ForMash3D": null,
+      "Tripo": null,
+      "Meshy": null,
+      "Hyper3D": null
+    },
+    "speed": {
+      "ForMash3D": null,
+      "Tripo": null,
+      "Meshy": null,
+      "Hyper3D": null
+    },
+    "failure_rate": {
+      "ForMash3D": null,
+      "Tripo": null,
+      "Meshy": null,
+      "Hyper3D": null
+    }
+  }
+}

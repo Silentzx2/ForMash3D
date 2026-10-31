@@ -1,0 +1,65 @@
+# Version control
+.git
+.gitignore
+.gitmodules
+
+# Documentation & internal
+Docs/
+*.md
+
+# Node / Frontend build artifacts
+node_modules
+.next
+.turbo
+out/
+build/
+dist/
+
+# Python cache & virtual environments
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.venv
+venv/
+env/
+ENV/
+
+# Large binaries & data volumes
+backend/pretrained
+backend/storage
+backend/data
+backend/uploads
+backend/models
+backend/logs
+logs/
+.pids/
+backend/.hf_token
+
+# IDE & OS files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Test & coverage
+tests/
+*.test
+coverage/
+.coverage
+.pytest_cache/

@@ -1,0 +1,255 @@
+"""
+File metadata storage layer using Redis.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import logging
+import time
+from typing import Any, Dict, List, Optional
+
+try:
+    from redis.asyncio import Redis
+except ImportError:
+    Redis = Any
+
+logger = logging.getLogger(__name__)
+
+
+class FileInfo:
+    """Wrapper around file metadata dict supporting both attribute and dict access."""
+
+    def __init__(self, data: Dict):
+        self._data = dict(data) if data else {}
+        for k, v in self._data.items():
+            setattr(self, k, v)
+        self.file_path = self._data.get("file_path", "")
+        self.file_name = self._data.get("file_name", "")
+        self.file_id = self._data.get("file_id", "")
+        self.file_type = self._data.get("file_type", "unknown")
+
+    def get(self, key, default=None):
+        return self._data.get(key, default)
+
+    def __getitem__(self, key):
+        return self._data[key]
+
+    def __contains__(self, key):
+        return key in self._data
+
+    def to_dict(self) -> Dict:
+        return dict(self._data)
+
+    def __repr__(self) -> str:
+        return f"<FileInfo file_id={self.file_id} file_path={self.file_path}>"
+
+
+class FileStore:
+    """
+    Redis-based storage for file metadata.
+
+    Redis Key Schema:
+        - file:{file_id} -> File metadata JSON (with expiration)
+        - files:all -> ZSET of file_ids scored by upload timestamp
+        - files:{file_type} -> ZSET of file_ids for a specific type, scored by upload timestamp
+    """
+
+    def __init__(self, redis_client: Redis, key_prefix: str = "3daigc", default_ttl_seconds: int | None = None):
+        self.redis = redis_client
+        self.prefix = key_prefix
+        self.default_ttl = (
+            int(os.getenv("FILE_METADATA_TTL_SECONDS", "0"))
+            if default_ttl_seconds is None
+            else int(default_ttl_seconds)
+        )
+
+    def _key(self, *parts) -> str:
+        """Generate Redis key with prefix"""
+        return ":".join([self.prefix] + list(parts))
+
+    async def store_file_metadata(self, file_id: str, file_info: Dict) -> bool:
+        """
+        Store file metadata in Redis with an expiration time.
+
+        Args:
+            file_id: Unique identifier for the file.
+            file_info: Dictionary containing file metadata.
+
+        Returns:
+            True if successful, False otherwise.
+        """
+        try:
+            file_key = self._key("file", file_id)
+            all_files_key = self._key("files", "all")
+            file_type_key = self._key("files", file_info.get("file_type", "unknown"))
+            
+            upload_timestamp = int(time.time())
+
+            # Use a pipeline for atomic operations
+            async with self.redis.pipeline() as pipe:
+                if self.default_ttl > 0 and not file_info.get("durable", False):
+                    pipe.set(file_key, json.dumps(file_info), ex=self.default_ttl)
+                else:
+                    pipe.set(file_key, json.dumps(file_info))
+                pipe.zadd(all_files_key, {file_id: upload_timestamp})
+                pipe.zadd(file_type_key, {file_id: upload_timestamp})
+                await pipe.execute()
+
+            logger.info(f"Stored metadata for file {file_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to store metadata for file {file_id}: {e}")
+            return False
+
+    async def get_file_metadata(self, file_id: str) -> Optional[Dict]:
+        """
+        Get file metadata by ID from Redis.
+
+        Args:
+            file_id: Unique identifier for the file.
+
+        Returns:
+            A dictionary with file metadata or None if not found.
+        """
+        try:
+            file_key = self._key("file", file_id)
+            metadata_json = await self.redis.get(file_key)
+            if not metadata_json:
+                return None
+            return json.loads(metadata_json)
+        except Exception as e:
+            logger.error(f"Failed to get metadata for file {file_id}: {e}")
+            return None
+
+    async def get_file(self, file_id: str) -> Optional[FileInfo]:
+        """
+        Get file information by ID from Redis.
+
+        Args:
+            file_id: Unique identifier for the file.
+
+        Returns:
+            A FileInfo object with attribute and dict access, or None if not found.
+        """
+        metadata = await self.get_file_metadata(file_id)
+        if not metadata:
+            return None
+        return FileInfo(metadata)
+
+    async def delete_file_metadata(self, file_id: str) -> bool:
+        """
+        Delete file metadata from Redis.
+
+        Args:
+            file_id: Unique identifier for the file.
+
+        Returns:
+            True if successful, False otherwise.
+        """
+        try:
+            metadata = await self.get_file_metadata(file_id)
+            if not metadata:
+                return False  # Already gone
+
+            file_key = self._key("file", file_id)
+            all_files_key = self._key("files", "all")
+            file_type_key = self._key("files", metadata.get("file_type", "unknown"))
+
+            async with self.redis.pipeline() as pipe:
+                pipe.delete(file_key)
+                pipe.zrem(all_files_key, file_id)
+                pipe.zrem(file_type_key, file_id)
+                await pipe.execute()
+            
+            logger.info(f"Deleted metadata for file {file_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to delete metadata for file {file_id}: {e}")
+            return False
+
+    async def list_file_metadata(self, file_type: Optional[str] = None, limit: int = 100, offset: int = 0) -> List[Dict]:
+        """
+        List file metadata, sorted by upload time.
+
+        Args:
+            file_type: Optional filter by file type (e.g., 'image', 'mesh').
+            limit: Maximum number of records to return.
+            offset: Starting offset for pagination.
+
+        Returns:
+            A list of file metadata dictionaries.
+        """
+        files = []
+        try:
+            if file_type:
+                key = self._key("files", file_type)
+            else:
+                key = self._key("files", "all")
+
+            # Get file_ids from the sorted set, newest first
+            file_ids = await self.redis.zrevrange(key, offset, offset + limit - 1)
+
+            stale_ids = []
+            for file_id_bytes in file_ids:
+                file_id = file_id_bytes.decode('utf-8')
+                metadata = await self.get_file_metadata(file_id)
+                if metadata:
+                    files.append(metadata)
+                else:
+                    stale_ids.append(file_id)
+
+            if stale_ids:
+                type_keys = set()
+                if file_type:
+                    type_keys.add(self._key("files", file_type))
+                else:
+                    try:
+                        async for k in self.redis.scan_iter(match=self._key("files", "*")):
+                            type_keys.add(k.decode("utf-8") if isinstance(k, bytes) else k)
+                    except Exception as e:
+                        logger.warning(f"Failed to scan file type keys for stale cleanup: {e}")
+                    for ft in ("image", "mesh", "model", "texture", "unknown"):
+                        type_keys.add(self._key("files", ft))
+
+                async with self.redis.pipeline() as pipe:
+                    for file_id in stale_ids:
+                        pipe.zrem(self._key("files", "all"), file_id)
+                        for tk in type_keys:
+                            pipe.zrem(tk, file_id)
+                    await pipe.execute()
+            return files
+        except Exception as e:
+            logger.error(f"Failed to list file metadata: {e}")
+            return files
+            
+    async def count_files(self, file_type: Optional[str] = None) -> int:
+        """
+        Count the total number of files.
+
+        Args:
+            file_type: Optional filter by file type.
+
+        Returns:
+            The total count of files.
+        """
+        try:
+            if file_type:
+                key = self._key("files", file_type)
+            else:
+                key = self._key("files", "all")
+            
+            return await self.redis.zcard(key)
+        except Exception as e:
+            logger.error(f"Failed to count files: {e}")
+            return 0
+
+    async def close(self):
+        """Disconnect Redis client"""
+        if self.redis:
+            try:
+                await self.redis.aclose()
+            except Exception as e:
+                logger.warning(f"Error disconnecting Redis in FileStore: {e}")
+

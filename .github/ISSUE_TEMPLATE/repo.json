@@ -1,0 +1,127 @@
+{
+  "name": "ForMesh3D",
+  "description": "Open-source, self-hosted AI 3D generation and asset creation platform for GPU-accelerated model workflows, production post-processing, and game-ready delivery.",
+  "keywords": [
+    "3d-generation",
+    "3d-mesh-generation",
+    "image-to-3d",
+    "generative-3d",
+    "ai-3d",
+    "neural-3d",
+    "3d-reconstruction",
+    "3d-asset-pipeline",
+    "3d-asset-creation",
+    "self-hosted",
+    "open-source-3d",
+    "gpu-accelerated",
+    "pbr",
+    "retopology",
+    "uv-unwrapping",
+    "lod-generation",
+    "3d-physics",
+    "threejs",
+    "nextjs",
+    "fastapi",
+    "pytorch",
+    "cuda",
+    "hunyuan3d",
+    "trellis",
+    "triposg",
+    "fastmesh"
+  ],
+  "topics": [
+    "3d",
+    "3d-generation",
+    "3d-mesh-generation",
+    "3d-modeling",
+    "3d-reconstruction",
+    "ai-3d",
+    "generative-ai",
+    "generative-3d",
+    "image-to-3d",
+    "self-hosted",
+    "open-source-3d",
+    "gpu-accelerated",
+    "pbr",
+    "retopology",
+    "hunyuan3d",
+    "trellis",
+    "threejs",
+    "fastapi",
+    "pytorch"
+  ],
+  "search_terms": {
+    "primary": [
+      "3D generation",
+      "3D mesh generation",
+      "image-to-3D",
+      "self-hosted 3D"
+    ],
+    "secondary": [
+      "generative 3D",
+      "AI 3D assets",
+      "neural 3D reconstruction",
+      "game-ready 3D pipeline",
+      "GPU-accelerated 3D"
+    ],
+    "long_tail": [
+      "self-hosted AI 3D generation",
+      "open-source 3D asset pipeline",
+      "image to 3D mesh generation",
+      "game-ready 3D post-processing"
+    ]
+  },
+  "seo_description": "ForMesh3D is an open-source, self-hosted AI 3D generation and asset creation platform combining multiple model integrations with VRAM-aware scheduling, production post-processing, physics metadata, and game-ready delivery.",
+  "elevator_pitch": "A unified self-hosted studio for generating, processing, inspecting, and exporting AI-generated 3D assets.",
+  "use_cases": [
+    "Image-to-3D generation",
+    "PBR texture workflows",
+    "Mesh retopology and UV processing",
+    "Game-ready asset finishing",
+    "Local AI-assisted 3D research"
+  ],
+  "features": [
+    "AI-powered 3D generation",
+    "GPU-accelerated processing",
+    "Self-hosted deployment",
+    "Production post-processing",
+    "VRAM-aware scheduling",
+    "PBR texture workflows",
+    "LOD generation",
+    "Physics-ready asset delivery"
+  ],
+  "related_projects": [
+    "Three.js",
+    "PyTorch",
+    "FastAPI",
+    "Next.js",
+    "CUDA"
+  ],
+  "programming_languages": [
+    "TypeScript",
+    "JavaScript",
+    "Python",
+    "GLSL"
+  ],
+  "frameworks_libraries": [
+    "Next.js",
+    "React",
+    "Three.js",
+    "FastAPI",
+    "PyTorch",
+    "React Three Fiber"
+  ],
+  "deployment": [
+    "self-hosted",
+    "Docker",
+    "Linux",
+    "NVIDIA CUDA"
+  ],
+  "performance_metrics": [
+    "GPU-accelerated",
+    "VRAM-aware scheduling",
+    "SSE progress streaming"
+  ],
+  "metadata_version": "2.0",
+  "last_updated": "2026-10-11"
+}

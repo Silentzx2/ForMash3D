@@ -1,0 +1,19 @@
+# GitHub Labels for ForMesh3D
+
+# Format: name, color, description
+
+bug,d73a4a,"Something isn't working"
+enhancement,a2eeef,"New feature or improvement"
+documentation,0075ca,"Documentation updates"
+good first issue,7057ff,"Good for new contributors"
+help wanted,008672,"Extra attention is needed"
+no-gpu,fbca04,"Can be done without a GPU"
+needs-gpu,d93f0b,"Requires NVIDIA GPU + CUDA"
+adapter,1d76db,"Model adapter (TRELLIS, Hunyuan, TripoSG, etc.)"
+ui/ux,ff6b35,"User interface or user experience"
+quality,84b6eb,"Quality gates, post-processing, metrics"
+cpu-mode,5319e7,"CPU-only setup and operation"
+tests,006b75,"Adding or fixing tests"
+performance,fef2c0,"Performance optimization"
+security,ee0707,"Security-related change"
+dependencies,e11d21,"Adding or updating dependencies"

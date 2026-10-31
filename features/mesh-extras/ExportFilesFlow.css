@@ -1,0 +1,122 @@
+/* Corner card for a plain-file export. Deliberately not an overlay: nothing
+   about a running copy needs the page blocked. No backdrop-filter either —
+   see the Electron compositor note in ExportMeshDialog's overlay. */
+.export-files-card {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 3.25rem;
+  z-index: 2300;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: min(380px, calc(100vw - 2rem));
+  padding: 0.85rem 1rem;
+  background: var(--surface-container-low);
+  border: 1px solid rgba(143, 245, 255, 0.14);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.45);
+}
+
+.export-files-card__header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.export-files-card__icon {
+  font-size: 1.2rem;
+  color: #9cffce;
+}
+
+.export-files-card__icon--running {
+  color: var(--primary);
+  animation: export-files-spin 1.2s linear infinite;
+}
+
+.export-files-card__icon--warn {
+  color: #e0a030;
+}
+
+@keyframes export-files-spin {
+  to { transform: rotate(360deg); }
+}
+
+.export-files-card__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+.export-files-card__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--on-surface-variant);
+  cursor: pointer;
+}
+
+.export-files-card__close:hover {
+  color: var(--on-surface);
+}
+
+.export-files-card__track {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(71, 72, 74, 0.28);
+  overflow: hidden;
+}
+
+.export-files-card__bar {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--primary);
+  transition: width 0.2s ease;
+}
+
+.export-files-card__row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.export-files-card__message {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.74rem;
+  color: var(--on-surface-variant);
+}
+
+.export-files-card__btn {
+  padding: 0.3rem 0.75rem;
+  border: 1px solid rgba(71, 72, 74, 0.3);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--on-surface);
+  font-size: 0.76rem;
+  cursor: pointer;
+}
+
+.export-files-card__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.export-files-card__failures {
+  max-height: 140px;
+  margin: 0;
+  padding: 0 0 0 1rem;
+  overflow-y: auto;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: #ff9c9c;
+}

@@ -1,0 +1,47 @@
+name: Model Integration Issue
+description: Report an issue specifically related to a 3D model adapter, CUDA extensions, or weights download.
+labels: ["model-integration", "cuda", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template when reporting an issue with a specific neural 3D model adapter (e.g. TRELLIS, Hunyuan3D, TripoSG, UniRig, PartUV).
+        **Do NOT paste Hugging Face API keys or private tokens.**
+  - type: dropdown
+    id: model_name
+    attributes:
+      label: Model Affected
+      options:
+        - TRELLIS / TRELLIS.2
+        - Hunyuan3D-2.1 / Hunyuan3D-Part
+        - TripoSG
+        - UniRig (Auto-Rigging)
+        - PartUV (UV Unwrapping)
+        - FastMesh (Retopology)
+        - ARDY (Motion AI)
+        - Other / Multiple
+    validations:
+      required: true
+  - type: input
+    id: torch_cuda
+    attributes:
+      label: PyTorch & CUDA Environment
+      description: Versions from `python -c "import torch; print(torch.__version__, torch.version.cuda)"`
+      placeholder: "e.g. 2.6.0+cu124, 12.4"
+    validations:
+      required: true
+  - type: textarea
+    id: error_output
+    attributes:
+      label: CUDA or Inference Error Traceback
+      description: Include the complete Python traceback or CUDA compiler output.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction Steps
+      description: Exact prompt or input asset that triggered the failure.
+    validations:
+      required: true

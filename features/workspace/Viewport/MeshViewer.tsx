@@ -1,0 +1,5948 @@
+import React, { useEffect, useRef, useState, useCallback } from 'react';
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
+import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
+import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
+import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js';
+import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
+import { useWorkspace } from '../store/WorkspaceContext';
+import { CameraViewPreset, ModelAsset, normalizeModelAsset, uploadMeshAsset } from '../types';
+import { SimpleTooltip } from '@/components/ui/simple-tooltip';
+import { getApiClient } from '@/services/apiClient';
+import { useAnimationStore, BoneItem, mapRetargetBones } from '@/stores/useAnimationStore';
+import { loadModelInViewer, useViewerStore } from '@/stores/useViewerStore';
+import { useAppStore } from '@/stores/useAppStore';
+
+import { validate3DFile } from '../lib/fileValidation';
+import { requireUploadFileId } from '../lib/uploadResponse';
+import { getUploadPercent } from '../lib/uploadProgress';
+import { createPointCloudFromImage, disposePointCloud } from './ImagePointCloud';
+import { GenerationLoadingPreview } from './GenerationLoadingPreview';
+import { ViewerToolbar } from '../components/MeshViewer/ViewerToolbar';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
+import { getCachedGLB, setCachedGLB, loadGLBWithProgress } from '../lib/glbCache';
+import { PhysicsRuntime } from '../physics/PhysicsRuntime';
+import { DEFAULT_PHYSICS_SETTINGS } from '../utils/physicsSettings';
+import { analyzeGeometryTelemetry, prepareMeshTangentsAndNormals } from '../lib/meshTelemetry';
+import { taskPersistence } from '@/services/taskPersistence';
+import { QualityBadge } from '../Panels/GeneratePanel';
+
+import { HugeiconsIcon } from '@hugeicons/react';
+import { Box, CameraIcon, Cancel, Cancel01Icon, CheckIcon, ChevronDown, CloudUpload, CompassIcon, DownloadIcon, EyeIcon, FlipHorizontalIcon, GridIcon, Hand, Layers01Icon, Maximize02Icon, MoveIcon, RecordIcon, RotateCcwIcon, RotateCw, SearchIcon, SparklesIcon, SunIcon, ZapIcon, ZoomInIcon, ZoomOutIcon } from '@hugeicons/core-free-icons';
+import {
+  StandardBrushIcon,
+  ClayBrushIcon,
+  InflateBrushIcon,
+  SmoothBrushIcon,
+  FlattenBrushIcon,
+  PinchBrushIcon,
+  GrabBrushIcon,
+  PaintBrushToolIcon,
+  AirbrushIcon,
+  EraserToolIcon,
+} from '@/components/icons/BrushIcons';
+
+function getActiveBrushIcon(activeTool: string, sculptBrush?: string, isErase?: boolean) {
+  if (activeTool === 'texture') {
+    return isErase ? EraserToolIcon : PaintBrushToolIcon;
+  }
+  switch (sculptBrush) {
+    case 'clay': return ClayBrushIcon;
+    case 'inflate': return InflateBrushIcon;
+    case 'smooth': return SmoothBrushIcon;
+    case 'flatten': return FlattenBrushIcon;
+    case 'pinch': return PinchBrushIcon;
+    case 'grab': return GrabBrushIcon;
+    case 'standard':
+    default: return StandardBrushIcon;
+  }
+}
+
+const disposeMaterial = (material: THREE.Material) => {
+  const m = material as any;
+  const texProps = [
+    'map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap',
+    'emissiveMap', 'bumpMap', 'displacementMap', 'alphaMap', 'envMap'
+  ];
+  for (const prop of texProps) {
+    if (m[prop] instanceof THREE.Texture) {
+      m[prop].dispose();
+    }
+  }
+  Object.values(material).forEach((v: any) => { if (v instanceof THREE.Texture) v.dispose(); });
+  material.dispose();
+};
+
+// Reusable loaders to avoid GC churn on frequent model switching
+const dracoLoader = new DRACOLoader();
+if (typeof window !== 'undefined') {
+  try {
+    dracoLoader.setDecoderPath('/draco/gltf/');
+  } catch {}
+}
+
+const sharedGLTFLoader = new GLTFLoader();
+sharedGLTFLoader.setDRACOLoader(dracoLoader);
+try {
+  sharedGLTFLoader.setMeshoptDecoder(MeshoptDecoder);
+} catch {}
+
+const sharedOBJLoader = new OBJLoader();
+const sharedFBXLoader = new FBXLoader();
+const sharedPLYLoader = new PLYLoader();
+const sharedSTLLoader = new STLLoader();
+
+// Shared geometries and materials for zero-allocation, 60fps armature rendering
+const sharedJointGeo = new THREE.SphereGeometry(1, 14, 10);
+const sharedJointMat = new THREE.MeshStandardMaterial({
+  color: 0x00F5D4,
+  emissive: 0x00A896,
+  emissiveIntensity: 0.4,
+  roughness: 0.2,
+  metalness: 0.5,
+  depthTest: false,
+  transparent: true,
+  opacity: 0.95,
+});
+const sharedJointSelectedMat = new THREE.MeshStandardMaterial({
+  color: 0xF5C542,
+  emissive: 0xF5C542,
+  emissiveIntensity: 0.8,
+  roughness: 0.2,
+  metalness: 0.5,
+  depthTest: false,
+  transparent: true,
+  opacity: 0.95,
+});
+const sharedBoneMat = new THREE.MeshStandardMaterial({
+  color: 0xE0A800,
+  roughness: 0.35,
+  metalness: 0.2,
+  transparent: true,
+  opacity: 0.75,
+  depthTest: false,
+});
+const sharedBoneSelectedMat = new THREE.MeshStandardMaterial({
+  color: 0xF5C542,
+  roughness: 0.35,
+  metalness: 0.2,
+  transparent: true,
+  opacity: 0.95,
+  depthTest: false,
+});
+const sharedRingGeo = new THREE.RingGeometry(0.045, 0.055, 24);
+const sharedRingMat = new THREE.MeshBasicMaterial({
+  color: 0xF5C542,
+  side: THREE.DoubleSide,
+  depthTest: false,
+  transparent: true,
+  opacity: 0.95,
+});
+
+function createUnitBoneGeometry(): THREE.BufferGeometry {
+  const width = 0.12;
+  const bodyZ = 0.22;
+  const len = 1.0;
+  const vertices = new Float32Array([
+    0, 0, 0,    width, 0, bodyZ,    0, width, bodyZ,
+    0, 0, 0,    0, width, bodyZ,   -width, 0, bodyZ,
+    0, 0, 0,   -width, 0, bodyZ,    0, -width, bodyZ,
+    0, 0, 0,    0, -width, bodyZ,   width, 0, bodyZ,
+    width, 0, bodyZ,    0, 0, len,    0, width, bodyZ,
+    0, width, bodyZ,    0, 0, len,   -width, 0, bodyZ,
+   -width, 0, bodyZ,    0, 0, len,    0, -width, bodyZ,
+    0, -width, bodyZ,   0, 0, len,    width, 0, bodyZ,
+  ]);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+  geo.computeVertexNormals();
+  return geo;
+}
+const sharedBoneGeo = createUnitBoneGeometry();
+const SHARED_STATIC_RESOURCES = new Set<unknown>([
+  sharedJointGeo,
+  sharedJointMat,
+  sharedJointSelectedMat,
+  sharedBoneGeo,
+  sharedBoneMat,
+  sharedBoneSelectedMat,
+  sharedRingGeo,
+  sharedRingMat,
+]);
+
+// Helper to create an authentic Blender-style bone octahedron mesh between parent and child positions
+function createBoneMesh(
+  start: THREE.Vector3,
+  end: THREE.Vector3,
+  isSelected: boolean,
+  boneName?: string,
+  parentName?: string
+): THREE.Mesh {
+  const dir = new THREE.Vector3().subVectors(end, start);
+  const len = dir.length();
+  if (len < 0.001) return new THREE.Mesh();
+
+  const mesh = new THREE.Mesh(sharedBoneGeo, isSelected ? sharedBoneSelectedMat : sharedBoneMat);
+  mesh.renderOrder = 9998;
+  mesh.position.copy(start);
+  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir.clone().normalize());
+  mesh.scale.set(len, len, len);
+  mesh.userData = { isConnector: true, boneName, parentName };
+  return mesh;
+}
+
+function createJointMesh(pos: THREE.Vector3, isSelected: boolean, boneName: string, scale: number): THREE.Mesh {
+  const radius = (isSelected ? 0.045 : 0.032) * Math.max(0.3, Math.min(scale, 2.5));
+  const mesh = new THREE.Mesh(sharedJointGeo, isSelected ? sharedJointSelectedMat : sharedJointMat);
+  mesh.scale.setScalar(radius);
+  mesh.renderOrder = 9999;
+  mesh.position.copy(pos);
+  mesh.userData = { isJoint: true, boneName };
+  return mesh;
+}
+
+// Procedural Skeletal Animation Generator for 17-Bone Humanoid Armature
+function getSingleClipOffsets(clipId: string, t: number, muted: Set<string>) {
+  const rot: Record<string, [number, number, number]> = {};
+  let rootY = 0;
+  let rootZ = 0;
+
+  const armsMuted = muted.has('track-arms');
+  const legsMuted = muted.has('track-legs');
+  const bodyMuted = muted.has('track-body');
+  const faceMuted = muted.has('track-face');
+  const rootMuted = muted.has('track-root');
+
+  if (clipId === 'anim-4' || clipId === 'anim-5') {
+    // Walking cycle (stride ~ 1.8s)
+    const speed = clipId === 'anim-5' ? 3.0 : 4.2;
+    const phase = t * speed;
+    const sinP = Math.sin(phase);
+    const cosP = Math.cos(phase);
+
+    if (!rootMuted) rootY = Math.abs(sinP) * 0.035 - 0.015;
+    if (!bodyMuted) {
+      rot['Hips'] = [0, sinP * 6, 0];
+      rot['Spine'] = [0, -sinP * 4, 0];
+      rot['Chest'] = [4, -sinP * 3, 0];
+    }
+    if (!legsMuted) {
+      rot['UpperLeg_L'] = [sinP * 28, 0, 0];
+      rot['LowerLeg_L'] = [Math.max(0, -sinP) * 32, 0, 0];
+      rot['Foot_L'] = [cosP * 12, 0, 0];
+
+      rot['UpperLeg_R'] = [-sinP * 28, 0, 0];
+      rot['LowerLeg_R'] = [Math.max(0, sinP) * 32, 0, 0];
+      rot['Foot_R'] = [-cosP * 12, 0, 0];
+    }
+    if (!armsMuted) {
+      rot['UpperArm_L'] = [-sinP * 24, 0, -20];
+      rot['LowerArm_L'] = [18 + Math.max(0, -sinP) * 20, 0, 0];
+      rot['UpperArm_R'] = [sinP * 24, 0, 20];
+      rot['LowerArm_R'] = [18 + Math.max(0, sinP) * 20, 0, 0];
+    }
+    if (!faceMuted) rot['Head'] = [-2, sinP * 2, 0];
+  } else if (clipId === 'anim-6' || clipId === 'anim-7') {
+    // Running cycle (sprint ~ 1.0s)
+    const speed = clipId === 'anim-7' ? 8.0 : 6.5;
+    const phase = t * speed;
+    const sinP = Math.sin(phase);
+    const cosP = Math.cos(phase);
+
+    if (!rootMuted) {
+      rootY = Math.abs(sinP) * 0.07 - 0.035;
+      rootZ = 0.05;
+    }
+    if (!bodyMuted) {
+      rot['Hips'] = [12, sinP * 10, 0];
+      rot['Spine'] = [8, -sinP * 6, 0];
+      rot['Chest'] = [8, -sinP * 5, 0];
+    }
+    if (!legsMuted) {
+      rot['UpperLeg_L'] = [sinP * 46, 0, 0];
+      rot['LowerLeg_L'] = [Math.max(0, -sinP) * 55, 0, 0];
+      rot['Foot_L'] = [cosP * 20, 0, 0];
+
+      rot['UpperLeg_R'] = [-sinP * 46, 0, 0];
+      rot['LowerLeg_R'] = [Math.max(0, sinP) * 55, 0, 0];
+      rot['Foot_R'] = [-cosP * 20, 0, 0];
+    }
+    if (!armsMuted) {
+      rot['UpperArm_L'] = [-sinP * 40, 0, -25];
+      rot['LowerArm_L'] = [45 + Math.max(0, -sinP) * 35, 0, 0];
+      rot['UpperArm_R'] = [sinP * 40, 0, 25];
+      rot['LowerArm_R'] = [45 + Math.max(0, sinP) * 35, 0, 0];
+    }
+    if (!faceMuted) rot['Head'] = [6, 0, 0];
+  } else if (clipId === 'anim-8' || clipId === 'anim-9') {
+    // Jump cycle
+    const cycle = (t * 1.8) % 2.0;
+    let jumpProgress = 0;
+    if (cycle < 0.4) {
+      jumpProgress = -0.08 * (cycle / 0.4);
+      if (!legsMuted) {
+        rot['UpperLeg_L'] = [25, 0, 0];
+        rot['LowerLeg_L'] = [35, 0, 0];
+        rot['UpperLeg_R'] = [25, 0, 0];
+        rot['LowerLeg_R'] = [35, 0, 0];
+      }
+      if (!armsMuted) {
+        rot['UpperArm_L'] = [-25, 0, -20];
+        rot['UpperArm_R'] = [-25, 0, 20];
+      }
+    } else if (cycle < 1.4) {
+      const inAirT = (cycle - 0.4) / 1.0;
+      jumpProgress = Math.sin(inAirT * Math.PI) * 0.35;
+      if (!legsMuted) {
+        rot['UpperLeg_L'] = [-15, 0, 0];
+        rot['LowerLeg_L'] = [10, 0, 0];
+        rot['UpperLeg_R'] = [-15, 0, 0];
+        rot['LowerLeg_R'] = [10, 0, 0];
+      }
+      if (!armsMuted) {
+        rot['UpperArm_L'] = [45, 0, -35];
+        rot['UpperArm_R'] = [45, 0, 35];
+      }
+    } else {
+      const landT = (cycle - 1.4) / 0.6;
+      jumpProgress = -0.06 * Math.sin(landT * Math.PI);
+      if (!legsMuted) {
+        rot['UpperLeg_L'] = [20 * (1 - landT), 0, 0];
+        rot['LowerLeg_L'] = [30 * (1 - landT), 0, 0];
+        rot['UpperLeg_R'] = [20 * (1 - landT), 0, 0];
+        rot['LowerLeg_R'] = [30 * (1 - landT), 0, 0];
+      }
+    }
+    if (!rootMuted) rootY = jumpProgress;
+  } else if (clipId === 'anim-10') {
+    // Wave Right Hand
+    const waveOsc = Math.sin(t * 8) * 22;
+    if (!armsMuted) {
+      rot['UpperArm_R'] = [15, 10, 75];
+      rot['LowerArm_R'] = [40, 0, 35];
+      rot['Hand_R'] = [0, 0, waveOsc];
+      rot['UpperArm_L'] = [0, 0, -15];
+      rot['LowerArm_L'] = [10, 0, 0];
+    }
+    if (!faceMuted) rot['Head'] = [0, 10, 5];
+    if (!bodyMuted) rot['Spine'] = [0, 3, 2];
+  } else if (clipId === 'anim-11') {
+    // Punch Combo
+    const phase = t * 6;
+    const jabR = Math.max(0, Math.sin(phase));
+    const jabL = Math.max(0, Math.sin(phase + Math.PI));
+    if (!armsMuted) {
+      rot['UpperArm_R'] = [jabR * 80 + 10, -jabR * 20, 15];
+      rot['LowerArm_R'] = [(1 - jabR) * 60, 0, 0];
+      rot['UpperArm_L'] = [jabL * 80 + 10, jabL * 20, -15];
+      rot['LowerArm_L'] = [(1 - jabL) * 60, 0, 0];
+    }
+    if (!bodyMuted) {
+      rot['Chest'] = [5, (jabR - jabL) * 18, 0];
+      rot['Hips'] = [0, (jabR - jabL) * 10, 0];
+    }
+    if (!legsMuted) {
+      rot['UpperLeg_L'] = [15, 0, 0];
+      rot['UpperLeg_R'] = [-15, 0, 0];
+    }
+  } else if (clipId === 'anim-12') {
+    // Celebrate Victory
+    const cheer = Math.sin(t * 4) * 8;
+    if (!armsMuted) {
+      rot['UpperArm_L'] = [15, 0, -70 + cheer];
+      rot['LowerArm_L'] = [40, 0, 0];
+      rot['UpperArm_R'] = [15, 0, 70 - cheer];
+      rot['LowerArm_R'] = [40, 0, 0];
+    }
+    if (!bodyMuted) rot['Chest'] = [-10, 0, 0];
+    if (!faceMuted) rot['Head'] = [-15, 0, 0];
+    if (!rootMuted) rootY = Math.abs(Math.sin(t * 5)) * 0.04;
+  } else {
+    // Breathing Idle
+    const breath = Math.sin(t * 2.2);
+    if (!bodyMuted) {
+      rot['Spine'] = [breath * 2.5, 0, 0];
+      rot['Chest'] = [breath * 3.5, 0, 0];
+    }
+    if (!rootMuted) rootY = breath * 0.012;
+    if (!faceMuted) rot['Head'] = [-breath * 1.5, 0, 0];
+    if (!armsMuted) {
+      rot['UpperArm_L'] = [0, 0, -18 - breath * 2];
+      rot['UpperArm_R'] = [0, 0, 18 + breath * 2];
+    }
+  }
+
+  return { rotations: rot, rootOffset: [0, rootY, rootZ] as [number, number, number] };
+}
+
+function getBlendedJointOffsets(
+  animId: string,
+  t: number,
+  muted: Set<string>,
+  blendState?: { animA: string; animB: string; weight: number },
+  isBlendMode?: boolean
+) {
+  if (isBlendMode && blendState) {
+    const offA = getSingleClipOffsets(blendState.animA, t, muted);
+    const offB = getSingleClipOffsets(blendState.animB, t, muted);
+    const w = Math.max(0, Math.min(1, blendState.weight));
+
+    const blendedRot: Record<string, [number, number, number]> = {};
+    const allKeys = new Set([...Object.keys(offA.rotations), ...Object.keys(offB.rotations)]);
+    allKeys.forEach((key) => {
+      const rA = offA.rotations[key] || [0, 0, 0];
+      const rB = offB.rotations[key] || [0, 0, 0];
+      blendedRot[key] = [
+        rA[0] * (1 - w) + rB[0] * w,
+        rA[1] * (1 - w) + rB[1] * w,
+        rA[2] * (1 - w) + rB[2] * w,
+      ];
+    });
+
+    const rootOff: [number, number, number] = [
+      offA.rootOffset[0] * (1 - w) + offB.rootOffset[0] * w,
+      offA.rootOffset[1] * (1 - w) + offB.rootOffset[1] * w,
+      offA.rootOffset[2] * (1 - w) + offB.rootOffset[2] * w,
+    ];
+    return { rotations: blendedRot, rootOffset: rootOff };
+  }
+  return getSingleClipOffsets(animId, t, muted);
+}
+
+// Forward Kinematics solver: converts local bone rotations into hierarchical world coordinates
+function computeArmatureWorldPositions(
+  bones: BoneItem[],
+  rotations: Record<string, [number, number, number]>,
+  rootOffset: [number, number, number],
+  center: THREE.Vector3,
+  baseY: number,
+  scale: number
+): Map<string, THREE.Vector3> {
+  const worldPositions = new Map<string, THREE.Vector3>();
+  const worldQuaternions = new Map<string, THREE.Quaternion>();
+
+  const boneMap = new Map<string, BoneItem>();
+  bones.forEach((b) => boneMap.set(b.name, b));
+
+  function evalBone(name: string) {
+    if (worldPositions.has(name)) return;
+    const b = boneMap.get(name);
+    if (!b) return;
+
+    const rotDeg = rotations[name] || b.rotation || [0, 0, 0];
+    const localEuler = new THREE.Euler(
+      THREE.MathUtils.degToRad(rotDeg[0]),
+      THREE.MathUtils.degToRad(rotDeg[1]),
+      THREE.MathUtils.degToRad(rotDeg[2]),
+      'XYZ'
+    );
+    const localQuat = new THREE.Quaternion().setFromEuler(localEuler);
+
+    if (!b.parent || !boneMap.has(b.parent)) {
+      const posX = center.x + (b.position[0] + rootOffset[0]) * scale;
+      const posY = baseY + (b.position[1] + rootOffset[1]) * scale;
+      const posZ = center.z + (b.position[2] + rootOffset[2]) * scale;
+      worldPositions.set(name, new THREE.Vector3(posX, posY, posZ));
+      worldQuaternions.set(name, localQuat);
+    } else {
+      if (!worldPositions.has(b.parent)) {
+        evalBone(b.parent);
+      }
+      const parentPos = worldPositions.get(b.parent)!;
+      const parentQuat = worldQuaternions.get(b.parent) || new THREE.Quaternion();
+
+      const parentBone = boneMap.get(b.parent)!;
+      const restRel = new THREE.Vector3(
+        (b.position[0] - parentBone.position[0]) * scale,
+        (b.position[1] - parentBone.position[1]) * scale,
+        (b.position[2] - parentBone.position[2]) * scale
+      );
+
+      restRel.applyQuaternion(parentQuat);
+
+      const childPos = new THREE.Vector3().addVectors(parentPos, restRel);
+      worldPositions.set(name, childPos);
+
+      const childQuat = parentQuat.clone().multiply(localQuat);
+      worldQuaternions.set(name, childQuat);
+    }
+  }
+
+  bones.forEach((b) => evalBone(b.name));
+  return worldPositions;
+}
+
+interface MeshViewerProps {
+  className?: string;
+  showOverlayUI?: boolean;
+}
+
+export type LightTone = 'studio' | 'warm' | 'cool' | 'neutral';
+
+export interface EnvironmentPreset {
+  id: string;
+  label: string;
+  settings: {
+    ambientIntensity: number;
+    keyLightIntensity: number;
+    fillLightIntensity: number;
+    rimLightIntensity: number;
+    exposure: number;
+    toneMapping?: 'neutral' | 'aces';
+    lightTone: LightTone;
+    backgroundColor: string;
+    gridVisible: boolean;
+    floorShadowOpacity: number;
+    autoRotate: boolean;
+  };
+}
+
+export const LIGHT_TONES: Record<LightTone, { label: string; key: number; fill: number; rim: number }> = {
+  studio: { label: 'Studio', key: 0xfff8f0, fill: 0xf5f5f7, rim: 0xffeed0 },
+  warm: { label: 'Warm Gold', key: 0xffe8cc, fill: 0xfff5ea, rim: 0xffcc00 },
+  cool: { label: 'Cyber Cool', key: 0xffffff, fill: 0xd8e6ff, rim: 0xd0e0ff },
+  neutral: { label: 'Neutral', key: 0xffffff, fill: 0xffffff, rim: 0xffffff },
+};
+
+export const BACKGROUND_OPTIONS = [
+  { id: 'transparent', label: 'Studio Dark Gray', value: 'transparent', preview: 'radial-gradient(circle, #16181d 0%, #08090a 100%)' },
+  { id: 'dark-gray', label: 'Dark Charcoal', value: '#131519', preview: '#131519' },
+  { id: 'slate', label: 'Dark Slate', value: '#181b22', preview: '#181b22' },
+  { id: 'clay', label: 'Clay Gray', value: '#242730', preview: '#242730' },
+  { id: 'charcoal', label: 'Deep Void', value: '#08080a', preview: '#08080a' },
+  { id: 'light', label: 'Studio Light', value: '#e8e9ed', preview: '#e8e9ed' },
+];
+
+export const ENVIRONMENT_PRESETS: EnvironmentPreset[] = [
+  {
+    id: 'studio',
+    label: 'Studio Gold',
+    settings: {
+      ambientIntensity: 0.85,
+      keyLightIntensity: 1.8,
+      fillLightIntensity: 1.1,
+      rimLightIntensity: 1.5,
+      exposure: 1.05,
+      toneMapping: 'neutral',
+      lightTone: 'studio',
+      backgroundColor: 'transparent',
+      gridVisible: false,
+      floorShadowOpacity: 0.2,
+      autoRotate: false,
+    },
+  },
+  {
+    id: 'dramatic',
+    label: 'Dramatic Rim',
+    settings: {
+      ambientIntensity: 0.45,
+      keyLightIntensity: 2.2,
+      fillLightIntensity: 0.7,
+      rimLightIntensity: 2.2,
+      exposure: 1.1,
+      toneMapping: 'aces',
+      lightTone: 'cool',
+      backgroundColor: '#14151a',
+      gridVisible: false,
+      floorShadowOpacity: 0.25,
+      autoRotate: false,
+    },
+  },
+  {
+    id: 'clay',
+    label: 'Clay Sculpt',
+    settings: {
+      ambientIntensity: 1.0,
+      keyLightIntensity: 1.6,
+      fillLightIntensity: 1.2,
+      rimLightIntensity: 1.2,
+      exposure: 1.2,
+      toneMapping: 'neutral',
+      lightTone: 'neutral',
+      backgroundColor: '#32353f',
+      gridVisible: false,
+      floorShadowOpacity: 0.2,
+      autoRotate: false,
+    },
+  },
+  {
+    id: 'golden',
+    label: 'Golden Hour',
+    settings: {
+      ambientIntensity: 0.85,
+      keyLightIntensity: 2.0,
+      fillLightIntensity: 1.2,
+      rimLightIntensity: 1.8,
+      exposure: 1.15,
+      toneMapping: 'aces',
+      lightTone: 'warm',
+      backgroundColor: 'transparent',
+      gridVisible: false,
+      floorShadowOpacity: 0.2,
+      autoRotate: false,
+    },
+  },
+  {
+    id: 'light',
+    label: 'Pure Light',
+    settings: {
+      ambientIntensity: 1.2,
+      keyLightIntensity: 1.6,
+      fillLightIntensity: 1.3,
+      rimLightIntensity: 1.2,
+      exposure: 1.2,
+      toneMapping: 'neutral',
+      lightTone: 'neutral',
+      backgroundColor: '#e8e9ed',
+      gridVisible: false,
+      floorShadowOpacity: 0.15,
+      autoRotate: false,
+    },
+  },
+];
+
+
+export const MeshViewer: React.FC<MeshViewerProps> = ({ 
+  className = '', 
+  showOverlayUI = true 
+}) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { 
+    assets,
+    currentAsset, 
+    setCurrentAsset,
+    selectAsset,
+    addAsset,
+    updateAssetProperties,
+    shadingMode, 
+    setShadingMode,
+    showWireframe,
+    setShowWireframe,
+    isTurntable,
+    setIsTurntable,
+    isExecuting,
+    executionProgress,
+    executionStep,
+    cancelExecution,
+    activeTask,
+    generationSettings,
+    setGenerationSettings,
+    textureSettings,
+    activeTool,
+    setActiveTool,
+    navigateToTool,
+    setIsExportModalOpen,
+    generate3DModel,
+    viewportResetTrigger,
+    isLeftPanelOpen,
+    setIsLeftPanelOpen,
+    leftPanelWidth,
+    isRightPanelOpen,
+    rightPanelWidth,
+    sculptSettings,
+    paintBrushSettings,
+    jobsById = {},
+    dismissJob,
+    selectJobToView,
+  } = useWorkspace();
+
+  const { batchQueue, updateBatchItem } = useAppStore();
+
+  const [isDesktopScreen, setIsDesktopScreen] = useState(true);
+  const [isQueueDrawerOpen, setIsQueueDrawerOpen] = useState(true);
+  const [isCapturingTurntable, setIsCapturingTurntable] = useState(false);
+  const [turntableProgress, setTurntableProgress] = useState(0);
+  const isCapturingTurntableRef = useRef(false);
+  useEffect(() => {
+    isCapturingTurntableRef.current = isCapturingTurntable;
+  }, [isCapturingTurntable]);
+
+  const brushCursorRef = useRef<THREE.Mesh | null>(null);
+  const isBrushingRef = useRef(false);
+  const activeToolRef = useRef(activeTool);
+  const sculptSettingsRef = useRef(sculptSettings);
+  const paintBrushSettingsRef = useRef(paintBrushSettings);
+  const tintedIndicesRef = useRef<Set<number>>(new Set());
+  const lastSculptedMeshRef = useRef<THREE.Mesh | null>(null);
+  const lastNormalsUpdateRef = useRef<number>(0);
+  const lastPaintUVRef = useRef<{ x: number; y: number } | null>(null);
+  const maskPaintModeRef = useRef<{ enabled: boolean; erase: boolean }>({ enabled: false, erase: false });
+
+  useEffect(() => {
+    activeToolRef.current = activeTool;
+    sculptSettingsRef.current = sculptSettings;
+    paintBrushSettingsRef.current = paintBrushSettings;
+    if (brushCursorRef.current) {
+      if (activeTool === 'texture') {
+        (brushCursorRef.current.material as THREE.MeshBasicMaterial).color.set(paintBrushSettings?.color || '#FFCC00');
+      } else {
+        (brushCursorRef.current.material as THREE.MeshBasicMaterial).color.set(0xffcc00);
+      }
+    }
+  }, [activeTool, sculptSettings, paintBrushSettings]);
+
+  // Dynamic BrushIcon Size Preview HUD overlay state
+  const [brushPreviewVisible, setBrushPreviewVisible] = useState(false);
+  const [brushPreviewRadius, setBrushPreviewRadius] = useState(24);
+  const [brushPreviewColor, setBrushPreviewColor] = useState('#FFCC00');
+  const brushPreviewTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Dynamic 2D Brush Reticle Pointer tracking (ref-based for zero React re-renders)
+  const brushReticleRef = useRef<HTMLDivElement>(null);
+  const isPointerDownRef = useRef(false);
+
+  useEffect(() => {
+    if (activeTool === 'edit') {
+      const px = Math.max(16, Math.min(220, (sculptSettings?.radius || 0.15) * 450));
+      setBrushPreviewRadius(px);
+      setBrushPreviewColor('#FFCC00');
+      setBrushPreviewVisible(true);
+      if (brushPreviewTimerRef.current) clearTimeout(brushPreviewTimerRef.current);
+      brushPreviewTimerRef.current = setTimeout(() => setBrushPreviewVisible(false), 850);
+    } else if (activeTool === 'texture') {
+      setBrushPreviewRadius(Math.max(8, Math.min(200, (paintBrushSettings?.size || 24) * 1.5)));
+      setBrushPreviewColor(paintBrushSettings?.color || '#FFCC00');
+      setBrushPreviewVisible(true);
+      if (brushPreviewTimerRef.current) clearTimeout(brushPreviewTimerRef.current);
+      brushPreviewTimerRef.current = setTimeout(() => setBrushPreviewVisible(false), 850);
+    }
+  }, [sculptSettings?.radius, paintBrushSettings?.size, paintBrushSettings?.color, activeTool]);
+
+  useEffect(() => {
+    const checkScreenSize = () => {
+      if (typeof window !== 'undefined') {
+        setIsDesktopScreen(window.innerWidth >= 1024);
+      }
+    };
+    checkScreenSize();
+    window.addEventListener('resize', checkScreenSize);
+    return () => window.removeEventListener('resize', checkScreenSize);
+  }, []);
+
+  const rightOffset = (isRightPanelOpen && isDesktopScreen) ? (rightPanelWidth + 16) : 16;
+  const leftOffset = (isLeftPanelOpen && isDesktopScreen) ? (leftPanelWidth + 16) : 16;
+
+  const [shadingMenuOpen, setShadingMenuOpen] = useState(false);
+  const shadingMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!shadingMenuOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (shadingMenuRef.current && !shadingMenuRef.current.contains(e.target as Node)) {
+        setShadingMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [shadingMenuOpen]);
+
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadProgress, setLoadProgress] = useState<{ loaded: number; total: number; percent: number } | null>(null);
+  const [showEnvironmentPanel, setShowEnvironmentPanel] = useState(false);
+  const [environmentSettings, setEnvironmentSettings] = useState({
+    ambientIntensity: 0.85,
+    keyLightIntensity: 1.8,
+    fillLightIntensity: 1.1,
+    rimLightIntensity: 1.5,
+    exposure: 1.05,
+    toneMapping: 'neutral' as 'neutral' | 'aces',
+    lightTone: 'studio' as LightTone,
+    backgroundColor: 'transparent',
+    gridVisible: false,
+    gridColor: '#222222',
+    floorShadowOpacity: 0.25,
+    autoRotate: false,
+    showAxes: false,
+    showStats: true,
+  });
+
+  const [cameraPreset, setCameraPreset] = useState<CameraViewPreset>('perspective');
+  const [cameraMenuOpen, setCameraMenuOpen] = useState(false);
+  const cameraMenuRef = useRef<HTMLDivElement>(null);
+  const envPanelRef = useRef<HTMLDivElement>(null);
+  const [interactionMode, setInteractionMode] = useState<'orbit' | 'pan' | 'move' | 'rotate' | 'scale'>('orbit');
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [dropToastMessage, setDropToastMessage] = useState<string | null>(null);
+  const [dropToastIsHtmlError, setDropToastIsHtmlError] = useState(false);
+  const [selectedPreset, setSelectedPreset] = useState<string | null>('studio');
+  const [meshStats, setMeshStats] = useState<{
+    faces: number;
+    vertices: number;
+    triangles: number;
+    dimensions?: { x: number; y: number; z: number };
+    surfaceArea?: number;
+    volume?: number;
+    isManifold?: boolean;
+    nonManifoldEdges?: number;
+    uvCharts?: number;
+  } | null>(null);
+  const [debugBlueprint, setDebugBlueprint] = useState(false);
+  const physicsRuntimeRef = useRef<PhysicsRuntime | null>(null);
+  const [physicsModeOpen, setPhysicsModeOpen] = useState(false);
+  const [physicsRunning, setPhysicsRunning] = useState(false);
+  const [physicsDebug, setPhysicsDebug] = useState(false);
+  const [physicsStatus, setPhysicsStatus] = useState<string | null>(null);
+  const [reflectionPeekEnabled, setReflectionPeekEnabled] = useState(false);
+  const [reflectionPreviewUrl, setReflectionPreviewUrl] = useState<string | null>(null);
+  const [reflectionPeekFocused, setReflectionPeekFocused] = useState(false);
+  const [performanceMode, setPerformanceMode] = useState<'auto' | 'smooth' | 'quality'>('auto');
+  const [artifactView, setArtifactView] = useState<'active' | 'source' | 'game-ready' | 'lod0' | 'lod1' | 'lod2' | 'lod3'>('active');
+  const reflectionPreviewUrlRef = useRef<string | null>(null);
+  const reflectionFocusBackupRef = useRef<{ position: THREE.Vector3; target: THREE.Vector3 } | null>(null);
+  const reflectionPeekTweenRef = useRef<number | null>(null);
+  const [modelLoadVersion, setModelLoadVersion] = useState(0);
+  const loadedAssetIdRef = useRef<string | null>(null);
+  const [loadedAssetId, setLoadedAssetId] = useState<string | null>(null);
+  const [meshUploadProgress, setMeshUploadProgress] = useState<{
+    isUploading: boolean;
+    percent: number;
+    filename: string;
+    isComplete: boolean;
+    error: string | null;
+  } | null>(null);
+
+  const hasUserOrbitedRef = useRef(false);
+  const isUserInteractingRef = useRef(false);
+  const lastFramedAssetIdRef = useRef<string | null>(null);
+  const currentLoadedSourceUrlRef = useRef<string | null>(null);
+  const physicsViewerReady = Boolean(physicsStatus?.toLowerCase().includes('ready'));
+
+  // Close menus on outside click or Escape key
+  useEffect(() => {
+    if (!cameraMenuOpen && !showEnvironmentPanel) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (cameraMenuRef.current && !cameraMenuRef.current.contains(e.target as Node)) {
+        setCameraMenuOpen(false);
+      }
+      if (envPanelRef.current && !envPanelRef.current.contains(e.target as Node)) {
+        // Only close if click wasn't on the toggle button itself
+        const target = e.target as HTMLElement;
+        if (!target.closest('#btn-env-settings-toggle')) {
+          setShowEnvironmentPanel(false);
+        }
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setCameraMenuOpen(false);
+        setShowEnvironmentPanel(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [cameraMenuOpen, showEnvironmentPanel]);
+
+  useEffect(() => {
+    const handleToggle = (e: Event) => {
+      const customEvent = e as CustomEvent<{ force?: boolean }>;
+      setDebugBlueprint((prev) => (customEvent.detail?.force !== undefined ? customEvent.detail.force : !prev));
+    };
+    window.addEventListener('toggleBlueprintPreview', handleToggle);
+    return () => window.removeEventListener('toggleBlueprintPreview', handleToggle);
+  }, []);
+
+  const switchArtifactView = useCallback((view: 'active' | 'source' | 'game-ready' | 'lod0' | 'lod1' | 'lod2' | 'lod3') => {
+    if (!currentAsset) return;
+    const artifacts = currentAsset.artifacts;
+    const lodIndex = view.startsWith('lod') ? Number(view.slice(3)) : -1;
+    const rawLods = artifacts?.lods;
+    const lodCandidate = Array.isArray(rawLods)
+      ? rawLods[lodIndex]
+      : (rawLods && typeof rawLods === 'object')
+        ? ((rawLods as any)[lodIndex] || (rawLods as any)[String(lodIndex)])
+        : undefined;
+    const lodUrl = typeof lodCandidate === 'string' ? lodCandidate : lodCandidate?.url;
+    const url =
+      view === 'source' ? artifacts?.source :
+      view === 'game-ready' ? artifacts?.gameReady :
+      lodIndex >= 0 ? lodUrl :
+      currentAsset.source?.viewUrl || currentAsset.source?.localUrl;
+    if (typeof url !== 'string' || !url) return;
+    loadModelInViewer(url, currentAsset.name, currentAsset as any);
+    setArtifactView(view);
+  }, [currentAsset]);
+
+  const patchEnv = (updates: Partial<typeof environmentSettings>) =>
+    setEnvironmentSettings((p) => ({ ...p, ...updates }));
+
+  useEffect(() => {
+    setArtifactView('active');
+  }, [currentAsset?.id]);
+  
+  const applyPreset = useCallback((presetId: string) => {
+    const preset = ENVIRONMENT_PRESETS.find(p => p.id === presetId);
+    if (!preset) return;
+    setSelectedPreset(presetId);
+    setEnvironmentSettings((p) => ({ ...p, ...preset.settings }));
+  }, []);
+
+  const computeMeshStats = useCallback((object: THREE.Object3D) => {
+    let f = 0, v = 0;
+
+    object.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        const geom = child.geometry;
+        if (geom) {
+          if (geom.index) {
+            f += geom.index.count / 3;
+          } else if (geom.attributes?.position) {
+            f += geom.attributes.position.count / 3;
+          }
+          if (geom.attributes?.position) {
+            v += geom.attributes.position.count;
+          }
+        }
+      }
+    });
+    const faces = Math.round(f);
+    const verts = Math.round(v);
+    const triangles = Math.round(f);
+
+    const box = new THREE.Box3().setFromObject(object);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    const center = new THREE.Vector3();
+    box.getCenter(center);
+    const height = Math.max(size.y, 0.4);
+    const scale = height / 1.8;
+    const baseY = box.min.y;
+    meshBoundsCacheRef.current = { center, size, height, scale, baseY };
+    const dimensions = {
+      x: Number(size.x.toFixed(2)),
+      y: Number(size.y.toFixed(2)),
+      z: Number(size.z.toFixed(2)),
+    };
+
+    // Dynamically calibrate key light shadow camera frustum to model scale for crisp contact shadows
+    if (keyLightRef.current) {
+      const maxDim = Math.max(size.x, size.y, size.z, 0.6);
+      keyLightRef.current.shadow.camera.left = -maxDim * 1.5;
+      keyLightRef.current.shadow.camera.right = maxDim * 1.5;
+      keyLightRef.current.shadow.camera.top = maxDim * 1.5;
+      keyLightRef.current.shadow.camera.bottom = -maxDim * 1.5;
+      keyLightRef.current.shadow.camera.near = 0.1;
+      keyLightRef.current.shadow.camera.far = Math.max(30, maxDim * 10);
+      keyLightRef.current.shadow.camera.updateProjectionMatrix();
+      keyLightRef.current.shadow.needsUpdate = true;
+    }
+
+    // Set fast basic stats immediately (< 1ms instant display, 0ms main-thread freeze)
+    setMeshStats({
+      faces,
+      vertices: verts,
+      triangles,
+      dimensions,
+    });
+    useViewerStore.getState().setModelStats({
+      vertices: verts,
+      triangles,
+      dimensions,
+    });
+
+    const renderer = rendererRef.current;
+    if (renderer) {
+      const isHeavyMesh = triangles >= 250_000;
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isHeavyMesh ? 1.0 : 1.25));
+      renderer.shadowMap.enabled = true;
+      if (keyLightRef.current) {
+        keyLightRef.current.castShadow = true;
+        keyLightRef.current.shadow.needsUpdate = true;
+      }
+    }
+
+    if (currentAsset) {
+      // Authoritative contract: immediate primary stats update
+      const hasAuthoritative = currentAsset.statsAvailable && currentAsset.faces > 0;
+      if (!hasAuthoritative) {
+        updateAssetProperties(currentAsset.id, {
+          faces,
+          vertices: verts,
+          triangles,
+          statsAvailable: true,
+          dimensions: currentAsset.dimensions || dimensions,
+        });
+      } else if (!currentAsset.dimensions) {
+        updateAssetProperties(currentAsset.id, {
+          dimensions: currentAsset.dimensions || dimensions,
+        });
+      }
+    }
+
+    // Defer comprehensive surface area, volume, and manifold telemetry to background idle loop
+    const scheduleIdle = typeof window !== 'undefined' && 'requestIdleCallback' in window
+      ? (window as any).requestIdleCallback
+      : (cb: () => void) => setTimeout(cb, 16);
+
+    scheduleIdle(() => {
+      let totalSurfaceArea = 0;
+      let totalVolume = 0;
+      let isManifold = true;
+      let totalNonManifoldEdges = 0;
+      let maxUvCharts = 0;
+
+      object.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          prepareMeshTangentsAndNormals(child);
+          const geom = child.geometry;
+          if (geom) {
+            const tele = analyzeGeometryTelemetry(geom);
+            totalSurfaceArea += tele.surfaceArea;
+            totalVolume += tele.volume;
+            if (!tele.isManifold) isManifold = false;
+            totalNonManifoldEdges += tele.nonManifoldEdges;
+            maxUvCharts = Math.max(maxUvCharts, tele.uvCharts);
+          }
+        }
+      });
+
+      const surfaceArea = Number(totalSurfaceArea.toFixed(4));
+      const volume = Number(totalVolume.toFixed(4));
+
+      setMeshStats((prev) => prev ? {
+        ...prev,
+        surfaceArea,
+        volume,
+        isManifold,
+        nonManifoldEdges: totalNonManifoldEdges,
+        uvCharts: maxUvCharts,
+      } : null);
+
+      useViewerStore.getState().setModelStats({
+        vertices: verts,
+        triangles,
+        dimensions,
+        surfaceArea,
+        volume,
+        isManifold,
+        nonManifoldEdges: totalNonManifoldEdges,
+        uvCharts: maxUvCharts,
+      });
+
+      if (currentAsset) {
+        updateAssetProperties(currentAsset.id, {
+          surfaceArea,
+          volume,
+          isManifold,
+          nonManifoldEdges: totalNonManifoldEdges,
+          uvCharts: maxUvCharts,
+        });
+      }
+    });
+  }, [currentAsset, updateAssetProperties]);
+
+  // Internal Three.js references
+  const sceneRef = useRef<THREE.Scene | null>(null);
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const controlsRef = useRef<OrbitControls | null>(null);
+  const transformControlsRef = useRef<TransformControls | null>(null);
+  const currentMeshGroupRef = useRef<THREE.Group | null>(null);
+  const pointCloudRef = useRef<THREE.Object3D | null>(null);
+  const pointCloudGroupRef = useRef<THREE.Group | null>(null);
+  const gridHelperRef = useRef<THREE.GridHelper | null>(null);
+  const floorRef = useRef<THREE.Mesh | null>(null);
+  const keyLightRef = useRef<THREE.DirectionalLight | null>(null);
+  const fillLightRef = useRef<THREE.DirectionalLight | null>(null);
+  const rimLightRef = useRef<THREE.DirectionalLight | null>(null);
+  const backFillLightRef = useRef<THREE.DirectionalLight | null>(null);
+  const hemiLightRef = useRef<THREE.HemisphereLight | null>(null);
+  const cameraLightRef = useRef<THREE.DirectionalLight | null>(null);
+  const envTextureRef = useRef<THREE.Texture | null>(null);
+  const animFrameIdRef = useRef<number | null>(null);
+  const isTurntableRef = useRef(isTurntable);
+  const blobUrlRef = useRef<string | null>(null);
+  const toastTimeoutRef = useRef<number | null>(null);
+  const mixerRef = useRef<THREE.AnimationMixer | null>(null);
+  const actionRef = useRef<THREE.AnimationAction | null>(null);
+  const skeletonHelperRef = useRef<THREE.SkeletonHelper | null>(null);
+  const motionRootObjectRef = useRef<THREE.Object3D | null>(null);
+  const motionRootBasePositionRef = useRef<THREE.Vector3 | null>(null);
+  const rigArmatureGroupRef = useRef<THREE.Group | null>(null);
+  const turntableRecorderRef = useRef<MediaRecorder | null>(null);
+  const turntableAnimFrameRef = useRef<number | null>(null);
+  const lastRenderedAnimTimeRef = useRef<number>(-1);
+  const meshBoundsCacheRef = useRef<{
+    center: THREE.Vector3;
+    size: THREE.Vector3;
+    height: number;
+    scale: number;
+    baseY: number;
+  } | null>(null);
+
+  useEffect(() => {
+    const renderer = rendererRef.current;
+    if (!renderer) return;
+    const triangles = currentAsset?.triangles || meshStats?.triangles || 0;
+    const heavy = triangles >= 250_000;
+    const dpr = window.devicePixelRatio || 1;
+    const cappedDpr = performanceMode === 'smooth'
+      ? Math.min(dpr, 0.85)
+      : performanceMode === 'quality'
+        ? Math.min(dpr, 1.5)
+        : Math.min(dpr, heavy ? 1.0 : 1.25);
+    renderer.setPixelRatio(cappedDpr);
+    renderer.shadowMap.enabled = performanceMode !== 'smooth' && !(performanceMode === 'auto' && heavy);
+    if (keyLightRef.current) {
+      keyLightRef.current.castShadow = renderer.shadowMap.enabled;
+      keyLightRef.current.shadow.needsUpdate = true;
+    }
+  }, [performanceMode, currentAsset?.triangles, meshStats?.triangles]);
+
+  const getMeshBounds = useCallback(() => {
+    if (meshBoundsCacheRef.current) return meshBoundsCacheRef.current;
+    const group = currentMeshGroupRef.current;
+    if (!group || group.children.length === 0) {
+      return {
+        center: new THREE.Vector3(0, 0, 0),
+        size: new THREE.Vector3(1, 1.8, 1),
+        height: 1.8,
+        scale: 1.0,
+        baseY: 0,
+      };
+    }
+    const box = new THREE.Box3().setFromObject(group);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    const height = Math.max(size.y, 0.4);
+    const scale = height / 1.8;
+    const baseY = box.min.y;
+    meshBoundsCacheRef.current = { center, size, height, scale, baseY };
+    return meshBoundsCacheRef.current;
+  }, []);
+
+  // Subscribe to real animation store for live 3D viewport synchronization
+  const {
+    transform: animTransform,
+    displayOptions: animDisplayOptions,
+    playbackSpeed: animPlaybackSpeed,
+    isLooping: animIsLooping,
+    boneRotations: animBoneRotations,
+    selectedBone: animSelectedBone,
+    currentTime: animCurrentTime,
+    isPlaying: animIsPlaying,
+    activeMode: animActiveMode,
+    inspectorTab: animInspectorTab,
+    bones: animBones,
+    retargetMapping: animRetargetMapping,
+    retargetOptions: animRetargetOptions,
+    setSelectedBone: setAnimSelectedBone,
+    activeViewportTool: animActiveViewportTool,
+    isPlacingBone: animIsPlacingBone,
+    currentAnimationId: animCurrentAnimationId,
+    animations: animAnimations,
+    tracks: animTracks,
+    isWeightPainting: animIsWeightPainting,
+    blendState: animBlendState,
+    cameraPreset: animCameraPreset,
+  } = useAnimationStore();
+
+  // 1. Live model transform (position, rotation, scale)
+  useEffect(() => {
+    const group = currentMeshGroupRef.current;
+    if (!group) return;
+    group.position.set(animTransform.position[0], animTransform.position[1], animTransform.position[2]);
+    group.rotation.set(
+      THREE.MathUtils.degToRad(animTransform.rotation[0]),
+      THREE.MathUtils.degToRad(animTransform.rotation[1]),
+      THREE.MathUtils.degToRad(animTransform.rotation[2])
+    );
+    group.scale.set(animTransform.scale[0], animTransform.scale[1], animTransform.scale[2]);
+  }, [animTransform]);
+
+  // 2. Live display options (skeleton helper, grid, ground disc)
+  useEffect(() => {
+    if (skeletonHelperRef.current) {
+      skeletonHelperRef.current.visible =
+        (animActiveMode === 'rigging' || animInspectorTab === 'rigging') && animDisplayOptions.showSkeleton;
+    }
+    if (gridHelperRef.current) {
+      gridHelperRef.current.visible = (animActiveMode === 'rigging' || animInspectorTab === 'rigging')
+        ? animDisplayOptions.showGrid
+        : environmentSettings.gridVisible;
+    }
+    if (floorRef.current) {
+      floorRef.current.visible = animDisplayOptions.showGround;
+    }
+  }, [animDisplayOptions, animActiveMode, animInspectorTab, environmentSettings.gridVisible]);
+
+  // 3. Live playback speed & loop mode & play/pause state synchronization
+  useEffect(() => {
+    try {
+      if (mixerRef.current) {
+        mixerRef.current.timeScale = animPlaybackSpeed;
+      }
+      if (actionRef.current) {
+        actionRef.current.setLoop(animIsLooping ? THREE.LoopRepeat : THREE.LoopOnce, animIsLooping ? Infinity : 1);
+        actionRef.current.paused = !animIsPlaying;
+        if (animIsPlaying && !actionRef.current.isRunning()) {
+          actionRef.current.play();
+        }
+      }
+    } catch (err) {
+      console.warn('[MeshViewer] Error syncing animation playback state:', err);
+    }
+  }, [animPlaybackSpeed, animIsLooping, animIsPlaying]);
+
+
+  const motionClipRef = useRef<{
+    id: string;
+    fps: number;
+    duration: number;
+    jointNames: string[];
+    skeletonId: string;
+    frames: number[][][];
+    roots?: number[][];
+    mapping: Record<string, string>;
+  } | null>(null);
+  const motionLoadErrorRef = useRef<string | null>(null);
+  const [motionClipVersion, setMotionClipVersion] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    motionClipRef.current = null;
+    motionLoadErrorRef.current = null;
+    const clip = animAnimations.find((item) => item.id === animCurrentAnimationId);
+    if (!clip || clip.artifactType !== 'motion' || !clip.motionJsonUrl) return;
+
+    const load = async () => {
+      try {
+        const response = await fetch(clip.motionJsonUrl!);
+        if (!response.ok) throw new Error(`Motion metadata request failed (${response.status})`);
+        const doc = await response.json();
+        const jointNames = Array.isArray(doc.joint_names) ? doc.joint_names.filter((v: unknown): v is string => typeof v === 'string') : [];
+        const fps = Number(doc.fps);
+        const frameCount = Number(doc.num_frames);
+        const skeletonId = String(doc.skeleton_id || clip.skeletonId || 'unknown');
+        if (!clip.url || !jointNames.length || !Number.isFinite(fps) || fps <= 0) throw new Error('Motion artifact metadata is incomplete');
+        const jsonFrames = Array.isArray(doc.quaternions) ? doc.quaternions : null;
+        if (!jsonFrames || !Number.isFinite(frameCount) || frameCount <= 0 || jsonFrames.length !== frameCount) {
+          throw new Error('Motion JSON does not contain a browser-playable quaternion frame payload');
+        }
+        if (!jsonFrames.every((frame: unknown) => Array.isArray(frame) && frame.length === jointNames.length)) {
+          throw new Error('Motion quaternion frame dimensions do not match joint metadata');
+        }
+        const roots = Array.isArray(doc.root_positions) && doc.root_positions.length === frameCount
+          ? doc.root_positions.filter((row: unknown) => Array.isArray(row) && row.length >= 3).map((row: number[]) => row.slice(0, 3).map(Number))
+          : [];
+        const actualBoneNames: string[] = [];
+        currentMeshGroupRef.current?.traverse((child) => {
+          if (child instanceof THREE.Bone) actualBoneNames.push(child.name);
+        });
+        const targetNames = actualBoneNames.length ? actualBoneNames : animBones.map((bone) => bone.name);
+        const mapping = mapRetargetBones(jointNames, targetNames, animRetargetMapping);
+        const coverage = Object.keys(mapping).length / jointNames.length;
+        if (coverage < 0.5) throw new Error(`Incompatible motion skeleton '${skeletonId}' (${Object.keys(mapping).length}/${jointNames.length} joints mapped)`);
+        if (cancelled) return;
+        motionClipRef.current = { id: clip.id, fps, duration: Number(doc.duration || clip.duration || frameCount / fps), jointNames, skeletonId, frames: jsonFrames, roots, mapping };
+        mixerRef.current?.stopAllAction();
+        motionLoadErrorRef.current = null;
+        setMotionClipVersion((version) => version + 1);
+      } catch (error) {
+        if (!cancelled) motionLoadErrorRef.current = error instanceof Error ? error.message : String(error);
+      }
+    };
+    void load();
+    return () => { cancelled = true; };
+  }, [animAnimations, animCurrentAnimationId, animBones, animRetargetMapping, currentAsset?.id, modelLoadVersion]);
+
+  // 5. Live Pose Editor bone rotation to actual skeleton bones
+  useEffect(() => {
+    const group = currentMeshGroupRef.current;
+    if (!group || !animSelectedBone) return;
+    const bone = group.getObjectByName(animSelectedBone);
+    if (bone) {
+      const rot = animBoneRotations[animSelectedBone] || [0, 0, 0];
+      bone.rotation.set(
+        THREE.MathUtils.degToRad(rot[0]),
+        THREE.MathUtils.degToRad(rot[1]),
+        THREE.MathUtils.degToRad(rot[2])
+      );
+      bone.updateMatrix();
+      group.traverse((child) => {
+        if (child instanceof THREE.SkinnedMesh && child.skeleton) {
+          child.skeleton.update();
+        }
+      });
+      if (skeletonHelperRef.current && skeletonHelperRef.current.bones?.length) {
+        (skeletonHelperRef.current as any).update?.();
+        skeletonHelperRef.current.updateMatrixWorld(true);
+      }
+    }
+  }, [animBoneRotations, animSelectedBone]);
+
+  // 6. Forward Kinematics Armature Articulation Evaluator
+  const updateArmatureFrame = useCallback(
+    (time: number) => {
+      if (!rigArmatureGroupRef.current) return;
+      const rigGroup = rigArmatureGroupRef.current;
+      const rigVisible = rigGroup.visible;
+
+      const state = useAnimationStore.getState();
+      const bounds = getMeshBounds();
+      const mutedSet = new Set(state.tracks.filter((t) => t.isMuted).map((t) => t.id));
+
+      const activeMotion = motionClipRef.current?.id === state.currentAnimationId ? motionClipRef.current : null;
+      const animOffsets = activeMotion ? { rotations: {} as Record<string, [number, number, number]>, rootOffset: [0, 0, 0] as [number, number, number] } : getBlendedJointOffsets(
+        state.currentAnimationId,
+        time,
+        mutedSet,
+        state.blendState,
+        state.activeMode === 'blend'
+      );
+
+      const totalRotations: Record<string, [number, number, number]> = { ...animOffsets.rotations };
+      const frameIndex = activeMotion
+        ? Math.min(activeMotion.frames.length - 1, Math.max(0, Math.floor(time * activeMotion.fps)))
+        : 0;
+      if (activeMotion) {
+        const frame = activeMotion.frames[frameIndex];
+        if (Array.isArray(frame)) {
+          const rotationsByTarget = new Map<string, THREE.Quaternion>();
+          activeMotion.jointNames.forEach((sourceName, index) => {
+            const targetName = activeMotion.mapping[sourceName];
+            const values = frame[index];
+            if (!targetName || !Array.isArray(values) || values.length < 4) return;
+            const q = new THREE.Quaternion(Number(values[0]), Number(values[1]), Number(values[2]), Number(values[3])).normalize();
+            const combined = rotationsByTarget.get(targetName);
+            if (combined) combined.multiply(q);
+            else rotationsByTarget.set(targetName, q);
+          });
+          for (const [targetName, quaternion] of rotationsByTarget) {
+            const e = new THREE.Euler().setFromQuaternion(quaternion, 'XYZ');
+            totalRotations[targetName] = [THREE.MathUtils.radToDeg(e.x), THREE.MathUtils.radToDeg(e.y), THREE.MathUtils.radToDeg(e.z)];
+          }
+        }
+      }
+
+      const motionRoot = motionRootObjectRef.current;
+      const baseRootPosition = motionRootBasePositionRef.current;
+      if (motionRoot && baseRootPosition) {
+        const root = activeMotion && animRetargetOptions.rootMotionPreservation ? activeMotion.roots?.[frameIndex] : undefined;
+        const firstRoot = activeMotion?.roots?.[0];
+        if (root && firstRoot) {
+          const scale = animRetargetOptions.scaleNormalization ? bounds.scale : 1;
+          let x = (Number(root[0]) - Number(firstRoot[0])) * scale;
+          let y = (Number(root[1]) - Number(firstRoot[1])) * scale;
+          const z = (Number(root[2]) - Number(firstRoot[2])) * scale;
+          if (animRetargetOptions.footContactLock) y = Math.max(0, y);
+          motionRoot.position.set(baseRootPosition.x + x, baseRootPosition.y + y, baseRootPosition.z + z);
+        } else {
+          motionRoot.position.copy(baseRootPosition);
+        }
+      }
+
+      // Combine animation rotation + user's manual Pose Editor rotations
+      for (const [boneName, rot] of Object.entries(state.boneRotations)) {
+        const existing = totalRotations[boneName] || [0, 0, 0];
+        totalRotations[boneName] = [
+          existing[0] + rot[0],
+          existing[1] + rot[1],
+          existing[2] + rot[2],
+        ];
+      }
+
+      // Forward Kinematics world positions
+      const worldPositions = computeArmatureWorldPositions(
+        state.bones,
+        totalRotations,
+        animOffsets.rootOffset,
+        bounds.center,
+        bounds.baseY,
+        bounds.scale
+      );
+
+      // Update optional editor armature visuals only when they are visible.
+      const unitZ = new THREE.Vector3(0, 0, 1);
+      if (rigVisible) rigGroup.children.forEach((child) => {
+        if (child.userData?.isJoint && child.userData.boneName) {
+          const p = worldPositions.get(child.userData.boneName);
+          if (p) child.position.copy(p);
+        } else if (child.userData?.isRing && state.selectedBone) {
+          const p = worldPositions.get(state.selectedBone);
+          if (p) {
+            child.position.copy(p);
+            if (cameraRef.current) child.lookAt(cameraRef.current.position);
+          }
+        } else if (child.userData?.isConnector && child.userData.boneName && child.userData.parentName) {
+          const p1 = worldPositions.get(child.userData.parentName);
+          const p2 = worldPositions.get(child.userData.boneName);
+          if (p1 && p2) {
+            const dir = new THREE.Vector3().subVectors(p2, p1);
+            const len = dir.length();
+            if (len > 0.001) {
+              child.position.copy(p1);
+              child.quaternion.setFromUnitVectors(unitZ, dir.clone().normalize());
+              child.scale.set(len, len, len);
+            }
+          }
+        }
+      });
+
+      // Articulate matching bones in model mesh
+      const group = currentMeshGroupRef.current;
+      if (group) {
+        let hasSkinnedMesh = false;
+        group.traverse((child) => {
+          if (child instanceof THREE.Bone) {
+            const rotDeg = totalRotations[child.name];
+            if (rotDeg) {
+              child.rotation.set(
+                THREE.MathUtils.degToRad(rotDeg[0]),
+                THREE.MathUtils.degToRad(rotDeg[1]),
+                THREE.MathUtils.degToRad(rotDeg[2])
+              );
+              child.updateMatrix();
+            }
+          } else if (child instanceof THREE.SkinnedMesh) {
+            hasSkinnedMesh = true;
+            if (child.skeleton) {
+              child.skeleton.update();
+            }
+          }
+        });
+        if (hasSkinnedMesh) {
+          group.updateMatrixWorld(true);
+        }
+        if (skeletonHelperRef.current && skeletonHelperRef.current.bones?.length) {
+          (skeletonHelperRef.current as any).update?.();
+          skeletonHelperRef.current.updateMatrixWorld(true);
+        }
+      }
+    },
+    [getMeshBounds, animRetargetOptions]);
+
+  // 6a. Live timeline scrubbing / seeking & pose synchronization
+  const lastScrubSyncedTimeRef = useRef<number>(-1);
+  useEffect(() => {
+    try {
+      if (mixerRef.current && Math.abs(animCurrentTime - lastScrubSyncedTimeRef.current) > 0.001) {
+        mixerRef.current.setTime(animCurrentTime);
+        lastScrubSyncedTimeRef.current = animCurrentTime;
+      }
+      updateArmatureFrame(animCurrentTime);
+    } catch (err) {
+      console.warn('[MeshViewer] Error syncing animation time:', err);
+    }
+  }, [animCurrentTime, updateArmatureFrame]);
+
+  // 6b. Live Rigging Armature Visualizer in 3D Viewport (Humanoid Biped 17-Bone Hierarchy)
+  useEffect(() => {
+    if (!sceneRef.current || !rigArmatureGroupRef.current) return;
+    const rigGroup = rigArmatureGroupRef.current;
+
+    // Clear previous armature meshes (reusing shared pooled geometries)
+    rigGroup.clear();
+
+    const isRiggingActive =
+      (animActiveMode === 'rigging' || animInspectorTab === 'rigging') &&
+      animDisplayOptions.showSkeleton;
+
+    rigGroup.visible = isRiggingActive;
+    if (!isRiggingActive) return;
+
+    // Fast cached mesh bounds (0ms geometry traversal; falls back to default humanoid scale if empty)
+    const { center, scale, baseY } = getMeshBounds();
+
+    // Compute world positions for each bone in hierarchy
+    const boneWorldPositions = new Map<string, THREE.Vector3>();
+
+    animBones.forEach((b) => {
+      const posX = center.x + b.position[0] * scale;
+      const posY = baseY + b.position[1] * scale;
+      const posZ = center.z + b.position[2] * scale;
+      boneWorldPositions.set(b.name, new THREE.Vector3(posX, posY, posZ));
+    });
+
+    // Create joint handles and bone connectors using shared pool
+    animBones.forEach((b) => {
+      const pos = boneWorldPositions.get(b.name);
+      if (!pos) return;
+      const isSelected = animSelectedBone === b.name;
+
+      // 1. Joint Marker Sphere (In Front / X-Ray)
+      const jointMesh = createJointMesh(pos, isSelected, b.name, scale);
+      rigGroup.add(jointMesh);
+
+      // 2. Selected Bone Highlight Ring
+      if (isSelected) {
+        const ringMesh = new THREE.Mesh(sharedRingGeo, sharedRingMat);
+        ringMesh.scale.setScalar(scale);
+        ringMesh.position.copy(pos);
+        ringMesh.renderOrder = 10000;
+        ringMesh.userData = { isRing: true };
+        ringMesh.lookAt(cameraRef.current ? cameraRef.current.position : new THREE.Vector3(0, 1, 5));
+        rigGroup.add(ringMesh);
+      }
+
+      // 3. Octahedron Bone Connector to Parent
+      if (b.parent) {
+        const parentPos = boneWorldPositions.get(b.parent);
+        if (parentPos) {
+          const boneConnector = createBoneMesh(parentPos, pos, isSelected, b.name, b.parent);
+          rigGroup.add(boneConnector);
+        }
+      }
+    });
+
+    // Initial pose articulation
+    updateArmatureFrame(animCurrentTime);
+
+    // Request immediate frame render
+    if (rendererRef.current && cameraRef.current) {
+      rendererRef.current.render(sceneRef.current, cameraRef.current);
+    }
+  }, [
+    animActiveMode,
+    animInspectorTab,
+    animSelectedBone,
+    animBones,
+    animDisplayOptions.showSkeleton,
+    viewportResetTrigger,
+    currentAsset?.id,
+    getMeshBounds,
+    updateArmatureFrame,
+  ]);
+
+  // 6c. Articulate Armature on scrub/time, clip change, or pose rotation when paused
+  useEffect(() => {
+    if (!animIsPlaying) {
+      updateArmatureFrame(animCurrentTime);
+      if (rendererRef.current && sceneRef.current && cameraRef.current) {
+        rendererRef.current.render(sceneRef.current, cameraRef.current);
+      }
+    }
+  }, [
+    animCurrentTime,
+    animIsPlaying,
+    animCurrentAnimationId,
+    motionClipVersion,
+    animBoneRotations,
+    animTracks,
+    animBlendState,
+    updateArmatureFrame,
+  ]);
+
+  // 7. Weight Painting Heatmap Visualization
+  useEffect(() => {
+    const group = currentMeshGroupRef.current;
+    if (!group) return;
+
+    const isWeightActive = animActiveViewportTool === 'weight' || animIsWeightPainting;
+
+    group.traverse((child) => {
+      if (
+        child instanceof THREE.Mesh &&
+        !child.userData?.isJoint &&
+        !child.userData?.isConnector &&
+        !child.userData?.isRing
+      ) {
+        if (!child.userData.originalMaterial) {
+          child.userData.originalMaterial = child.material;
+        }
+
+        if (isWeightActive) {
+          const bounds = getMeshBounds();
+          const selBone = animBones.find((b) => b.name === animSelectedBone);
+          const jointWorldPos = selBone
+            ? new THREE.Vector3(
+                bounds.center.x + selBone.position[0] * bounds.scale,
+                bounds.baseY + selBone.position[1] * bounds.scale,
+                bounds.center.z + selBone.position[2] * bounds.scale
+              )
+            : bounds.center;
+
+          const geom = child.geometry;
+          if (geom && geom.attributes.position) {
+            const posAttr = geom.attributes.position;
+            const count = posAttr.count;
+            const colors = new Float32Array(count * 3);
+            const vPos = new THREE.Vector3();
+            const radius = bounds.scale * 0.35;
+
+            for (let i = 0; i < count; i++) {
+              vPos.fromBufferAttribute(posAttr, i);
+              child.localToWorld(vPos);
+              const dist = vPos.distanceTo(jointWorldPos);
+              const weight = Math.max(0, Math.min(1, 1 - dist / radius));
+
+              // Heatmap: 0 = Blue, 0.5 = Green, 1 = Red
+              const r = weight > 0.5 ? Math.min(1, (weight - 0.5) * 2) : 0;
+              const g = weight < 0.5 ? Math.min(1, weight * 2) : Math.min(1, (1 - weight) * 2);
+              const b = weight < 0.5 ? Math.min(1, (0.5 - weight) * 2) : 0;
+
+              colors[i * 3] = r;
+              colors[i * 3 + 1] = g;
+              colors[i * 3 + 2] = b;
+            }
+
+            geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            geom.attributes.color.needsUpdate = true;
+
+            child.material = new THREE.MeshBasicMaterial({
+              vertexColors: true,
+              wireframe: Boolean(showWireframe),
+            });
+          }
+        } else {
+          if (child.userData.originalMaterial) {
+            child.material = child.userData.originalMaterial;
+          }
+        }
+      }
+    });
+
+    if (rendererRef.current && sceneRef.current && cameraRef.current) {
+      rendererRef.current.render(sceneRef.current, cameraRef.current);
+    }
+  }, [
+    animActiveViewportTool,
+    animIsWeightPainting,
+    animSelectedBone,
+    animBones,
+    getMeshBounds,
+    showWireframe,
+  ]);
+
+  // 8. Sync interactionMode and selected bone joint with TransformControls
+  useEffect(() => {
+    if (!controlsRef.current || !transformControlsRef.current) return;
+    const tc = transformControlsRef.current;
+
+    if (interactionMode === 'pan') {
+      controlsRef.current.mouseButtons.LEFT = THREE.MOUSE.PAN;
+    } else {
+      controlsRef.current.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
+    }
+
+    if (
+      animActiveMode === 'rigging' ||
+      animActiveMode === 'editing' ||
+      animActiveMode === 'animate' ||
+      animInspectorTab === 'rigging' ||
+      animDisplayOptions.showSkeleton
+    ) {
+      if (
+        animActiveViewportTool === 'select' ||
+        animActiveViewportTool === 'bone' ||
+        animActiveViewportTool === 'weight'
+      ) {
+        tc.detach();
+        tc.enabled = false;
+        return;
+      }
+      if (animSelectedBone && rigArmatureGroupRef.current) {
+        const jointMesh = rigArmatureGroupRef.current.children.find(
+          (c) => c.userData?.isJoint && c.userData?.boneName === animSelectedBone
+        );
+        if (jointMesh) {
+          tc.attach(jointMesh);
+          const mode =
+            animActiveViewportTool === 'rotate'
+              ? 'rotate'
+              : animActiveViewportTool === 'scale'
+              ? 'scale'
+              : 'translate';
+          tc.setMode(mode);
+          tc.enabled = true;
+          return;
+        }
+      }
+      tc.detach();
+      tc.enabled = false;
+    } else if (
+      (interactionMode === 'move' || interactionMode === 'rotate' || interactionMode === 'scale') &&
+      currentMeshGroupRef.current &&
+      currentMeshGroupRef.current.children.length > 0
+    ) {
+      tc.attach(currentMeshGroupRef.current);
+      tc.setMode(interactionMode === 'move' ? 'translate' : interactionMode === 'rotate' ? 'rotate' : 'scale');
+      tc.enabled = true;
+    } else {
+      tc.detach();
+      tc.enabled = false;
+    }
+  }, [
+    interactionMode,
+    animActiveMode,
+    animInspectorTab,
+    animSelectedBone,
+    animActiveViewportTool,
+    animBones,
+  ]);
+
+  // Cleanup blob URLs on unmount
+  useEffect(() => {
+    return () => {
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+        blobUrlRef.current = null;
+      }
+    };
+  }, []);
+
+  // Keep turntable ref in sync with prop
+  useEffect(() => {
+    isTurntableRef.current = isTurntable;
+  }, [isTurntable]);
+
+  // Update Three.js scene when environment settings change
+  useEffect(() => {
+    if (!sceneRef.current || !rendererRef.current) return;
+    const scene = sceneRef.current;
+    const renderer = rendererRef.current;
+
+    // 1. Update background color
+    if (environmentSettings.backgroundColor === 'transparent') {
+      scene.background = null;
+    } else {
+      scene.background = new THREE.Color(environmentSettings.backgroundColor);
+    }
+
+    // 2. Update tone mapping operator & exposure
+    renderer.toneMapping = environmentSettings.toneMapping === 'aces'
+      ? THREE.ACESFilmicToneMapping
+      : THREE.NeutralToneMapping;
+    renderer.toneMappingExposure = environmentSettings.exposure;
+
+    // 3. Update grid visibility
+    if (gridHelperRef.current) {
+      gridHelperRef.current.visible = environmentSettings.gridVisible;
+    }
+
+    // 4. Update floor shadow opacity
+    if (floorRef.current) {
+      (floorRef.current.material as THREE.ShadowMaterial).opacity = environmentSettings.floorShadowOpacity;
+    }
+
+    // 5. Update light intensities and light tones
+    const tone = LIGHT_TONES[environmentSettings.lightTone] || LIGHT_TONES.studio;
+    scene.traverse((obj) => {
+      if (obj instanceof THREE.AmbientLight) {
+        obj.intensity = environmentSettings.ambientIntensity * 0.45;
+      }
+    });
+    if (hemiLightRef.current) {
+      hemiLightRef.current.intensity = environmentSettings.ambientIntensity * 0.85;
+      hemiLightRef.current.color.setHex(tone.key);
+    }
+    if (scene.environment) {
+      scene.environmentIntensity = environmentSettings.ambientIntensity;
+    }
+    if (keyLightRef.current) {
+      keyLightRef.current.intensity = environmentSettings.keyLightIntensity;
+      keyLightRef.current.color.setHex(tone.key);
+    }
+    if (fillLightRef.current) {
+      fillLightRef.current.intensity = environmentSettings.fillLightIntensity;
+      fillLightRef.current.color.setHex(tone.fill);
+    }
+    if (rimLightRef.current) {
+      rimLightRef.current.intensity = environmentSettings.rimLightIntensity;
+      rimLightRef.current.color.setHex(tone.rim);
+    }
+    if (backFillLightRef.current) {
+      backFillLightRef.current.intensity = environmentSettings.rimLightIntensity * 0.85;
+      backFillLightRef.current.color.setHex(tone.fill);
+    }
+    if (cameraLightRef.current) {
+      cameraLightRef.current.intensity = environmentSettings.ambientIntensity * 0.35;
+    }
+
+    // 6. Update controls autoRotate
+    if (controlsRef.current) {
+      controlsRef.current.autoRotate = environmentSettings.autoRotate;
+      controlsRef.current.autoRotateSpeed = 2.0;
+    }
+
+    controlsRef.current?.dispatchEvent({ type: 'change' });
+    if (cameraRef.current) renderer.render(scene, cameraRef.current);
+  }, [environmentSettings]);
+
+  // Initialize Three.js Scene once
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const container = containerRef.current;
+    const width = container.clientWidth || 800;
+    const height = container.clientHeight || 600;
+
+    // 1. Scene
+    const scene = new THREE.Scene();
+    sceneRef.current = scene;
+
+    // 2. CameraIcon
+    const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+    camera.position.set(0, 1.2, 3.8);
+    cameraRef.current = camera;
+
+    // 3. Renderer with preserveDrawingBuffer enabled for real camera snapshots
+    const renderer = new THREE.WebGLRenderer({ 
+      antialias: true, 
+      alpha: true,
+      preserveDrawingBuffer: true,
+      powerPreference: 'high-performance'
+    });
+    renderer.setSize(width, height);
+    // ponytail: cap pixel ratio at 1.25 for buttery smooth rendering FPS without GPU fill-rate throttling
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25));
+    renderer.info.autoReset = false;
+    renderer.toneMapping = environmentSettings.toneMapping === 'aces'
+      ? THREE.ACESFilmicToneMapping
+      : THREE.NeutralToneMapping;
+    renderer.toneMappingExposure = environmentSettings.exposure;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    container.innerHTML = '';
+    container.appendChild(renderer.domElement);
+    rendererRef.current = renderer;
+
+    // WebGL resilience: prevent browser crash when loading heavy geometry or during memory spikes
+    const handleContextLost = (event: Event) => {
+      event.preventDefault();
+      console.warn('[MeshViewer] WebGL context lost - prevented browser crash, awaiting restore.');
+    };
+    const handleContextRestored = () => {
+      console.info('[MeshViewer] WebGL context restored - recovering renderer state.');
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25));
+      renderer.setSize(container.clientWidth || width, container.clientHeight || height);
+      if (keyLightRef.current) keyLightRef.current.shadow.needsUpdate = true;
+      idleFrames = 0;
+    };
+    renderer.domElement.addEventListener('webglcontextlost', handleContextLost, false);
+    renderer.domElement.addEventListener('webglcontextrestored', handleContextRestored, false);
+
+    // 4. OrbitControls
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.rotateSpeed = 0.85;
+    controls.maxDistance = 100;    // Increased from 25 — allow much further zoom out
+    controls.minDistance = 0.05;   // Decreased from 0.8 — allow much closer zoom in
+    controls.zoomSpeed = 1.4;     // Increased scroll-wheel zoom speed
+    controls.target.set(0, 0.4, 0);
+    controls.addEventListener('start', () => {
+      hasUserOrbitedRef.current = true;
+      isUserInteractingRef.current = true;
+    });
+    controls.addEventListener('end', () => {
+      isUserInteractingRef.current = false;
+      if (cameraRef.current && controlsRef.current) {
+        useViewerStore.getState().setViewport({
+          cameraPosition: [
+            cameraRef.current.position.x,
+            cameraRef.current.position.y,
+            cameraRef.current.position.z,
+          ],
+          target: [
+            controlsRef.current.target.x,
+            controlsRef.current.target.y,
+            controlsRef.current.target.z,
+          ],
+        });
+      }
+    });
+    controlsRef.current = controls;
+
+    // 4b. Studio IBL Environment Map (360° PBR specular sheen and balanced indirect illumination)
+    try {
+      const pmremGenerator = new THREE.PMREMGenerator(renderer);
+      pmremGenerator.compileEquirectangularShader();
+      const roomEnv = new RoomEnvironment();
+      const envTex = pmremGenerator.fromScene(roomEnv, 0.04).texture;
+      scene.environment = envTex;
+      scene.environmentIntensity = environmentSettings.ambientIntensity;
+      envTextureRef.current = envTex;
+      pmremGenerator.dispose();
+      roomEnv.dispose();
+    } catch (e) {
+      console.warn('[MeshViewer] Could not generate RoomEnvironment IBL:', e);
+    }
+
+    // 4c. TransformControls for translating 3D model
+    const transformControls = new TransformControls(camera, renderer.domElement);
+    transformControls.size = 0.8;
+    transformControls.setMode('translate');
+    transformControls.enabled = false;
+    transformControls.addEventListener('dragging-changed', (event: any) => {
+      controls.enabled = !event.value;
+    });
+    transformControls.addEventListener('objectChange', () => {
+      const state = useAnimationStore.getState();
+      const obj = transformControls.object;
+      if (state.selectedBone && obj?.userData?.isJoint) {
+        if (transformControls.getMode() === 'rotate') {
+          const rx = parseFloat(THREE.MathUtils.radToDeg(obj.rotation.x).toFixed(1));
+          const ry = parseFloat(THREE.MathUtils.radToDeg(obj.rotation.y).toFixed(1));
+          const rz = parseFloat(THREE.MathUtils.radToDeg(obj.rotation.z).toFixed(1));
+          state.setBoneRotation(state.selectedBone, [rx, ry, rz]);
+        } else {
+          const bounds = getMeshBounds();
+          const boneX = parseFloat(((obj.position.x - bounds.center.x) / bounds.scale).toFixed(3));
+          const boneY = parseFloat(((obj.position.y - bounds.baseY) / bounds.scale).toFixed(3));
+          const boneZ = parseFloat(((obj.position.z - bounds.center.z) / bounds.scale).toFixed(3));
+          state.updateBonePosition(state.selectedBone, [boneX, boneY, boneZ]);
+        }
+        idleFrames = 0;
+      }
+    });
+    scene.add(transformControls.getHelper() as unknown as THREE.Object3D);
+    transformControlsRef.current = transformControls;
+
+    // 5. Lighting Setup (Professional 360° Studio Rig)
+    // 5a. Ambient and Hemisphere Light (irradiance & ground bounce prevents pitch-black cavities while preserving depth)
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.20);
+    scene.add(ambientLight);
+
+    const hemiLight = new THREE.HemisphereLight(0xfff8f0, 0x22242a, 0.45);
+    hemiLight.position.set(0, 20, 0);
+    scene.add(hemiLight);
+    hemiLightRef.current = hemiLight;
+
+    // 5b. Key Light (Front-Right, high angle - crisp directional shading and soft contact shadow)
+    const mainKeyLight = new THREE.DirectionalLight(0xfff5ea, 2.0);
+    mainKeyLight.position.set(3.5, 5.0, 3.5);
+    mainKeyLight.castShadow = true;
+    mainKeyLight.shadow.mapSize.width = 2048;
+    mainKeyLight.shadow.mapSize.height = 2048;
+    mainKeyLight.shadow.camera.near = 0.5;
+    mainKeyLight.shadow.camera.far = 30;
+    mainKeyLight.shadow.camera.left = -4.5;
+    mainKeyLight.shadow.camera.right = 4.5;
+    mainKeyLight.shadow.camera.top = 4.5;
+    mainKeyLight.shadow.camera.bottom = -4.5;
+    mainKeyLight.shadow.bias = -0.0003;
+    mainKeyLight.shadow.normalBias = 0.02;
+    mainKeyLight.shadow.radius = 2.0;
+    mainKeyLight.shadow.autoUpdate = true;
+    scene.add(mainKeyLight);
+    keyLightRef.current = mainKeyLight;
+
+    // 5c. Fill Light (Front-Left - balances key light, softens harsh front shadows without flattening cavities)
+    const fillLight = new THREE.DirectionalLight(0xf5f5f7, 0.65);
+    fillLight.position.set(-3.5, 2.5, 3.0);
+    scene.add(fillLight);
+    fillLightRef.current = fillLight;
+
+    // 5d. Back / Rim Light (Back-Left - illuminates rear geometry and highlights edge silhouettes)
+    const rimLight = new THREE.DirectionalLight(0xffeed0, 1.3);
+    rimLight.position.set(-3.0, 3.5, -3.5);
+    scene.add(rimLight);
+    rimLightRef.current = rimLight;
+
+    // 5e. Back Fill Light (Back-Right - ensures the rear is completely visible from all angles)
+    const backFillLight = new THREE.DirectionalLight(0xf0f3fa, 0.65);
+    backFillLight.position.set(3.0, 2.5, -3.0);
+    scene.add(backFillLight);
+    backFillLightRef.current = backFillLight;
+
+    // 5f. Camera-Attached Viewport Fill Light (gentle headlight to illuminate whatever user faces without blowing out cavity depth)
+    const cameraLight = new THREE.DirectionalLight(0xffffff, 0.15);
+    cameraLight.position.set(0, 0, 1);
+    camera.add(cameraLight);
+    scene.add(camera);
+    cameraLightRef.current = cameraLight;
+
+    // 6. Floor with soft contact shadow receiver
+    const floorGeo = new THREE.PlaneGeometry(60, 60);
+    const floorMat = new THREE.ShadowMaterial({ opacity: environmentSettings.floorShadowOpacity });
+    floorMat.depthWrite = false;
+    const floor = new THREE.Mesh(floorGeo, floorMat);
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = -0.001;
+    floor.receiveShadow = true;
+    scene.add(floor);
+    floorRef.current = floor;
+
+    // 7. Optimized Studio Grid Helper (off by default per studio standards)
+    const grid = new THREE.GridHelper(20, 40, 0x484d59, 0x2b2e37);
+    grid.position.y = -0.0005;
+    const gridMat = grid.material as THREE.LineBasicMaterial;
+    gridMat.opacity = 0.35;
+    gridMat.transparent = true;
+    gridMat.depthWrite = false;
+    grid.visible = environmentSettings.gridVisible;
+    scene.add(grid);
+    gridHelperRef.current = grid;
+
+    // 7b. Point Cloud / Scanning Blueprint Group
+    const pointCloudGroup = new THREE.Group();
+    pointCloudGroup.visible = false;
+    scene.add(pointCloudGroup);
+    pointCloudGroupRef.current = pointCloudGroup;
+
+    // 7c. Mesh Container Group
+    const meshGroup = new THREE.Group();
+    scene.add(meshGroup);
+    currentMeshGroupRef.current = meshGroup;
+
+    // 7d. Rigging Armature Visualizer Group
+    const rigGroup = new THREE.Group();
+    rigGroup.name = 'RigArmatureGroup';
+    rigGroup.visible = false;
+    scene.add(rigGroup);
+    rigArmatureGroupRef.current = rigGroup;
+
+    // 7e. Interactive 3D BrushIcon Cursor Ring for Sculpt & Paint
+    const brushRingGeo = new THREE.RingGeometry(0.92, 1.0, 36);
+    const brushRingMat = new THREE.MeshBasicMaterial({
+      color: 0xffcc00,
+      side: THREE.DoubleSide,
+      depthTest: false,
+      transparent: true,
+      opacity: 0.9,
+    });
+    const brushCursor = new THREE.Mesh(brushRingGeo, brushRingMat);
+    brushCursor.renderOrder = 999;
+    brushCursor.visible = false;
+    scene.add(brushCursor);
+    brushCursorRef.current = brushCursor;
+
+    const applyBrushStroke = (hit: THREE.Intersection, isShift: boolean, isCtrl: boolean) => {
+      const tool = activeToolRef.current;
+      if (tool === 'edit') {
+        const targetMesh = hit.object as THREE.Mesh;
+        if (!targetMesh || !targetMesh.geometry) return;
+        const geom = targetMesh.geometry as THREE.BufferGeometry;
+        const posAttr = geom.attributes.position;
+        if (!posAttr) return;
+
+        lastSculptedMeshRef.current = targetMesh;
+
+        const sSettings = sculptSettingsRef.current;
+        const worldRadius = sSettings?.radius || 0.15;
+        const meshScale = targetMesh.getWorldScale(new THREE.Vector3()).x || 1.0;
+        const localRadius = worldRadius / meshScale;
+        const strength = sSettings?.strength || 0.5;
+        const hardness = sSettings?.hardness || 0.5;
+        let dir: 1 | -1 = (sSettings?.direction === -1 ? -1 : 1);
+        if (isCtrl) dir = (dir === 1 ? -1 : 1);
+        let brush = sSettings?.brush || 'standard';
+        if (isShift) brush = 'smooth';
+        const symX = Boolean(sSettings?.symmetry?.x);
+
+        const localHit = targetMesh.worldToLocal(hit.point.clone());
+        const localNormal = hit.face?.normal ? hit.face.normal.clone() : new THREE.Vector3(0, 1, 0);
+
+        const count = posAttr.count;
+        const p = new THREE.Vector3();
+        const vNorm = new THREE.Vector3();
+        const normAttr = geom.attributes.normal;
+        let changed = false;
+
+        // Dynamic sculpt visual heatmap feedback on mesh
+        let colorAttr = geom.attributes.color as THREE.BufferAttribute | undefined;
+        if (!colorAttr) {
+          const colors = new Float32Array(count * 3).fill(1.0);
+          colorAttr = new THREE.BufferAttribute(colors, 3);
+          geom.setAttribute('color', colorAttr);
+          if (Array.isArray(targetMesh.material)) {
+            targetMesh.material.forEach((m: any) => { if (m) { m.vertexColors = true; m.needsUpdate = true; } });
+          } else if (targetMesh.material) {
+            (targetMesh.material as any).vertexColors = true;
+            targetMesh.material.needsUpdate = true;
+          }
+        }
+
+        const hlR = brush === 'smooth' ? 0.2 : (dir > 0 ? 1.0 : 0.25);
+        const hlG = brush === 'smooth' ? 0.95 : (dir > 0 ? 0.8 : 0.75);
+        const hlB = brush === 'smooth' ? 0.5 : (dir > 0 ? 0.15 : 1.0);
+
+        const radiusSq = localRadius * localRadius;
+        const invRadius = 1 / localRadius;
+        const hardnessExp = 1 + (1 - hardness) * 2;
+        const tempVec = new THREE.Vector3();
+
+        const deform = (center: THREE.Vector3, centerNorm: THREE.Vector3) => {
+          const cx = center.x, cy = center.y, cz = center.z;
+          const cnx = centerNorm.x, cny = centerNorm.y, cnz = centerNorm.z;
+
+          for (let i = 0; i < count; i++) {
+            const px = posAttr.getX(i);
+            const py = posAttr.getY(i);
+            const pz = posAttr.getZ(i);
+            const dx = px - cx;
+            const dy = py - cy;
+            const dz = pz - cz;
+            const distSq = dx * dx + dy * dy + dz * dz;
+
+            if (distSq < radiusSq) {
+              const dist = Math.sqrt(distSq);
+              const t = dist * invRadius;
+              const falloff = Math.pow(Math.max(0, 1 - t), hardnessExp);
+              const amount = strength * falloff * 0.04 * dir;
+              p.set(px, py, pz);
+
+              if (brush === 'smooth') {
+                p.lerp(center, strength * falloff * 0.12);
+              } else if (brush === 'inflate') {
+                if (normAttr) {
+                  vNorm.fromBufferAttribute(normAttr, i);
+                  p.addScaledVector(vNorm, amount);
+                } else {
+                  p.addScaledVector(centerNorm, amount);
+                }
+              } else if (brush === 'flatten') {
+                const planeDist = dx * cnx + dy * cny + dz * cnz;
+                p.addScaledVector(centerNorm, -planeDist * strength * falloff * 0.35);
+              } else if (brush === 'pinch') {
+                tempVec.set(-dx, -dy, -dz);
+                p.addScaledVector(tempVec, strength * falloff * 0.2 * dir);
+              } else {
+                p.addScaledVector(centerNorm, amount);
+              }
+
+              // Apply dynamic sculpt heatmap tint & track modified index
+              if (colorAttr) {
+                const curR = colorAttr.getX(i);
+                const curG = colorAttr.getY(i);
+                const curB = colorAttr.getZ(i);
+                const blend = falloff * 0.75;
+                colorAttr.setXYZ(
+                  i,
+                  curR * (1 - blend) + hlR * blend,
+                  curG * (1 - blend) + hlG * blend,
+                  curB * (1 - blend) + hlB * blend
+                );
+                tintedIndicesRef.current.add(i);
+              }
+
+              posAttr.setXYZ(i, p.x, p.y, p.z);
+              changed = true;
+            }
+          }
+        };
+
+        deform(localHit, localNormal);
+        if (symX) {
+          deform(new THREE.Vector3(-localHit.x, localHit.y, localHit.z), new THREE.Vector3(-localNormal.x, localNormal.y, localNormal.z));
+        }
+
+        if (changed) {
+          posAttr.needsUpdate = true;
+          if (colorAttr) colorAttr.needsUpdate = true;
+          // Throttled normal update during continuous drag keeps interactions at 60+ FPS
+          const now = performance.now();
+          if (now - lastNormalsUpdateRef.current > 50) {
+            geom.computeVertexNormals();
+            if (normAttr) normAttr.needsUpdate = true;
+            lastNormalsUpdateRef.current = now;
+          }
+        }
+      } else if (tool === 'texture') {
+        if (!hit.uv) return;
+        const targetMesh = hit.object as THREE.Mesh;
+        let mat = targetMesh.material as any;
+        if (Array.isArray(mat)) mat = mat[0];
+        if (!mat) return;
+
+        // ponytail: a region mask must be independent of the opaque material canvas.
+        const maskMode = maskPaintModeRef.current;
+        if (maskMode.enabled) {
+          let maskCanvas = targetMesh.userData?.maskCanvas as HTMLCanvasElement | undefined;
+          let maskCtx = targetMesh.userData?.maskCtx as CanvasRenderingContext2D | undefined;
+          if (!maskCanvas) {
+            maskCanvas = document.createElement('canvas');
+            maskCanvas.width = 1024;
+            maskCanvas.height = 1024;
+            maskCtx = maskCanvas.getContext('2d') || undefined;
+            targetMesh.userData.maskCanvas = maskCanvas;
+            targetMesh.userData.maskCtx = maskCtx;
+          }
+          if (!maskCtx || !maskCanvas) return;
+          const isFlipped = Boolean(mat.map && mat.map.flipY);
+          const rawU = ((hit.uv.x % 1) + 1) % 1;
+          const rawV = ((hit.uv.y % 1) + 1) % 1;
+          const currX = rawU * maskCanvas.width;
+          const currY = (isFlipped ? (1 - rawV) : rawV) * maskCanvas.height;
+          const pSettings = paintBrushSettingsRef.current;
+          const radius = Math.max(1, pSettings?.size || 24);
+          const opacity = Math.max(0.05, Math.min(1, pSettings?.opacity ?? 1));
+          const hardness = Math.max(0.02, Math.min(0.98, pSettings?.hardness ?? 0.9));
+          const drawMaskDab = (x: number, y: number) => {
+            maskCtx!.save();
+            maskCtx!.globalCompositeOperation = (maskMode.erase || isCtrl) ? 'destination-out' : 'source-over';
+            maskCtx!.globalAlpha = opacity;
+            const gradient = maskCtx!.createRadialGradient(x, y, 0, x, y, radius);
+            gradient.addColorStop(0, 'rgba(255,255,255,1)');
+            gradient.addColorStop(hardness, 'rgba(255,255,255,1)');
+            gradient.addColorStop(1, 'rgba(255,255,255,0)');
+            maskCtx!.fillStyle = gradient;
+            maskCtx!.beginPath();
+            maskCtx!.arc(x, y, radius, 0, Math.PI * 2);
+            maskCtx!.fill();
+            maskCtx!.restore();
+          };
+          if (lastPaintUVRef.current) {
+            const prev = lastPaintUVRef.current;
+            const distance = Math.hypot(currX - prev.x, currY - prev.y);
+            const step = Math.max(2, radius * 0.25);
+            if (distance > step) {
+              const steps = Math.min(50, Math.ceil(distance / step));
+              for (let i = 1; i <= steps; i++) {
+                const t = i / steps;
+                drawMaskDab(prev.x + (currX - prev.x) * t, prev.y + (currY - prev.y) * t);
+              }
+            } else {
+              drawMaskDab(currX, currY);
+            }
+          } else {
+            drawMaskDab(currX, currY);
+          }
+          lastPaintUVRef.current = { x: currX, y: currY };
+          return;
+        }
+
+        let dynamicCanvas = targetMesh.userData?.paintCanvas as HTMLCanvasElement;
+        let ctx = targetMesh.userData?.paintCtx as CanvasRenderingContext2D;
+
+        if (!dynamicCanvas) {
+          const canvas = document.createElement('canvas');
+          canvas.width = 1024;
+          canvas.height = 1024;
+          const context = canvas.getContext('2d');
+          if (context) {
+            if (mat.map && mat.map.image) {
+              try {
+                context.drawImage(mat.map.image, 0, 0, 1024, 1024);
+              } catch {
+                context.fillStyle = '#f0f0f0';
+                context.fillRect(0, 0, 1024, 1024);
+              }
+            } else {
+              context.fillStyle = mat.color ? `#${mat.color.getHexString()}` : '#ffffff';
+              context.fillRect(0, 0, 1024, 1024);
+            }
+          }
+          const canvasTex = new THREE.CanvasTexture(canvas);
+          canvasTex.colorSpace = THREE.SRGBColorSpace;
+          canvasTex.flipY = false;
+          mat.map = canvasTex;
+          mat.needsUpdate = true;
+          targetMesh.userData.paintCanvas = canvas;
+          targetMesh.userData.paintCtx = context;
+          dynamicCanvas = canvas;
+          ctx = context!;
+        }
+
+        if (ctx && dynamicCanvas) {
+          // Precise UV mapping: wrap coords to [0, 1] and match texture orientation
+          const isFlipped = Boolean(mat.map && mat.map.flipY);
+          const rawU = ((hit.uv.x % 1) + 1) % 1;
+          const rawV = ((hit.uv.y % 1) + 1) % 1;
+          const currX = rawU * dynamicCanvas.width;
+          const currY = (isFlipped ? (1 - rawV) : rawV) * dynamicCanvas.height;
+
+          const pSettings = paintBrushSettingsRef.current;
+          const radius = Math.max(1, pSettings?.size || 24);
+          const color = pSettings?.color || '#FFCC00';
+          const opacity = Math.max(0.05, Math.min(1.0, pSettings?.opacity ?? 1.0));
+          const hardness = Math.max(0.02, Math.min(0.98, pSettings?.hardness ?? 0.7));
+
+          const drawDab = (x: number, y: number) => {
+            ctx.save();
+            if (isCtrl) {
+              ctx.globalCompositeOperation = 'destination-out';
+              ctx.beginPath();
+              ctx.arc(x, y, radius, 0, Math.PI * 2);
+              ctx.fillStyle = `rgba(0,0,0,${opacity})`;
+              ctx.fill();
+            } else {
+              ctx.globalCompositeOperation = 'source-over';
+              const grad = ctx.createRadialGradient(x, y, 0, x, y, radius);
+              grad.addColorStop(0, color);
+              grad.addColorStop(hardness, color);
+              grad.addColorStop(1, 'transparent');
+              ctx.fillStyle = grad;
+              ctx.globalAlpha = opacity;
+              ctx.beginPath();
+              ctx.arc(x, y, radius, 0, Math.PI * 2);
+              ctx.fill();
+            }
+            ctx.restore();
+          };
+
+          // Continuous interpolated stroke ensures solid coverage with zero gaps or skips
+          if (lastPaintUVRef.current) {
+            const prev = lastPaintUVRef.current;
+            const dist = Math.hypot(currX - prev.x, currY - prev.y);
+            const step = Math.max(2, radius * 0.25);
+            if (dist > step) {
+              const steps = Math.min(50, Math.ceil(dist / step));
+              for (let s = 1; s <= steps; s++) {
+                const t = s / steps;
+                drawDab(prev.x + (currX - prev.x) * t, prev.y + (currY - prev.y) * t);
+              }
+            } else {
+              drawDab(currX, currY);
+            }
+          } else {
+            drawDab(currX, currY);
+          }
+          lastPaintUVRef.current = { x: currX, y: currY };
+
+          if (mat.map) {
+            mat.map.needsUpdate = true;
+          }
+        }
+      }
+    };
+
+    const updateBrushCursor = (e: MouseEvent) => {
+      const tool = activeToolRef.current;
+      const cursor = brushCursorRef.current;
+      if (!cursor) return;
+
+      if (tool !== 'edit' && tool !== 'texture') {
+        cursor.visible = false;
+        return;
+      }
+
+      const rect = renderer.domElement.getBoundingClientRect();
+      const mouse = new THREE.Vector2(
+        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        -((e.clientY - rect.top) / rect.height) * 2 + 1
+      );
+      const raycaster = new THREE.Raycaster();
+      raycaster.setFromCamera(mouse, camera);
+
+      const meshes: THREE.Mesh[] = [];
+      currentMeshGroupRef.current?.traverse((child) => {
+        if (child instanceof THREE.Mesh && child.geometry) {
+          meshes.push(child);
+        }
+      });
+
+      const hits = raycaster.intersectObjects(meshes, false);
+      if (hits.length > 0) {
+        const hit = hits[0];
+        const sSettings = sculptSettingsRef.current;
+        const pSettings = paintBrushSettingsRef.current;
+        const r = tool === 'edit'
+          ? (sSettings?.radius || 0.15)
+          : ((pSettings?.size || 24) * 0.004);
+
+        const normal = hit.face?.normal
+          ? hit.face.normal.clone().transformDirection(hit.object.matrixWorld).normalize()
+          : new THREE.Vector3(0, 0, 1);
+
+        cursor.position.copy(hit.point).addScaledVector(normal, 0.002);
+        cursor.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
+        cursor.scale.set(r, r, r);
+        cursor.visible = true;
+
+        if (isBrushingRef.current) {
+          applyBrushStroke(hit, e.shiftKey, e.ctrlKey || e.metaKey);
+        }
+        idleFrames = 0;
+      } else {
+        cursor.visible = false;
+      }
+    };
+
+    const onBrushPointerDown = (e: PointerEvent) => {
+      const tool = activeToolRef.current;
+      if (e.button !== 0 || (tool !== 'edit' && tool !== 'texture')) return;
+
+      const rect = renderer.domElement.getBoundingClientRect();
+      const mouse = new THREE.Vector2(
+        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        -((e.clientY - rect.top) / rect.height) * 2 + 1
+      );
+      const raycaster = new THREE.Raycaster();
+      raycaster.setFromCamera(mouse, camera);
+
+      const meshes: THREE.Mesh[] = [];
+      currentMeshGroupRef.current?.traverse((c) => {
+        if (c instanceof THREE.Mesh && c.geometry) meshes.push(c);
+      });
+      const hits = raycaster.intersectObjects(meshes, false);
+      if (hits.length > 0) {
+        isBrushingRef.current = true;
+        controls.enabled = false;
+        lastPaintUVRef.current = null;
+        applyBrushStroke(hits[0], e.shiftKey, e.ctrlKey || e.metaKey);
+        idleFrames = 0;
+      }
+    };
+
+    const onBrushPointerMove = (e: PointerEvent) => {
+      updateBrushCursor(e);
+    };
+
+    const onBrushPointerUp = () => {
+      if (isBrushingRef.current) {
+        isBrushingRef.current = false;
+        controls.enabled = true;
+        lastPaintUVRef.current = null;
+        // Final clean pass for geometry normals and bounding volume
+        if (activeToolRef.current === 'edit' && lastSculptedMeshRef.current?.geometry) {
+          const g = lastSculptedMeshRef.current.geometry;
+          g.computeVertexNormals();
+          if (g.attributes.normal) g.attributes.normal.needsUpdate = true;
+          g.computeBoundingSphere();
+        }
+        idleFrames = 0;
+      }
+    };
+
+    const onFillPaintCanvas = (e: any) => {
+      const color = e.detail?.color || '#FFCC00';
+      currentMeshGroupRef.current?.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          let mat = child.material as any;
+          if (Array.isArray(mat)) mat = mat[0];
+          if (!mat) return;
+          let dynamicCanvas = child.userData?.paintCanvas as HTMLCanvasElement;
+          let ctx = child.userData?.paintCtx as CanvasRenderingContext2D;
+          if (!dynamicCanvas) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 1024;
+            canvas.height = 1024;
+            const context = canvas.getContext('2d');
+            if (context) {
+              context.fillStyle = color;
+              context.fillRect(0, 0, 1024, 1024);
+            }
+            const canvasTex = new THREE.CanvasTexture(canvas);
+            canvasTex.colorSpace = THREE.SRGBColorSpace;
+            canvasTex.flipY = false;
+            mat.map = canvasTex;
+            mat.needsUpdate = true;
+            child.userData.paintCanvas = canvas;
+            child.userData.paintCtx = context;
+          } else if (ctx) {
+            ctx.fillStyle = color;
+            ctx.fillRect(0, 0, dynamicCanvas.width, dynamicCanvas.height);
+            if (mat.map) mat.map.needsUpdate = true;
+          }
+          idleFrames = 0;
+        }
+      });
+    };
+
+    const onClearPaintCanvas = () => {
+      currentMeshGroupRef.current?.traverse((child) => {
+        if (!(child instanceof THREE.Mesh)) return;
+        const paintCanvas = child.userData?.paintCanvas as HTMLCanvasElement | undefined;
+        const paintCtx = child.userData?.paintCtx as CanvasRenderingContext2D | undefined;
+        if (paintCanvas && paintCtx) {
+          paintCtx.clearRect(0, 0, paintCanvas.width, paintCanvas.height);
+          if (child.material && (child.material as any).map) (child.material as any).map.needsUpdate = true;
+        }
+        const maskCanvas = child.userData?.maskCanvas as HTMLCanvasElement | undefined;
+        const maskCtx = child.userData?.maskCtx as CanvasRenderingContext2D | undefined;
+        if (maskCanvas && maskCtx) maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+        idleFrames = 0;
+      });
+    };
+
+    const onSetMaskPaintMode = (event: Event) => {
+      const detail = (event as CustomEvent<{ enabled?: boolean; erase?: boolean }>).detail || {};
+      maskPaintModeRef.current = { enabled: Boolean(detail.enabled), erase: Boolean(detail.erase) };
+      lastPaintUVRef.current = null;
+    };
+
+    const onRequestUVLayout = (event: Event) => {
+      const request = (event as CustomEvent<{ assetId?: string | null; channel?: number }>).detail || {};
+      const requestedAssetId = request.assetId ?? null;
+      const channel = Number(request.channel) === 1 ? 1 : 0;
+      const root = currentMeshGroupRef.current;
+      // Ponytail: fail closed while an old mesh is still visible during an asset switch.
+      if (!root || !requestedAssetId || loadedAssetIdRef.current !== requestedAssetId) return;
+
+      let meshCount = 0;
+      let uvMeshCount = 0;
+      let vertexCount = 0;
+      let triangleCount = 0;
+      let uvVertexCount = 0;
+      let outOfBoundsVertices = 0;
+      let invalidUvCount = 0;
+      let sampledTriangleCount = 0;
+      let minU = Infinity;
+      let minV = Infinity;
+      let maxU = -Infinity;
+      let maxV = -Infinity;
+      let remainingFaces = 5000;
+      const edges: Array<[number, number, number, number]> = [];
+
+      root.traverse((child) => {
+        if (!(child instanceof THREE.Mesh) || !child.geometry) return;
+        const geometry = child.geometry;
+        const positions = geometry.getAttribute('position');
+        if (!positions) return;
+        meshCount += 1;
+        vertexCount += positions.count;
+        const index = geometry.getIndex();
+        const triangles = Math.floor((index ? index.count : positions.count) / 3);
+        triangleCount += triangles;
+        const uv = channel === 0
+          ? geometry.getAttribute('uv')
+          : (geometry.getAttribute('uv1') || geometry.getAttribute('uv2'));
+        if (!uv) return;
+        uvMeshCount += 1;
+        uvVertexCount += uv.count;
+
+        for (let i = 0; i < uv.count; i += 1) {
+          const u = uv.getX(i);
+          const v = uv.getY(i);
+          if (!Number.isFinite(u) || !Number.isFinite(v)) {
+            invalidUvCount += 1;
+            continue;
+          }
+          if (u < 0 || u > 1 || v < 0 || v > 1) outOfBoundsVertices += 1;
+          minU = Math.min(minU, u);
+          minV = Math.min(minV, v);
+          maxU = Math.max(maxU, u);
+          maxV = Math.max(maxV, v);
+        }
+
+        if (remainingFaces <= 0 || triangles <= 0) return;
+        const faceBudget = remainingFaces;
+        const stride = Math.max(1, Math.ceil(triangles / faceBudget));
+        let sampled = 0;
+        for (let face = 0; face < triangles && sampled < faceBudget; face += stride) {
+          const baseIndex = face * 3;
+          const ids = [0, 1, 2].map((corner) => index ? index.getX(baseIndex + corner) : baseIndex + corner);
+          if (ids.some((id) => id < 0 || id >= uv.count)) continue;
+          const points = ids.map((id) => [uv.getX(id), uv.getY(id)] as const);
+          if (points.some(([u, v]) => !Number.isFinite(u) || !Number.isFinite(v))) continue;
+          edges.push(
+            [points[0][0], points[0][1], points[1][0], points[1][1]],
+            [points[1][0], points[1][1], points[2][0], points[2][1]],
+            [points[2][0], points[2][1], points[0][0], points[0][1]],
+          );
+          sampled += 1;
+        }
+        remainingFaces -= sampled;
+        sampledTriangleCount += sampled;
+      });
+
+      if (!Number.isFinite(minU) || !Number.isFinite(minV) || !Number.isFinite(maxU) || !Number.isFinite(maxV)) {
+        minU = 0; minV = 0; maxU = 1; maxV = 1;
+      }
+      window.dispatchEvent(new CustomEvent('formash:uv_layout_ready', {
+        detail: {
+          assetId: requestedAssetId,
+          channel,
+          meshCount,
+          uvMeshCount,
+          vertexCount,
+          triangleCount,
+          uvVertexCount,
+          outOfBoundsVertices,
+          invalidUvCount,
+          sampledTriangleCount,
+          minU, minV, maxU, maxV,
+          edges,
+        },
+      }));
+    };
+
+    const onCaptureUVMask = () => {
+      let maskDataUrl: string | null = null;
+      currentMeshGroupRef.current?.traverse((child) => {
+        if (!(child instanceof THREE.Mesh) || maskDataUrl) return;
+        const srcCanvas = child.userData?.maskCanvas as HTMLCanvasElement | undefined;
+        const srcCtx = child.userData?.maskCtx as CanvasRenderingContext2D | undefined;
+        if (!srcCanvas || !srcCtx) return;
+        try {
+          const srcData = srcCtx.getImageData(0, 0, srcCanvas.width, srcCanvas.height);
+          const maskCanvas = document.createElement('canvas');
+          maskCanvas.width = srcCanvas.width;
+          maskCanvas.height = srcCanvas.height;
+          const maskCtx = maskCanvas.getContext('2d');
+          if (!maskCtx) return;
+          const out = maskCtx.createImageData(maskCanvas.width, maskCanvas.height);
+          let hasPaintedPixels = false;
+          for (let i = 0; i < srcData.data.length; i += 4) {
+            const painted = srcData.data[i + 3] > 10;
+            if (painted) hasPaintedPixels = true;
+            const value = painted ? 255 : 0;
+            out.data[i] = value;
+            out.data[i + 1] = value;
+            out.data[i + 2] = value;
+            out.data[i + 3] = 255;
+          }
+          if (hasPaintedPixels) {
+            maskCtx.putImageData(out, 0, 0);
+            maskDataUrl = maskCanvas.toDataURL('image/png');
+          }
+        } catch (error) {
+          console.warn('[MeshViewer] Could not serialize the UV mask:', error);
+        }
+      });
+      window.dispatchEvent(new CustomEvent('formash:uv_mask_ready', {
+        detail: { maskDataUrl: maskDataUrl || '' }
+      }));
+    };
+
+    const onExportPaintedMesh = (event: Event) => {
+      const root = currentMeshGroupRef.current;
+      const requestedName = (event as CustomEvent<{ assetName?: string }>).detail?.assetName || 'mesh';
+      const fail = (message: string) => window.dispatchEvent(new CustomEvent('formash:paint_export_result', {
+        detail: { ok: false, error: message }
+      }));
+      if (!root) { fail('No mesh is loaded in the viewport.'); return; }
+      let hasPaintCanvas = false;
+      root.traverse((child) => {
+        if (child instanceof THREE.Mesh && child.userData?.paintCanvas) hasPaintCanvas = true;
+      });
+      if (!hasPaintCanvas) { fail('Paint on the mesh surface before exporting the painted GLB.'); return; }
+      root.updateMatrixWorld(true);
+      const exporter = new GLTFExporter();
+      try {
+        exporter.parse(
+          root,
+          (result) => {
+            try {
+              if (!(result instanceof ArrayBuffer)) throw new Error('GLB exporter returned a non-binary result.');
+              const blob = new Blob([result], { type: 'model/gltf-binary' });
+              const url = URL.createObjectURL(blob);
+              const stem = String(requestedName).replace(/\.[^/.]+$/, '').replace(/[^A-Za-z0-9_-]/g, '_');
+              const filename = `${stem || 'mesh'}_painted.glb`;
+              const anchor = document.createElement('a');
+              anchor.href = url;
+              anchor.download = filename;
+              document.body.appendChild(anchor);
+              anchor.click();
+              anchor.remove();
+              window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+              window.dispatchEvent(new CustomEvent('formash:paint_export_result', { detail: { ok: true, filename } }));
+            } catch (error) { fail(error instanceof Error ? error.message : String(error)); }
+          },
+          (error) => fail(error instanceof Error ? error.message : String(error)),
+          { binary: true }
+        );
+      } catch (error) { fail(error instanceof Error ? error.message : String(error)); }
+    };
+
+    renderer.domElement.addEventListener('pointerdown', onBrushPointerDown);
+    renderer.domElement.addEventListener('pointermove', onBrushPointerMove);
+    window.addEventListener('pointerup', onBrushPointerUp);
+    window.addEventListener('pointercancel', onBrushPointerUp);
+    window.addEventListener('formash:fill_paint_canvas', onFillPaintCanvas);
+    window.addEventListener('formash:clear_paint_canvas', onClearPaintCanvas);
+    window.addEventListener('formash:capture_uv_mask', onCaptureUVMask);
+    window.addEventListener('formash:request_uv_layout', onRequestUVLayout);
+    window.addEventListener('formash:set_mask_paint_mode', onSetMaskPaintMode);
+    window.addEventListener('formash:export_painted_mesh', onExportPaintedMesh);
+
+    // Raycast on canvas to select bone joints or place new bones in Rigging mode
+    const onCanvasPointerDown = (event: MouseEvent) => {
+      const state = useAnimationStore.getState();
+      if (state.activeMode !== 'rigging' && state.inspectorTab !== 'rigging') return;
+
+      const rect = renderer.domElement.getBoundingClientRect();
+      const mouse = new THREE.Vector2(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1
+      );
+      const raycaster = new THREE.Raycaster();
+      raycaster.setFromCamera(mouse, camera);
+
+      // CheckIcon if user is placing a new bone on the 3D model surface
+      if (state.isPlacingBone || state.activeViewportTool === 'bone') {
+        const group = currentMeshGroupRef.current;
+        if (group && group.children.length > 0) {
+          const hits = raycaster.intersectObjects(group.children, true);
+          if (hits.length > 0) {
+            const hit = hits[0];
+            const bounds = getMeshBounds();
+
+            const boneX = parseFloat(((hit.point.x - bounds.center.x) / bounds.scale).toFixed(3));
+            const boneY = parseFloat(((hit.point.y - bounds.baseY) / bounds.scale).toFixed(3));
+            const boneZ = parseFloat(((hit.point.z - bounds.center.z) / bounds.scale).toFixed(3));
+
+            const parentBone = state.selectedBone || 'Hips';
+            const newBoneName = `Bone_${state.bones.length + 1}`;
+
+            state.addBone({
+              name: newBoneName,
+              parent: parentBone,
+              position: [boneX, boneY, boneZ],
+              rotation: [0, 0, 0],
+            });
+            state.setIsPlacingBone(false);
+            idleFrames = 0;
+            return;
+          }
+        }
+      }
+
+      // CheckIcon if clicking an existing joint handle in 3D
+      if (rigArmatureGroupRef.current) {
+        const intersects = raycaster.intersectObjects(rigArmatureGroupRef.current.children, true);
+        const hit = intersects.find((i) => i.object.userData?.isJoint);
+        if (hit && hit.object.userData?.boneName) {
+          state.setSelectedBone(hit.object.userData.boneName);
+          idleFrames = 0;
+        }
+      }
+    };
+    renderer.domElement.addEventListener('pointerdown', onCanvasPointerDown);
+
+    // 8. Animation & Render Loop — demand-based rendering with idle settling to save browser GPU
+    const timer = new THREE.Timer();
+    let idleFrames = 0;
+
+    controls.addEventListener('change', () => {
+      idleFrames = 0;
+    });
+
+    const animate = () => {
+      timer.update();
+      const delta = timer.getDelta();
+
+      const turntableActive = Boolean(isTurntableRef.current && !isCapturingTurntableRef.current && meshGroup && meshGroup.children.length > 0);
+      if (turntableActive) {
+        meshGroup.rotation.y += delta * 0.45;
+        if (keyLightRef.current) keyLightRef.current.shadow.needsUpdate = true;
+      }
+
+      const pointCloudActive = Boolean(pointCloudGroup && pointCloudGroup.visible && pointCloudGroup.children.length > 0);
+      if (pointCloudActive) {
+        pointCloudGroup.rotation.y += delta * 0.35;
+      }
+
+      const animState = useAnimationStore.getState();
+      const isAnimPlaying = animState.isPlaying;
+      const physicsActive = physicsRuntimeRef.current?.isRunning() ?? false;
+      if (physicsActive) {
+        try {
+          physicsRuntimeRef.current?.tick(delta);
+        } catch (err) {
+          console.warn('[MeshViewer] Physics tick error suppressed:', err);
+        }
+        if (keyLightRef.current) keyLightRef.current.shadow.needsUpdate = true;
+      }
+      const animTimeChanged = Math.abs(animState.currentTime - lastRenderedAnimTimeRef.current) > 0.0001;
+      if (animTimeChanged) {
+        lastRenderedAnimTimeRef.current = animState.currentTime;
+      }
+      const animationActive = Boolean(mixerRef.current && isAnimPlaying) || isAnimPlaying || physicsActive || animTimeChanged;
+
+      if (mixerRef.current && isAnimPlaying) {
+        try {
+          mixerRef.current.update(delta);
+        } catch (err) {
+          console.warn('[MeshViewer] Animation mixer update error:', err);
+        }
+        if (keyLightRef.current) keyLightRef.current.shadow.needsUpdate = true;
+      }
+      if (isAnimPlaying || animTimeChanged || animState.activeMode === 'rigging' || animState.inspectorTab === 'rigging' || animState.activeMode === 'editing' || animState.activeMode === 'animate' || animState.activeMode === 'blend' || animState.activeMode === 'retarget') {
+        updateArmatureFrame(animState.currentTime);
+      }
+      if (skeletonHelperRef.current && (isAnimPlaying || animTimeChanged || animState.activeMode === 'rigging')) {
+        try {
+          (skeletonHelperRef.current as any).update?.();
+          skeletonHelperRef.current.updateMatrixWorld();
+        } catch (_) {}
+      }
+      if (rigArmatureGroupRef.current && rigArmatureGroupRef.current.visible) {
+        try {
+          rigArmatureGroupRef.current.updateMatrixWorld();
+        } catch (_) {}
+      }
+
+      // Smoothly fade sculpt highlight vertex colors back to neutral (indexed tracking for 0ms idle overhead)
+      const tinted = tintedIndicesRef.current;
+      if (tinted.size > 0 && !isBrushingRef.current && lastSculptedMeshRef.current) {
+        const cAttr = lastSculptedMeshRef.current.geometry?.attributes?.color as THREE.BufferAttribute | undefined;
+        if (cAttr) {
+          const decay = Math.min(1, delta * 4.0);
+          const toDelete: number[] = [];
+          tinted.forEach((idx) => {
+            const r = cAttr.getX(idx);
+            const g = cAttr.getY(idx);
+            const b = cAttr.getZ(idx);
+            if (r < 0.98 || g < 0.98 || b < 0.98) {
+              cAttr.setXYZ(
+                idx,
+                r + (1.0 - r) * decay,
+                g + (1.0 - g) * decay,
+                b + (1.0 - b) * decay
+              );
+            } else {
+              cAttr.setXYZ(idx, 1.0, 1.0, 1.0);
+              toDelete.push(idx);
+            }
+          });
+          toDelete.forEach((idx) => tinted.delete(idx));
+          cAttr.needsUpdate = true;
+          idleFrames = 0;
+        }
+      }
+
+      const controlsChanged = controls.update();
+      if (turntableActive || pointCloudActive || animationActive || controlsChanged || idleFrames < 60) {
+        if (turntableActive || pointCloudActive || animationActive || controlsChanged) {
+          idleFrames = 0;
+        } else {
+          idleFrames++;
+        }
+        try {
+          renderer.render(scene, camera);
+        } catch (renderError) {
+          console.warn('[MeshViewer] Frame render caught exception:', renderError);
+        }
+      }
+    };
+    renderer.setAnimationLoop(animate);
+
+    // 9. Resize Handling via ResizeObserver
+    const resizeObserver = new ResizeObserver(() => {
+      if (!container || !renderer || !camera) return;
+      const w = container.clientWidth;
+      const h = container.clientHeight;
+      if (w > 0 && h > 0) {
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+        renderer.setSize(w, h);
+        idleFrames = 0;
+        renderer.render(scene, camera);
+      }
+    });
+    resizeObserver.observe(container);
+
+    return () => {
+      resizeObserver.disconnect();
+      renderer.setAnimationLoop(null);
+      renderer.domElement.removeEventListener('webglcontextlost', handleContextLost);
+      renderer.domElement.removeEventListener('webglcontextrestored', handleContextRestored);
+      renderer.domElement.removeEventListener('pointerdown', onCanvasPointerDown);
+      renderer.domElement.removeEventListener('pointerdown', onBrushPointerDown);
+      renderer.domElement.removeEventListener('pointermove', onBrushPointerMove);
+      window.removeEventListener('pointerup', onBrushPointerUp);
+      window.removeEventListener('pointercancel', onBrushPointerUp);
+      window.removeEventListener('formash:fill_paint_canvas', onFillPaintCanvas);
+      window.removeEventListener('formash:clear_paint_canvas', onClearPaintCanvas);
+      window.removeEventListener('formash:capture_uv_mask', onCaptureUVMask);
+      window.removeEventListener('formash:request_uv_layout', onRequestUVLayout);
+      window.removeEventListener('formash:set_mask_paint_mode', onSetMaskPaintMode);
+      window.removeEventListener('formash:export_painted_mesh', onExportPaintedMesh);
+      if (brushCursorRef.current) {
+        scene.remove(brushCursorRef.current);
+        brushCursorRef.current = null;
+      }
+      if (rigArmatureGroupRef.current) {
+        scene.remove(rigArmatureGroupRef.current);
+        rigArmatureGroupRef.current = null;
+      }
+      if (animFrameIdRef.current) cancelAnimationFrame(animFrameIdRef.current);
+      if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+      try { physicsRuntimeRef.current?.dispose(); } catch (_) {}
+      physicsRuntimeRef.current = null;
+      transformControls.dispose();
+      controls.dispose();
+      renderer.dispose();
+      if (pointCloudRef.current) {
+        disposePointCloud(pointCloudRef.current);
+        pointCloudRef.current = null;
+      }
+      if (container.contains(renderer.domElement)) {
+        container.removeChild(renderer.domElement);
+      }
+      scene.traverse((obj) => {
+        if (obj instanceof THREE.Mesh) {
+          if (obj.geometry && !SHARED_STATIC_RESOURCES.has(obj.geometry)) {
+            obj.geometry.dispose();
+          }
+          const material = obj.material;
+          if (Array.isArray(material)) {
+            material.forEach((m) => {
+              if (!SHARED_STATIC_RESOURCES.has(m)) {
+                Object.values(m).forEach((v: any) => { if (v instanceof THREE.Texture) v.dispose(); });
+                m.dispose();
+              }
+            });
+          } else if (material && !SHARED_STATIC_RESOURCES.has(material)) {
+            Object.values(material).forEach((v: any) => { if (v instanceof THREE.Texture) v.dispose(); });
+            material.dispose();
+          }
+        }
+      });
+      if (envTextureRef.current) {
+        envTextureRef.current.dispose();
+        envTextureRef.current = null;
+      }
+      scene.environment = null;
+    };
+  }, []);
+
+  // Rebind physics only after the current asset has actually finished loading.
+  useEffect(() => {
+    try { physicsRuntimeRef.current?.dispose(); } catch (_) {}
+    physicsRuntimeRef.current = null;
+    setPhysicsRunning(false);
+    setPhysicsStatus(null);
+    loadedAssetIdRef.current = null;
+    setLoadedAssetId(null);
+  }, [currentAsset?.id]);
+
+  useEffect(() => {
+    if (!isLoading) return;
+    try { physicsRuntimeRef.current?.dispose(); } catch (_) {}
+    physicsRuntimeRef.current = null;
+    setPhysicsRunning(false);
+    setPhysicsStatus(null);
+    loadedAssetIdRef.current = null;
+    setLoadedAssetId(null);
+  }, [isLoading]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const initializePhysics = async () => {
+      const group = currentMeshGroupRef.current;
+      const scene = sceneRef.current;
+      const collisionUrl = currentAsset?.artifacts?.collision;
+      if (
+        !group ||
+        !scene ||
+        isLoading ||
+        !modelLoadVersion ||
+        loadedAssetId !== currentAsset?.id ||
+        !currentAsset?.artifacts?.physicsReady ||
+        !collisionUrl
+      ) {
+        return;
+      }
+
+      const metadata = (currentAsset.artifacts?.physics || {}) as any;
+      const body = metadata.body || {};
+      const material = metadata.material || {};
+      const runtime = new PhysicsRuntime();
+
+      try {
+        await runtime.init(scene, group, collisionUrl, {
+          bodyType: body.type || DEFAULT_PHYSICS_SETTINGS.bodyType,
+          massMode: metadata.provenance?.mass === 'user' ? 'manual' : 'auto',
+          massKg: Number(body.mass_kg ?? DEFAULT_PHYSICS_SETTINGS.massKg),
+          densityMode: DEFAULT_PHYSICS_SETTINGS.densityMode,
+          densityKgM3: Number(body.density_kg_m3 ?? DEFAULT_PHYSICS_SETTINGS.densityKgM3),
+          friction: Number(material.dynamic_friction ?? DEFAULT_PHYSICS_SETTINGS.friction),
+          restitution: Number(material.restitution ?? DEFAULT_PHYSICS_SETTINGS.restitution),
+          linearDamping: Number(body.linear_damping ?? DEFAULT_PHYSICS_SETTINGS.linearDamping),
+          angularDamping: Number(body.angular_damping ?? DEFAULT_PHYSICS_SETTINGS.angularDamping),
+          gravityEnabled: Boolean(body.gravity_enabled ?? DEFAULT_PHYSICS_SETTINGS.gravityEnabled),
+        });
+        if (cancelled) {
+          try { runtime.dispose(); } catch (_) {}
+          return;
+        }
+        try { physicsRuntimeRef.current?.dispose(); } catch (_) {}
+        physicsRuntimeRef.current = runtime;
+        runtime.setDebugVisibility(physicsDebug);
+        setPhysicsStatus('Physics ready — rigid-body preview');
+      } catch (error) {
+        try { runtime.dispose(); } catch (_) {}
+        if (physicsRuntimeRef.current === runtime) physicsRuntimeRef.current = null;
+        if (!cancelled) setPhysicsStatus(error instanceof Error ? error.message : 'Physics preview initialization failed');
+      }
+    };
+
+    void initializePhysics();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    currentAsset?.id,
+    currentAsset?.artifacts?.collision,
+    currentAsset?.artifacts?.physicsReady,
+    currentAsset?.artifacts?.physics,
+    modelLoadVersion,
+    loadedAssetId,
+  ]);
+
+  useEffect(() => {
+    physicsRuntimeRef.current?.setDebugVisibility(physicsDebug);
+  }, [physicsDebug]);
+
+
+  // Manage mesh visibility during generation without intrusive 3D placeholder wireframes
+  useEffect(() => {
+    const isGenerating = Boolean(isExecuting || debugBlueprint);
+    const pointCloudGroup = pointCloudGroupRef.current;
+    const meshGroup = currentMeshGroupRef.current;
+
+    if (pointCloudGroup) {
+      pointCloudGroup.visible = false;
+      if (pointCloudRef.current) {
+        pointCloudGroup.remove(pointCloudRef.current);
+        disposePointCloud(pointCloudRef.current);
+        pointCloudRef.current = null;
+      }
+    }
+
+    if (!isGenerating) {
+      if (meshGroup) {
+        meshGroup.visible = true;
+      }
+      return;
+    }
+
+    // Hide real mesh group and any skeleton helpers while generation is active
+    if (meshGroup) {
+      meshGroup.visible = false;
+    }
+    if (skeletonHelperRef.current) {
+      skeletonHelperRef.current.visible = false;
+    }
+  }, [isExecuting, debugBlueprint]);
+
+  // Load the real selected asset into the persistent viewport.
+  useEffect(() => {
+    if (!sceneRef.current || !currentMeshGroupRef.current) return;
+    const sourceUrl = currentAsset?.source?.localUrl || currentAsset?.source?.viewUrl;
+    // Fast path: if the exact same model source is already rendered, do not purge and re-parse!
+    if (
+      sourceUrl &&
+      currentLoadedSourceUrlRef.current === sourceUrl &&
+      currentMeshGroupRef.current.children.length > 0
+    ) {
+      setLoadedAssetId(currentAsset?.id ?? null);
+      setIsLoading(false);
+      return;
+    }
+    currentLoadedSourceUrlRef.current = sourceUrl || null;
+    useAnimationStore.getState().setLoadedSkeletonBoneNames(null);
+    const group = currentMeshGroupRef.current;
+    while (group.children.length > 0) {
+      const obj = group.children[0];
+      group.remove(obj);
+      obj.traverse((child) => {
+        if (child.userData?.isWireframeOverlay) {
+          if (child instanceof THREE.Mesh && child.material) {
+            disposeMaterial(child.material);
+          }
+          return;
+        }
+        if (child instanceof THREE.Mesh) {
+          child.geometry?.dispose();
+          const orig = child.userData?.originalMaterial;
+          if (orig && orig !== child.material) {
+            if (Array.isArray(orig)) orig.forEach(m => disposeMaterial(m));
+            else disposeMaterial(orig);
+          }
+          const material = child.material;
+          if (Array.isArray(material)) material.forEach(m => disposeMaterial(m));
+          else if (material) disposeMaterial(material);
+          if (child.userData?.cachedShadingMaterials) {
+            Object.values(child.userData.cachedShadingMaterials).forEach((m: any) => disposeMaterial(m));
+          }
+        }
+      });
+    }
+
+    if (turntableRecorderRef.current && turntableRecorderRef.current.state !== 'inactive') {
+      try { turntableRecorderRef.current.stop(); } catch (_) {}
+    }
+    turntableRecorderRef.current = null;
+    if (turntableAnimFrameRef.current) {
+      cancelAnimationFrame(turntableAnimFrameRef.current);
+      turntableAnimFrameRef.current = null;
+    }
+    isCapturingTurntableRef.current = false;
+    setIsCapturingTurntable(false);
+    setTurntableProgress(0);
+
+    if (mixerRef.current) {
+      mixerRef.current.stopAllAction();
+      mixerRef.current = null;
+    }
+    actionRef.current = null;
+    motionRootObjectRef.current = null;
+    motionRootBasePositionRef.current = null;
+    if (skeletonHelperRef.current) {
+      if (sceneRef.current) sceneRef.current.remove(skeletonHelperRef.current);
+      skeletonHelperRef.current.dispose();
+      skeletonHelperRef.current = null;
+    }
+
+    if (!currentAsset?.source?.viewUrl && !currentAsset?.source?.localUrl) {
+      setIsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    let objectUrl: string | null = null;
+
+    const load = async () => {
+      setIsLoading(true);
+      setMeshStats(null);
+      try {
+        const sourceUrl = currentAsset.source?.localUrl || currentAsset.source?.viewUrl;
+        if (!sourceUrl) return;
+
+        const artifactUrl = new URL(sourceUrl, window.location.origin);
+        const artifactFormat = (artifactUrl.searchParams.get('artifact_format') || '').toLowerCase();
+        const pathExtension = artifactUrl.pathname.split('.').pop()?.toLowerCase() || '';
+        const format =
+          artifactFormat === 'rigged' || artifactFormat === 'glb' ? 'glb' :
+          artifactFormat === 'fbx' || artifactFormat === 'rigged_fbx' ? 'fbx' :
+          ['glb', 'gltf', 'fbx', 'obj', 'ply', 'stl'].includes(pathExtension) ? pathExtension :
+          currentAsset.format.toLowerCase();
+        if (format === 'glb' || format === 'gltf') {
+          // Multi-tier fast loading: L1 in-memory RAM cache (0ms) -> L2 persistent disk cache (~5ms) -> Chunked streaming network fetch
+          setLoadProgress({ loaded: 0, total: 0, percent: 0 });
+          let arrayBuffer: ArrayBuffer;
+          const cached = getCachedGLB(sourceUrl);
+          if (cached) {
+            arrayBuffer = cached;
+            setLoadProgress({ loaded: cached.byteLength, total: cached.byteLength, percent: 100 });
+          } else {
+            arrayBuffer = await loadGLBWithProgress(sourceUrl, (loaded, total, percent) => {
+              if (!cancelled) {
+                setLoadProgress({ loaded, total, percent });
+              }
+            });
+          }
+
+          // Truncation check for GLB binary format to avoid Three.js typed array length error
+          if (format === 'glb' && arrayBuffer.byteLength >= 12) {
+            const view = new DataView(arrayBuffer);
+            const magic = view.getUint32(0, true);
+            if (magic === 0x46546C67) { // 'glTF'
+              const declaredLength = view.getUint32(8, true);
+              if (declaredLength > arrayBuffer.byteLength) {
+                throw new Error(
+                  `Model file truncated: received ${arrayBuffer.byteLength} of ${declaredLength} bytes. Please try reloading.`
+                );
+              }
+            }
+          }
+
+          const loader = sharedGLTFLoader;
+          const basePath = (sourceUrl.startsWith('http://') || sourceUrl.startsWith('https://') || sourceUrl.startsWith('/'))
+            ? sourceUrl.substring(0, sourceUrl.lastIndexOf('/') + 1)
+            : '';
+          const gltf = await loader.parseAsync(arrayBuffer, basePath);
+          if (!cancelled) {
+            motionRootObjectRef.current = gltf.scene;
+            motionRootBasePositionRef.current = gltf.scene.position.clone();
+            group.add(gltf.scene);
+            gltf.scene.traverse((child) => {
+              if (child instanceof THREE.Mesh) {
+                child.castShadow = true;
+                // Enable self-shadow receiving for detailed models up to 1.5M vertices
+                const vCount = child.geometry?.attributes?.position?.count || 0;
+                child.receiveShadow = vCount < 1500000;
+
+                // Enhance normal map depth and crispness for micro-relief (eyes, teeth, ears)
+                if (child.material) {
+                  const mats = Array.isArray(child.material) ? child.material : [child.material];
+                  mats.forEach((m) => {
+                    if (m instanceof THREE.MeshStandardMaterial) {
+                      // Non-textured models: balance roughness and specular reflection
+                      // so geometric contours (folds, facial features, armor) pop with clarity
+                      if (!m.map) {
+                        if (!m.vertexColors) {
+                          m.roughness = 0.32; // crisp specular highlight on ridges, teeth, folds
+                          m.metalness = 0.08;
+                          if (m.color.r < 0.25 && m.color.g < 0.25 && m.color.b < 0.25) {
+                            m.color.setHex(0xd0d5dc);
+                          }
+                        } else {
+                          // Vertex-colored models (Unique3D): preserve sharp specular response without dulling colors
+                          m.roughness = 0.38;
+                          m.metalness = 0.05;
+                        }
+                        m.needsUpdate = true;
+                      }
+                      if (m.normalMap) {
+                        const ns = currentAsset?.materialConfig?.normalScale ?? 1.0;
+                        m.normalScale.set(ns, ns);
+                        m.needsUpdate = true;
+                      }
+                    }
+                  });
+                }
+              }
+            });
+            const shouldResetAngle = !hasUserOrbitedRef.current && (lastFramedAssetIdRef.current !== currentAsset.id);
+            frameCamera(gltf.scene, { forceResetAngle: shouldResetAngle });
+            lastFramedAssetIdRef.current = currentAsset.id;
+            computeMeshStats(gltf.scene);
+
+            // If GLTF contains animation clips, start AnimationMixer
+            if (gltf.animations && gltf.animations.length > 0) {
+              try {
+                const mixer = new THREE.AnimationMixer(gltf.scene);
+                mixerRef.current = mixer;
+                const clip = gltf.animations[0];
+                const action = mixer.clipAction(clip);
+                actionRef.current = action;
+                const shouldPlay = useAnimationStore.getState().isPlaying;
+                action.play();
+                action.paused = !shouldPlay;
+
+                if (clip.duration > 0) {
+                  useAnimationStore.setState({
+                    duration: Number(clip.duration.toFixed(2)),
+                    fps: 30,
+                    currentTime: 0,
+                  });
+                }
+              } catch (err) {
+                console.warn('[MeshViewer] AnimationMixer initialization skipped for GLTF:', err);
+                mixerRef.current = null;
+                actionRef.current = null;
+              }
+            }
+
+            // Look for SkinnedMesh or Bone to attach SkeletonHelper
+            let hasSkeleton = false;
+            let skeletonRoot: THREE.Object3D | null = null;
+            const skeletonBoneNames: string[] = [];
+            gltf.scene.traverse((child) => {
+              if (child instanceof THREE.Bone) {
+                if (child.name) skeletonBoneNames.push(child.name);
+                if (!skeletonRoot) skeletonRoot = child.parent || child;
+                hasSkeleton = true;
+              }
+              if (child instanceof THREE.SkinnedMesh) {
+                if (child.skeleton?.bones?.length) {
+                  hasSkeleton = true;
+                  child.skeleton.bones.forEach((b) => {
+                    if (b && b.name) skeletonBoneNames.push(b.name);
+                  });
+                  if (!skeletonRoot) {
+                    const rootBone = child.skeleton.bones.find((b) => !b.parent || !(b.parent instanceof THREE.Bone));
+                    skeletonRoot = rootBone?.parent || rootBone || child.skeleton.bones[0];
+                  }
+                }
+              }
+            });
+            gltf.scene.updateMatrixWorld(true);
+            const uniqueBoneNames = [...new Set(skeletonBoneNames)];
+            useAnimationStore.getState().setLoadedSkeletonBoneNames(uniqueBoneNames);
+            if (hasSkeleton && sceneRef.current) {
+              if (skeletonHelperRef.current) {
+                sceneRef.current.remove(skeletonHelperRef.current);
+                skeletonHelperRef.current.dispose();
+                skeletonHelperRef.current = null;
+              }
+              const targetRoot = skeletonRoot || gltf.scene;
+              const helper = new THREE.SkeletonHelper(targetRoot);
+              if (helper.bones && helper.bones.length > 0) {
+                helper.visible = useAnimationStore.getState().displayOptions.showSkeleton;
+                sceneRef.current.add(helper);
+                skeletonHelperRef.current = helper;
+                (helper as any).update?.();
+              } else {
+                helper.dispose();
+              }
+            }
+
+            if (!cancelled) {
+              loadedAssetIdRef.current = currentAsset.id;
+              setLoadedAssetId(currentAsset.id);
+              window.dispatchEvent(new CustomEvent('formash:uv_layout_changed'));
+              setModelLoadVersion((version) => version + 1);
+              setIsLoading(false);
+            }
+
+            // Asynchronously pre-compile shaders in background without blocking immediate display
+            if (rendererRef.current && cameraRef.current) {
+              rendererRef.current.compileAsync(gltf.scene, cameraRef.current).catch(() => {});
+            }
+          } else {
+            gltf.scene.traverse((child) => {
+              if (child instanceof THREE.Mesh) {
+                child.geometry?.dispose();
+                disposeMaterial(child.material);
+              }
+            });
+          }
+        } else if (format === 'fbx') {
+          const response = await fetch(sourceUrl);
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const objectUrl = URL.createObjectURL(await response.blob());
+          let fbx: THREE.Group;
+          try {
+            fbx = await sharedFBXLoader.loadAsync(objectUrl);
+          } finally {
+            URL.revokeObjectURL(objectUrl);
+          }
+          if (cancelled) {
+            fbx.traverse((child) => {
+              if (child instanceof THREE.Mesh) {
+                child.geometry?.dispose();
+                disposeMaterial(child.material);
+              }
+            });
+            return;
+          }
+          motionRootObjectRef.current = fbx;
+          motionRootBasePositionRef.current = fbx.position.clone();
+          fbx.traverse((child) => {
+            if (child instanceof THREE.Mesh) {
+              child.castShadow = true;
+              child.receiveShadow = (child.geometry?.attributes?.position?.count || 0) < 200000;
+            }
+          });
+          group.add(fbx);
+          const shouldResetAngleFbx = !hasUserOrbitedRef.current && (lastFramedAssetIdRef.current !== currentAsset.id);
+          frameCamera(fbx, { forceResetAngle: shouldResetAngleFbx });
+          lastFramedAssetIdRef.current = currentAsset.id;
+          computeMeshStats(fbx);
+          if (fbx.animations && fbx.animations.length > 0) {
+            try {
+              const mixer = new THREE.AnimationMixer(fbx);
+              mixerRef.current = mixer;
+              const clip = fbx.animations[0];
+              const action = mixer.clipAction(clip);
+              actionRef.current = action;
+              const shouldPlay = useAnimationStore.getState().isPlaying;
+              action.play();
+              action.paused = !shouldPlay;
+
+              if (clip.duration > 0) {
+                useAnimationStore.setState({
+                  duration: Number(clip.duration.toFixed(2)),
+                  fps: 30,
+                  currentTime: 0,
+                });
+              }
+            } catch (err) {
+              console.warn('[MeshViewer] AnimationMixer initialization skipped for FBX:', err);
+              mixerRef.current = null;
+              actionRef.current = null;
+            }
+          }
+          let hasSkeleton = false;
+          let skeletonRoot: THREE.Object3D | null = null;
+          const skeletonBoneNames: string[] = [];
+          fbx.traverse((child) => {
+            if (child instanceof THREE.Bone) {
+              if (child.name) skeletonBoneNames.push(child.name);
+              if (!skeletonRoot) skeletonRoot = child.parent || child;
+              hasSkeleton = true;
+            }
+            if (child instanceof THREE.SkinnedMesh) {
+              if (child.skeleton?.bones?.length) {
+                hasSkeleton = true;
+                child.skeleton.bones.forEach((b) => {
+                  if (b && b.name) skeletonBoneNames.push(b.name);
+                });
+                if (!skeletonRoot) {
+                  const rootBone = child.skeleton.bones.find((b) => !b.parent || !(b.parent instanceof THREE.Bone));
+                  skeletonRoot = rootBone?.parent || rootBone || child.skeleton.bones[0];
+                }
+              }
+            }
+          });
+          fbx.updateMatrixWorld(true);
+          const uniqueFbxBones = [...new Set(skeletonBoneNames)];
+          useAnimationStore.getState().setLoadedSkeletonBoneNames(uniqueFbxBones);
+          if (hasSkeleton && sceneRef.current) {
+            if (skeletonHelperRef.current) {
+              sceneRef.current.remove(skeletonHelperRef.current);
+              skeletonHelperRef.current.dispose();
+              skeletonHelperRef.current = null;
+            }
+            const targetRoot = skeletonRoot || fbx;
+            const helper = new THREE.SkeletonHelper(targetRoot);
+            if (helper.bones && helper.bones.length > 0) {
+              helper.visible = useAnimationStore.getState().displayOptions.showSkeleton;
+              sceneRef.current.add(helper);
+              skeletonHelperRef.current = helper;
+              (helper as any).update?.();
+            } else {
+              helper.dispose();
+            }
+          }
+          loadedAssetIdRef.current = currentAsset.id;
+          setLoadedAssetId(currentAsset.id);
+          window.dispatchEvent(new CustomEvent('formash:uv_layout_changed'));
+          setModelLoadVersion((version) => version + 1);
+        } else if (format === 'obj') {
+          // ponytail: verify response is text before parsing as OBJ
+          const objResponse = await fetch(sourceUrl);
+          if (!objResponse.ok) throw new Error(`HTTP ${objResponse.status}`);
+          const objContentType = objResponse.headers.get('content-type') || '';
+          if (objContentType.includes('text/html') || objContentType.includes('application/json')) {
+            const text = await objResponse.clone().text();
+            if (text.startsWith('<!DOCTYPE') || text.startsWith('<html')) {
+              throw new Error('Model file served as HTML — possible token/auth failure. Open DevTools for details.');
+            }
+          }
+          const blob = await objResponse.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          const loader = sharedOBJLoader;
+          const object = await loader.loadAsync(blobUrl);
+          URL.revokeObjectURL(blobUrl);
+          if (!cancelled) {
+            object.traverse((child) => {
+              if (child instanceof THREE.Mesh) {
+                child.castShadow = true;
+                child.receiveShadow = true;
+                if (shadingMode === 'wireframe') {
+                  const oldMaterial = child.material;
+                  child.material = new THREE.MeshStandardMaterial({
+                    color: 0xd0d5dc,
+                    wireframe: true,
+                    roughness: 0.75,
+                    metalness: 0.05
+                  });
+                  if (Array.isArray(oldMaterial)) oldMaterial.forEach(m => disposeMaterial(m));
+                  else if (oldMaterial) disposeMaterial(oldMaterial);
+                }
+              }
+            });
+            group.add(object);
+            const shouldResetAngleObj = !hasUserOrbitedRef.current && (lastFramedAssetIdRef.current !== currentAsset.id);
+            frameCamera(object, { forceResetAngle: shouldResetAngleObj });
+            lastFramedAssetIdRef.current = currentAsset.id;
+            computeMeshStats(object);
+            if (!cancelled) {
+              useAnimationStore.getState().setLoadedSkeletonBoneNames([]);
+              loadedAssetIdRef.current = currentAsset.id;
+              setLoadedAssetId(currentAsset.id);
+              window.dispatchEvent(new CustomEvent('formash:uv_layout_changed'));
+              setModelLoadVersion((version) => version + 1);
+            }
+          } else {
+            object.traverse((child) => {
+              if (child instanceof THREE.Mesh) {
+                child.geometry?.dispose();
+                disposeMaterial(child.material);
+              }
+            });
+          }
+        } else if (format === 'ply') {
+          const response = await fetch(sourceUrl);
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const contentType = response.headers.get('content-type') || '';
+          if (contentType.includes('text/html') || contentType.includes('application/json')) {
+            const text = await response.clone().text();
+            if (text.startsWith('<!DOCTYPE') || text.startsWith('<html')) {
+              throw new Error('Model file served as HTML — possible token/auth failure. Open DevTools for details.');
+            }
+          }
+          const buffer = await response.arrayBuffer();
+          const loader = sharedPLYLoader;
+          const geometry = loader.parse(buffer);
+          geometry.computeVertexNormals();
+          const material = new THREE.MeshStandardMaterial({
+            color: 0xbcc2cc,
+            roughness: 0.82,
+            metalness: 0.05,
+            wireframe: shadingMode === 'wireframe'
+          });
+          const mesh = new THREE.Mesh(geometry, material);
+          mesh.castShadow = true;
+          mesh.receiveShadow = true;
+          if (!cancelled) {
+            useAnimationStore.getState().setLoadedSkeletonBoneNames([]);
+            group.add(mesh);
+            const shouldResetAnglePly = !hasUserOrbitedRef.current && (lastFramedAssetIdRef.current !== currentAsset.id);
+            frameCamera(mesh, { forceResetAngle: shouldResetAnglePly });
+            lastFramedAssetIdRef.current = currentAsset.id;
+            computeMeshStats(mesh);
+            loadedAssetIdRef.current = currentAsset.id;
+            setLoadedAssetId(currentAsset.id);
+            window.dispatchEvent(new CustomEvent('formash:uv_layout_changed'));
+            setModelLoadVersion((version) => version + 1);
+          } else {
+            geometry.dispose();
+            material.dispose();
+          }
+        } else if (format === 'stl') {
+          const response = await fetch(sourceUrl);
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const buffer = await response.arrayBuffer();
+          const loader = sharedSTLLoader;
+          const geometry = loader.parse(buffer);
+          geometry.computeVertexNormals();
+          const material = new THREE.MeshStandardMaterial({
+            color: 0xbcc2cc,
+            roughness: 0.82,
+            metalness: 0.05,
+            wireframe: shadingMode === 'wireframe'
+          });
+          const mesh = new THREE.Mesh(geometry, material);
+          mesh.castShadow = true;
+          mesh.receiveShadow = true;
+          if (!cancelled) {
+            useAnimationStore.getState().setLoadedSkeletonBoneNames([]);
+            group.add(mesh);
+            const shouldResetAngleStl = !hasUserOrbitedRef.current && (lastFramedAssetIdRef.current !== currentAsset.id);
+            frameCamera(mesh, { forceResetAngle: shouldResetAngleStl });
+            lastFramedAssetIdRef.current = currentAsset.id;
+            computeMeshStats(mesh);
+            loadedAssetIdRef.current = currentAsset.id;
+            setLoadedAssetId(currentAsset.id);
+            window.dispatchEvent(new CustomEvent('formash:uv_layout_changed'));
+            setModelLoadVersion((version) => version + 1);
+          } else {
+            geometry.dispose();
+            material.dispose();
+          }
+        } else {
+          throw new Error(`No browser preview is available for ${currentAsset.format}.`);
+        }
+
+        // Auto-generate high-quality thumbnail if not present in the asset
+        if (rendererRef.current && sceneRef.current && cameraRef.current && currentAsset && (!currentAsset.thumbnail || currentAsset.thumbnail === '')) {
+          requestAnimationFrame(() => {
+            if (rendererRef.current && sceneRef.current && cameraRef.current && currentAsset) {
+              rendererRef.current.render(sceneRef.current, cameraRef.current);
+              const dataUrl = rendererRef.current.domElement.toDataURL('image/jpeg', 0.85);
+              if (dataUrl && dataUrl.startsWith('data:image/')) {
+                updateAssetProperties(currentAsset.id, { thumbnail: dataUrl });
+              }
+            }
+          });
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Viewport asset load failed', error);
+          const message = error instanceof Error ? error.message : 'Unable to preview asset';
+          setDropToastMessage(message);
+          setDropToastIsHtmlError(message.includes('served as HTML') || message.includes('token/auth'));
+          if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+          toastTimeoutRef.current = window.setTimeout(() => {
+            setDropToastMessage(null);
+            setDropToastIsHtmlError(false);
+          }, 6000);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+          setLoadProgress(null);
+        }
+      }
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [currentAsset?.id, currentAsset?.source?.viewUrl, currentAsset?.source?.localUrl, currentAsset?.format, viewportResetTrigger]);
+
+  // Dynamic In-Memory Shading Mode Switcher (PBR, Wireframe, Clay, Normal, Matcap, X-Ray) without re-fetching
+  useEffect(() => {
+    if (!currentMeshGroupRef.current) return;
+    const group = currentMeshGroupRef.current;
+
+    try {
+      group.traverse((child) => {
+        // Essential guard: skip wireframe overlays to prevent recursive traverse and geometry/material corruption
+        if (child.userData?.isWireframeOverlay) return;
+
+        if (child instanceof THREE.Mesh) {
+          if (!child.userData.originalMaterial) {
+            child.userData.originalMaterial = child.material;
+          }
+
+          const orig = child.userData.originalMaterial;
+          if (!child.userData.cachedShadingMaterials) {
+            child.userData.cachedShadingMaterials = {};
+          }
+          const cache = child.userData.cachedShadingMaterials;
+          const isWireOnly = shadingMode === 'wireframe';
+          const mode = shadingMode?.toLowerCase?.() || 'default';
+          let targetMat: THREE.Material | THREE.Material[] = orig;
+
+          switch (mode) {
+            case 'wireframe':
+              if (!cache.wireframe) {
+                // Draw an opaque depth-writing surface first; the green wire
+                // overlay below then shows visible edges, not rear shells.
+                cache.wireframe = new THREE.MeshStandardMaterial({
+                  color: 0x071a12,
+                  wireframe: false,
+                  roughness: 0.85,
+                  metalness: 0.0,
+                });
+              }
+              targetMat = cache.wireframe;
+              break;
+
+            case 'clay':
+              if (!cache.clay) {
+                cache.clay = new THREE.MeshPhysicalMaterial({
+                  color: 0xcdc7c2,
+                  roughness: 0.68,
+                  metalness: 0.02,
+                  clearcoat: 0.15,
+                  clearcoatRoughness: 0.45,
+                });
+              }
+              cache.clay.wireframe = false;
+              targetMat = cache.clay;
+              break;
+
+            case 'matcap':
+            case 'matcap-ceramic':
+              if (!cache.ceramic) {
+                cache.ceramic = new THREE.MeshPhysicalMaterial({
+                  color: 0xfcfcfc,
+                  roughness: 0.28,
+                  metalness: 0.02,
+                  clearcoat: 0.85,
+                  clearcoatRoughness: 0.12,
+                });
+              }
+              cache.ceramic.wireframe = false;
+              targetMat = cache.ceramic;
+              break;
+
+            case 'metallic':
+            case 'matcap-chrome':
+              if (!cache.chrome) {
+                cache.chrome = new THREE.MeshPhysicalMaterial({
+                  color: 0xf8f9fa,
+                  roughness: 0.03,
+                  metalness: 1.0,
+                  clearcoat: 0.5,
+                });
+              }
+              cache.chrome.wireframe = false;
+              targetMat = cache.chrome;
+              break;
+
+            case 'gold':
+            case 'matcap-gold':
+              if (!cache.gold) {
+                cache.gold = new THREE.MeshPhysicalMaterial({
+                  color: 0xf5c342,
+                  roughness: 0.18,
+                  metalness: 0.95,
+                  clearcoat: 0.35,
+                });
+              }
+              cache.gold.wireframe = false;
+              targetMat = cache.gold;
+              break;
+
+            case 'normal':
+            case 'normals':
+            case 'matcap-normal':
+              if (!cache.normals) {
+                cache.normals = new THREE.MeshNormalMaterial();
+              }
+              cache.normals.wireframe = false;
+              targetMat = cache.normals;
+              break;
+
+            case 'xray':
+              if (!cache.xray) {
+                cache.xray = new THREE.MeshBasicMaterial({
+                  color: 0x3b82f6,
+                  wireframe: true,
+                  transparent: true,
+                  opacity: 0.75,
+                });
+              }
+              targetMat = cache.xray;
+              break;
+
+            case 'matcap-turquoise':
+              if (!cache.turquoise) {
+                cache.turquoise = new THREE.MeshStandardMaterial({
+                  color: 0x06b6d4,
+                  roughness: 0.3,
+                  metalness: 0.4,
+                });
+              }
+              cache.turquoise.wireframe = false;
+              targetMat = cache.turquoise;
+              break;
+
+            case 'default':
+            case 'textured':
+            default:
+              targetMat = orig;
+              if (Array.isArray(targetMat)) {
+                targetMat.forEach((m) => {
+                  if ('wireframe' in m) {
+                    (m as THREE.MeshStandardMaterial).wireframe = false;
+                  }
+                });
+              } else if (targetMat && 'wireframe' in targetMat) {
+                (targetMat as THREE.MeshStandardMaterial).wireframe = false;
+              }
+              break;
+          }
+
+          child.material = targetMat;
+
+          // Pro Studio Wireframe on Shaded:
+          // Renders crisp topology wire lines cleanly overlaid onto the solid lit geometry
+          let wireOverlay = child.children.find((c) => c.userData?.isWireframeOverlay) as THREE.Mesh | undefined;
+          if (showWireframe || isWireOnly) {
+            if (!wireOverlay) {
+              const wireMat = new THREE.MeshBasicMaterial({
+                color: 0x00f5a0,
+                wireframe: true,
+                transparent: true,
+                opacity: 0.55,
+                depthTest: true,
+                polygonOffset: true,
+                polygonOffsetFactor: -1,
+                polygonOffsetUnits: -1,
+              });
+              if (child instanceof THREE.SkinnedMesh) {
+                const skinnedOverlay = new THREE.SkinnedMesh(child.geometry, wireMat);
+                if (child.skeleton?.bones?.length) {
+                  skinnedOverlay.bind(child.skeleton, child.bindMatrix || child.matrixWorld);
+                }
+                wireOverlay = skinnedOverlay;
+              } else {
+                wireOverlay = new THREE.Mesh(child.geometry, wireMat);
+              }
+              wireOverlay.userData.isWireframeOverlay = true;
+              wireOverlay.renderOrder = (child.renderOrder || 0) + 1;
+              child.add(wireOverlay);
+            } else {
+              if (wireOverlay.geometry !== child.geometry) {
+                wireOverlay.geometry = child.geometry;
+                if (child instanceof THREE.SkinnedMesh && wireOverlay instanceof THREE.SkinnedMesh && child.skeleton?.bones?.length) {
+                  wireOverlay.bind(child.skeleton, child.bindMatrix || child.matrixWorld);
+                }
+              }
+            }
+            wireOverlay.visible = true;
+          } else if (wireOverlay) {
+            wireOverlay.visible = false;
+          }
+        }
+      });
+    } catch (err) {
+      console.warn('[MeshViewer] Shading switcher encountered an issue:', err);
+    }
+  }, [shadingMode, showWireframe]);
+
+  // Synchronize material PBR properties (roughness, metalness, normalScale) in real time
+  useEffect(() => {
+    if (!currentMeshGroupRef.current || !currentAsset?.materialConfig) return;
+    const { roughness, metalness, normalScale } = currentAsset.materialConfig;
+    currentMeshGroupRef.current.traverse((child) => {
+      if (child instanceof THREE.Mesh && child.material) {
+        const mats = Array.isArray(child.material) ? child.material : [child.material];
+        for (const m of mats) {
+          if ('roughness' in m && typeof roughness === 'number') m.roughness = roughness;
+          if ('metalness' in m && typeof metalness === 'number') m.metalness = metalness;
+          if ('normalScale' in m && typeof normalScale === 'number') {
+            m.normalScale.set(normalScale, normalScale);
+          }
+          m.needsUpdate = true;
+        }
+      }
+    });
+  }, [
+    currentAsset?.materialConfig?.roughness,
+    currentAsset?.materialConfig?.metalness,
+    currentAsset?.materialConfig?.normalScale,
+  ]);
+
+  const tweenCameraTo = useCallback((toPos: THREE.Vector3, toTarget: THREE.Vector3, durationMs = 380, onDone?: () => void) => {
+    if (!cameraRef.current || !controlsRef.current) return;
+    if (reflectionPeekTweenRef.current) cancelAnimationFrame(reflectionPeekTweenRef.current);
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    const startPos = camera.position.clone();
+    const startTarget = controls.target.clone();
+    const startTime = performance.now();
+
+    const animate = (currentTime: number) => {
+      const elapsed = currentTime - startTime;
+      const progress = Math.min(1, elapsed / durationMs);
+      const ease = 1 - Math.pow(1 - progress, 3);
+
+      camera.position.lerpVectors(startPos, toPos, ease);
+      controls.target.lerpVectors(startTarget, toTarget, ease);
+      camera.updateProjectionMatrix();
+      controls.update();
+
+      if (progress < 1) {
+        reflectionPeekTweenRef.current = requestAnimationFrame(animate);
+      } else {
+        reflectionPeekTweenRef.current = null;
+        onDone?.();
+      }
+    };
+    reflectionPeekTweenRef.current = requestAnimationFrame(animate);
+  }, []);
+
+  const handleReflectionPeekEnter = useCallback(() => {
+    if (!currentMeshGroupRef.current || !cameraRef.current || !controlsRef.current) return;
+    if (!reflectionFocusBackupRef.current) {
+      reflectionFocusBackupRef.current = {
+        position: cameraRef.current.position.clone(),
+        target: controlsRef.current.target.clone(),
+      };
+    }
+    const box = new THREE.Box3().setFromObject(currentMeshGroupRef.current);
+    const sphere = box.getBoundingSphere(new THREE.Sphere());
+    if (!Number.isFinite(sphere.radius) || sphere.radius <= 0) return;
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    const direction = new THREE.Vector3().subVectors(camera.position, controls.target).normalize();
+    const targetDistance = Math.max(controls.minDistance * 1.4, Math.min(controls.maxDistance * 0.55, sphere.radius * 1.15));
+    const targetPos = sphere.center.clone().add(direction.multiplyScalar(targetDistance));
+    setReflectionPeekFocused(true);
+    tweenCameraTo(targetPos, sphere.center, 380);
+  }, [tweenCameraTo]);
+
+  const handleReflectionPeekLeave = useCallback(() => {
+    const backup = reflectionFocusBackupRef.current;
+    if (!backup || !cameraRef.current || !controlsRef.current) {
+      setReflectionPeekFocused(false);
+      return;
+    }
+    tweenCameraTo(backup.position, backup.target, 380, () => {
+      reflectionFocusBackupRef.current = null;
+    });
+    setReflectionPeekFocused(false);
+  }, [tweenCameraTo]);
+
+  useEffect(() => {
+    if (!reflectionPeekEnabled || !currentAsset) {
+      if (reflectionPreviewUrlRef.current) URL.revokeObjectURL(reflectionPreviewUrlRef.current);
+      reflectionPreviewUrlRef.current = null;
+      setReflectionPreviewUrl(null);
+      handleReflectionPeekLeave();
+      return;
+    }
+
+    let stopped = false;
+    let debounceTimer: number | null = null;
+
+    const capture = () => {
+      if (stopped || !rendererRef.current || !sceneRef.current || !cameraRef.current) return;
+      rendererRef.current.render(sceneRef.current, cameraRef.current);
+      rendererRef.current.domElement.toBlob((blob) => {
+        if (stopped || !blob) return;
+        const url = URL.createObjectURL(blob);
+        if (reflectionPreviewUrlRef.current) URL.revokeObjectURL(reflectionPreviewUrlRef.current);
+        reflectionPreviewUrlRef.current = url;
+        setReflectionPreviewUrl(url);
+      }, 'image/jpeg', 0.72);
+    };
+
+    const scheduleCapture = () => {
+      if (debounceTimer) window.clearTimeout(debounceTimer);
+      debounceTimer = window.setTimeout(capture, 250);
+    };
+
+    // Initial snapshot
+    capture();
+
+    const controls = controlsRef.current;
+    if (controls) {
+      controls.addEventListener('end', scheduleCapture);
+    }
+
+    return () => {
+      stopped = true;
+      if (debounceTimer) window.clearTimeout(debounceTimer);
+      if (controls) {
+        controls.removeEventListener('end', scheduleCapture);
+      }
+      if (reflectionPreviewUrlRef.current) {
+        URL.revokeObjectURL(reflectionPreviewUrlRef.current);
+        reflectionPreviewUrlRef.current = null;
+      }
+    };
+  }, [reflectionPeekEnabled, currentAsset?.id, handleReflectionPeekLeave]);
+
+  const runPhysicsSmokeTest = useCallback(async () => {
+    setPhysicsModeOpen(true);
+    const existing = physicsRuntimeRef.current;
+    if (existing?.isReady()) {
+      existing.applyTest('drop');
+      setPhysicsRunning(true);
+      return;
+    }
+
+    const scene = sceneRef.current;
+    const meshGroup = currentMeshGroupRef.current;
+    if (!scene || !meshGroup || !currentAsset) {
+      setPhysicsStatus('Load a mesh before running the physics smoke test.');
+      return;
+    }
+
+    const runtime = new PhysicsRuntime();
+    setPhysicsStatus('Preparing quick rigid-body smoke test…');
+    try {
+      await runtime.initQuickTest(scene, meshGroup, {
+        bodyType: 'dynamic',
+        massMode: 'manual',
+        massKg: 1,
+        densityMode: 'auto',
+        densityKgM3: 500,
+        friction: 0.5,
+        restitution: 0.35,
+        linearDamping: 0.05,
+        angularDamping: 0.08,
+        gravityEnabled: true,
+      });
+      try { physicsRuntimeRef.current?.dispose(); } catch (_) {}
+      physicsRuntimeRef.current = runtime;
+      setPhysicsStatus('Quick physics ready — bounds-based smoke test');
+      runtime.applyTest('drop');
+      setPhysicsRunning(true);
+    } catch (error) {
+      try { runtime.dispose(); } catch (_) {}
+      if (physicsRuntimeRef.current === runtime) physicsRuntimeRef.current = null;
+      setPhysicsStatus(error instanceof Error ? 'Physics test failed: ' + error.message : 'Physics test failed.');
+      setPhysicsRunning(false);
+    }
+  }, [currentAsset]);
+
+  // CameraIcon preset switcher
+  const applyCameraPreset = useCallback((preset: CameraViewPreset | 'side') => {
+    if (!cameraRef.current || !controlsRef.current) return;
+    const effectivePreset: CameraViewPreset = preset === 'side' ? 'right' : preset;
+    setCameraPreset(effectivePreset);
+    setCameraMenuOpen(false);
+    const cam = cameraRef.current;
+    const ctrl = controlsRef.current;
+    const group = currentMeshGroupRef.current;
+    const targetCenter = new THREE.Vector3(0, 0.4, 0);
+    let viewDist = 3.8;
+
+    if (group && group.children.length > 0) {
+      const box = new THREE.Box3().setFromObject(group);
+      if (!box.isEmpty()) {
+        box.getCenter(targetCenter);
+        const sphere = box.getBoundingSphere(new THREE.Sphere());
+        if (sphere.radius > 0 && isFinite(sphere.radius)) {
+          const fov = cam.fov * (Math.PI / 180);
+          viewDist = (sphere.radius / Math.sin(fov / 2)) * 1.15;
+          viewDist = Math.max(ctrl.minDistance * 1.5, Math.min(ctrl.maxDistance * 0.8, viewDist));
+        }
+      }
+    }
+
+    ctrl.target.copy(targetCenter);
+
+    switch (effectivePreset) {
+      case 'perspective':
+        cam.position.set(targetCenter.x, targetCenter.y + viewDist * 0.28, targetCenter.z + viewDist);
+        break;
+      case 'front':
+        cam.position.set(targetCenter.x, targetCenter.y, targetCenter.z + viewDist);
+        break;
+      case 'back':
+        cam.position.set(targetCenter.x, targetCenter.y, targetCenter.z - viewDist);
+        break;
+      case 'top':
+        cam.position.set(targetCenter.x, targetCenter.y + viewDist, targetCenter.z + 0.001);
+        break;
+      case 'bottom':
+        cam.position.set(targetCenter.x, targetCenter.y - viewDist, targetCenter.z + 0.001);
+        break;
+      case 'left':
+        cam.position.set(targetCenter.x - viewDist, targetCenter.y, targetCenter.z);
+        break;
+      case 'right':
+        cam.position.set(targetCenter.x + viewDist, targetCenter.y, targetCenter.z);
+        break;
+      case 'ortho':
+        cam.position.set(targetCenter.x + viewDist * 0.7, targetCenter.y + viewDist * 0.5, targetCenter.z + viewDist * 0.7);
+        break;
+    }
+    ctrl.update();
+  }, []);
+
+  const resetCamera = useCallback(() => {
+    hasUserOrbitedRef.current = false;
+    applyCameraPreset('perspective');
+  }, [applyCameraPreset]);
+
+  const handleZoomIn = useCallback(() => {
+    if (cameraRef.current && controlsRef.current) {
+      const target = controlsRef.current.target;
+      const dir = new THREE.Vector3().subVectors(cameraRef.current.position, target);
+      const distance = dir.length();
+      // Zoom 15% of current distance, but clamp to minDistance
+      const zoomAmount = Math.max(distance * 0.15, 0.1);
+      dir.normalize().multiplyScalar(zoomAmount);
+      cameraRef.current.position.sub(dir);
+      // Clamp to min/max
+      const newDist = cameraRef.current.position.distanceTo(target);
+      if (newDist < controlsRef.current.minDistance) {
+        const clamped = dir.normalize().multiplyScalar(controlsRef.current.minDistance);
+        cameraRef.current.position.copy(target).add(clamped);
+      }
+      controlsRef.current.update();
+    }
+  }, []);
+
+  const handleZoomOut = useCallback(() => {
+    if (cameraRef.current && controlsRef.current) {
+      const target = controlsRef.current.target;
+      const dir = new THREE.Vector3().subVectors(cameraRef.current.position, target);
+      // Zoom out 15% of current distance
+      dir.multiplyScalar(1.15);
+      cameraRef.current.position.addVectors(target, dir);
+      // Clamp to maxDistance
+      const newDist = cameraRef.current.position.distanceTo(target);
+      if (newDist > controlsRef.current.maxDistance) {
+        const clamped = dir.normalize().multiplyScalar(controlsRef.current.maxDistance);
+        cameraRef.current.position.copy(target).add(clamped);
+      }
+      controlsRef.current.update();
+    }
+  }, []);
+
+  const frameCamera = useCallback((object: THREE.Object3D, options?: { forceResetAngle?: boolean }) => {
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    if (!camera || !controls) return;
+
+    const box = new THREE.Box3().setFromObject(object);
+    const center = box.getCenter(new THREE.Vector3());
+    const sphere = box.getBoundingSphere(new THREE.Sphere());
+    const radius = sphere.radius;
+
+    if (radius === 0 || !isFinite(radius)) return;
+
+    // Adaptive margin based on model size:
+    // Small models (<1): more margin (1.3x) so they don't fill the entire view
+    // Medium models (1-5): moderate margin (1.15x)
+    // Large models (>5): less margin (1.05x) so they fit comfortably
+    const marginFactor = radius < 1 ? 1.3 : radius < 5 ? 1.15 : 1.05;
+
+    const fov = camera.fov * (Math.PI / 180);
+    const distance = (radius / Math.sin(fov / 2)) * marginFactor;
+
+    // Clamp to controls min/max with small buffer
+    const clampedDistance = Math.max(
+      controls.minDistance * 1.2,
+      Math.min(controls.maxDistance * 0.9, distance)
+    );
+
+    // If user has manually orbited or existing camera has a valid viewing direction, preserve that angle!
+    const currentDir = new THREE.Vector3().subVectors(camera.position, controls.target);
+    const hasAngle = currentDir.lengthSq() > 0.001;
+    const dir = (hasAngle && !options?.forceResetAngle)
+      ? currentDir.normalize()
+      : new THREE.Vector3(1, 0.4, 1).normalize();
+
+    camera.position.copy(center).add(dir.multiplyScalar(clampedDistance));
+
+    camera.near = Math.max(0.01, clampedDistance / 100);
+    camera.far = Math.max(100, clampedDistance * 100);
+    camera.updateProjectionMatrix();
+
+    controls.target.copy(center);
+    controls.update();
+
+    // Align shadow floor and grid directly beneath the model's feet
+    if (floorRef.current) {
+      floorRef.current.position.set(center.x, box.min.y - 0.001, center.z);
+    }
+    if (gridHelperRef.current) {
+      gridHelperRef.current.position.set(center.x, box.min.y - 0.0005, center.z);
+    }
+
+    // Dynamically focus directional shadow light to cast crisp contact shadows on the floor
+    if (keyLightRef.current && sceneRef.current) {
+      const light = keyLightRef.current;
+      light.position.set(
+        center.x + Math.max(2.5, radius * 1.5),
+        box.max.y + Math.max(3.0, radius * 2.0),
+        center.z + Math.max(2.5, radius * 1.5)
+      );
+      light.target.position.copy(center);
+      if (!light.target.parent) sceneRef.current.add(light.target);
+      light.target.updateMatrixWorld();
+
+      const shadowCam = light.shadow.camera;
+      const sSize = Math.max(3.5, radius * 1.6);
+      shadowCam.left = -sSize;
+      shadowCam.right = sSize;
+      shadowCam.top = sSize;
+      shadowCam.bottom = -sSize;
+      shadowCam.near = 0.5;
+      shadowCam.far = Math.max(30, radius * 6.0);
+      shadowCam.updateProjectionMatrix();
+      light.shadow.needsUpdate = true;
+    }
+
+    // Auto-generate asset thumbnail if missing
+    if (rendererRef.current && sceneRef.current && currentAsset && (!currentAsset.thumbnail || currentAsset.thumbnail.length === 0)) {
+      const targetId = currentAsset.id;
+      setTimeout(() => {
+        try {
+          if (rendererRef.current && sceneRef.current && cameraRef.current) {
+            rendererRef.current.render(sceneRef.current, cameraRef.current);
+            const thumb = rendererRef.current.domElement.toDataURL('image/png');
+            if (thumb && thumb.length > 50) {
+              currentAsset.thumbnail = thumb;
+              updateAssetProperties(targetId, { thumbnail: thumb });
+            }
+          }
+        } catch (e) {
+          // ignore
+        }
+      }, 150);
+    }
+  }, [currentAsset, updateAssetProperties]);
+
+  // Take real 3D viewport screenshot
+  const handleScreenshot = () => {
+    if (!rendererRef.current || !sceneRef.current || !cameraRef.current) return;
+    try {
+      rendererRef.current.render(sceneRef.current, cameraRef.current);
+      const dataUrl = rendererRef.current.domElement.toDataURL('image/png');
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      const cleanName = (currentAsset?.name || 'viewport_3d').toLowerCase().replace(/[^a-z0-9]/g, '_');
+      const fileName = `${cleanName}_snapshot_${Date.now()}.png`;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setDropToastMessage(`Captured 3D snapshot: ${fileName}`);
+      setTimeout(() => setDropToastMessage(null), 3000);
+    } catch (err) {
+      console.error('Screenshot failed', err);
+    }
+  };
+
+  const handleCaptureTurntable = useCallback(() => {
+    if (isCapturingTurntableRef.current) return;
+    const renderer = rendererRef.current;
+    const scene = sceneRef.current;
+    const camera = cameraRef.current;
+    const meshGroup = currentMeshGroupRef.current;
+
+    if (!renderer || !scene || !camera || !meshGroup || meshGroup.children.length === 0) {
+      setDropToastMessage('No active 3D model in viewport to capture');
+      setTimeout(() => setDropToastMessage(null), 3000);
+      return;
+    }
+
+    const canvas = renderer.domElement;
+    const hasMediaRecorder = typeof window !== 'undefined' && typeof window.MediaRecorder !== 'undefined';
+    const hasCaptureStream = typeof canvas.captureStream === 'function';
+
+    const cleanName = (currentAsset?.name || 'viewport_3d').toLowerCase().replace(/[^a-z0-9]/g, '_');
+
+    // Fallback: If MediaRecorder or captureStream is unavailable, take a turntable snapshot
+    if (!hasMediaRecorder || !hasCaptureStream) {
+      try {
+        renderer.render(scene, camera);
+        const dataUrl = canvas.toDataURL('image/png');
+        const fileName = `${cleanName}_turntable_${Date.now()}.png`;
+        const a = document.createElement('a');
+        a.href = dataUrl;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+
+        taskPersistence.addNotification({
+          title: 'Turntable Snapshot Exported',
+          description: `Saved viewport snapshot for ${currentAsset?.name || 'asset'}`,
+          status: 'export',
+          assetId: currentAsset?.id,
+          assetUrl: currentAsset?.source?.viewUrl || currentAsset?.source?.localUrl || currentAsset?.thumbnail,
+        });
+
+        setDropToastMessage(`Browser lacks video recording; saved PNG snapshot: ${fileName}`);
+        setTimeout(() => setDropToastMessage(null), 3500);
+      } catch (err) {
+        console.error('Turntable snapshot fallback failed:', err);
+      }
+      return;
+    }
+
+    try {
+      // Determine best supported mime type
+      let mimeType = 'video/webm';
+      if (typeof MediaRecorder.isTypeSupported === 'function') {
+        if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
+          mimeType = 'video/webm;codecs=vp9';
+        } else if (MediaRecorder.isTypeSupported('video/webm')) {
+          mimeType = 'video/webm';
+        } else if (MediaRecorder.isTypeSupported('video/mp4')) {
+          mimeType = 'video/mp4';
+        }
+      }
+
+      const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+      const stream = canvas.captureStream(30);
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      turntableRecorderRef.current = recorder;
+      const chunks: Blob[] = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          chunks.push(e.data);
+        }
+      };
+
+      recorder.onerror = (e) => {
+        console.error('MediaRecorder error during turntable capture:', e);
+        setIsCapturingTurntable(false);
+        setTurntableProgress(0);
+        isCapturingTurntableRef.current = false;
+        turntableRecorderRef.current = null;
+        setDropToastMessage('Recording error occurred during turntable capture');
+        setTimeout(() => setDropToastMessage(null), 3000);
+      };
+
+      recorder.onstop = () => {
+        setIsCapturingTurntable(false);
+        setTurntableProgress(0);
+        isCapturingTurntableRef.current = false;
+        turntableRecorderRef.current = null;
+
+        if (chunks.length === 0) {
+          setDropToastMessage('Turntable capture recorded 0 frames');
+          setTimeout(() => setDropToastMessage(null), 3000);
+          return;
+        }
+
+        try {
+          const blob = new Blob(chunks, { type: mimeType });
+          const url = URL.createObjectURL(blob);
+          const fileName = `${cleanName}_turntable_${Date.now()}.${ext}`;
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = fileName;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+
+          taskPersistence.addNotification({
+            title: 'Turntable Video Exported',
+            description: `Captured 360° ${ext.toUpperCase()} turntable for ${currentAsset?.name || 'asset'}`,
+            status: 'export',
+            assetId: currentAsset?.id,
+            assetUrl: currentAsset?.source?.viewUrl || currentAsset?.source?.localUrl || currentAsset?.thumbnail,
+          });
+
+          setDropToastMessage(`Exported 360° turntable video: ${fileName}`);
+          setTimeout(() => setDropToastMessage(null), 4000);
+        } catch (stopErr) {
+          console.error('Failed to export turntable video:', stopErr);
+          setDropToastMessage('Failed to save turntable video file');
+          setTimeout(() => setDropToastMessage(null), 3000);
+        }
+      };
+
+      // Start recording
+      recorder.start();
+      setIsCapturingTurntable(true);
+      isCapturingTurntableRef.current = true;
+      setTurntableProgress(0);
+
+      const fps = 30;
+      const durationSec = 3;
+      const totalFrames = fps * durationSec; // 90 frames
+      const frameInterval = 1000 / fps; // ~33.3ms
+      let currentFrame = 0;
+      const startRotation = meshGroup.rotation.y;
+      let lastTime = performance.now();
+
+      const captureStep = (now: number) => {
+        if (!isCapturingTurntableRef.current) {
+          if (recorder.state !== 'inactive') {
+            try { recorder.stop(); } catch (_) {}
+          }
+          turntableRecorderRef.current = null;
+          return;
+        }
+
+        if (renderer.getContext()?.isContextLost()) {
+          console.warn('WebGL context lost during turntable capture');
+          if (recorder.state !== 'inactive') {
+            try { recorder.stop(); } catch (_) {}
+          }
+          setIsCapturingTurntable(false);
+          setTurntableProgress(0);
+          isCapturingTurntableRef.current = false;
+          turntableRecorderRef.current = null;
+          setDropToastMessage('WebGL context lost; turntable recording cancelled');
+          setTimeout(() => setDropToastMessage(null), 3000);
+          return;
+        }
+
+        const elapsed = now - lastTime;
+        if (elapsed >= frameInterval) {
+          lastTime = now - (elapsed % frameInterval);
+          currentFrame++;
+          const progress = Math.min(1, currentFrame / totalFrames);
+          meshGroup.rotation.y = startRotation + progress * Math.PI * 2;
+          if (keyLightRef.current) keyLightRef.current.shadow.needsUpdate = true;
+          try {
+            renderer.render(scene, camera);
+          } catch (_) {}
+          setTurntableProgress(Math.round(progress * 100));
+
+          if (currentFrame >= totalFrames) {
+            meshGroup.rotation.y = startRotation; // restore original rotation
+            if (recorder.state !== 'inactive') {
+              try { recorder.stop(); } catch (_) {}
+            }
+            return;
+          }
+        }
+        turntableAnimFrameRef.current = requestAnimationFrame(captureStep);
+      };
+
+      turntableAnimFrameRef.current = requestAnimationFrame(captureStep);
+    } catch (err) {
+      console.error('Turntable capture failed:', err);
+      if (turntableRecorderRef.current && turntableRecorderRef.current.state !== 'inactive') {
+        try { turntableRecorderRef.current.stop(); } catch (_) {}
+      }
+      turntableRecorderRef.current = null;
+      if (turntableAnimFrameRef.current) {
+        cancelAnimationFrame(turntableAnimFrameRef.current);
+        turntableAnimFrameRef.current = null;
+      }
+      setIsCapturingTurntable(false);
+      setTurntableProgress(0);
+      isCapturingTurntableRef.current = false;
+      setDropToastMessage('Failed to initialize turntable recording');
+      setTimeout(() => setDropToastMessage(null), 3000);
+    }
+  }, [currentAsset]);
+
+  // Sync external camera preset and viewport snapshot triggers
+  const lastAnimCameraPresetRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (animCameraPreset && lastAnimCameraPresetRef.current !== null && lastAnimCameraPresetRef.current !== animCameraPreset) {
+      applyCameraPreset(animCameraPreset);
+    }
+    lastAnimCameraPresetRef.current = animCameraPreset;
+  }, [animCameraPreset, applyCameraPreset]);
+
+  useEffect(() => {
+    const handleCameraPresetEvent = (e: Event) => {
+      const customEvent = e as CustomEvent<CameraViewPreset | 'side'>;
+      if (customEvent.detail) {
+        applyCameraPreset(customEvent.detail);
+      }
+    };
+    const handleSnapshotEvent = () => {
+      handleScreenshot();
+    };
+    const handleCaptureTurntableEvent = () => {
+      handleCaptureTurntable();
+    };
+    const handleInteractionModeEvent = (e: Event) => {
+      const customEvent = e as CustomEvent<'orbit' | 'pan' | 'move' | 'rotate' | 'scale'>;
+      if (customEvent.detail) {
+        setInteractionMode(customEvent.detail);
+      }
+    };
+    const handleToggleGridEvent = () => {
+      setEnvironmentSettings((p) => ({ ...p, gridVisible: !p.gridVisible }));
+    };
+
+    const handleRestoreCameraEvent = (e: Event) => {
+      const ce = e as CustomEvent<{
+        cameraPosition: [number, number, number];
+        cameraTarget: [number, number, number];
+      }>;
+      if (ce.detail && cameraRef.current && controlsRef.current) {
+        const [cx, cy, cz] = ce.detail.cameraPosition;
+        const [tx, ty, tz] = ce.detail.cameraTarget;
+        cameraRef.current.position.set(cx, cy, cz);
+        controlsRef.current.target.set(tx, ty, tz);
+        controlsRef.current.update();
+      }
+    };
+
+    window.addEventListener('setCameraPreset', handleCameraPresetEvent);
+    window.addEventListener('takeViewportSnapshot', handleSnapshotEvent);
+    window.addEventListener('formash_capture_turntable', handleCaptureTurntableEvent);
+    window.addEventListener('setInteractionMode', handleInteractionModeEvent);
+    window.addEventListener('toggleGrid', handleToggleGridEvent);
+    window.addEventListener('restoreCameraState', handleRestoreCameraEvent);
+    return () => {
+      window.removeEventListener('setCameraPreset', handleCameraPresetEvent);
+      window.removeEventListener('takeViewportSnapshot', handleSnapshotEvent);
+      window.removeEventListener('formash_capture_turntable', handleCaptureTurntableEvent);
+      window.removeEventListener('setInteractionMode', handleInteractionModeEvent);
+      window.removeEventListener('toggleGrid', handleToggleGridEvent);
+      window.removeEventListener('restoreCameraState', handleRestoreCameraEvent);
+    };
+  }, [applyCameraPreset, handleCaptureTurntable, setInteractionMode]);
+
+  // Drag and drop asset loading handler
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    if (!isDragOver) setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setIsDragOver(false);
+    }
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+
+    // 1. CheckIcon if dropped from Assets library
+    const assetJson = e.dataTransfer.getData('application/json');
+    const assetId = e.dataTransfer.getData('text/plain');
+
+    if (assetJson) {
+      try {
+        const droppedAsset: ModelAsset = JSON.parse(assetJson);
+        setCurrentAsset(droppedAsset);
+        setDropToastMessage(`Loaded "${droppedAsset.name}" into Viewport`);
+        setTimeout(() => setDropToastMessage(null), 3000);
+        return;
+      } catch (err) {
+        // Fallback to ID
+      }
+    }
+
+    if (assetId) {
+      const match = assets.find(a => a.id === assetId);
+      if (match) {
+        setCurrentAsset(match);
+        setDropToastMessage(`Loaded "${match.name}" into Viewport`);
+        setTimeout(() => setDropToastMessage(null), 3000);
+        return;
+      }
+    }
+
+    // 2. Check if local files were dropped from desktop (3D meshes or 2D reference images)
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const file = e.dataTransfer.files[0];
+      const ext = file.name.split('.').pop()?.toUpperCase() || '';
+      const ALLOWED_EXTENSIONS = ['GLB', 'GLTF', 'OBJ', 'PLY', 'STL', 'FBX'];
+      const IMAGE_EXTENSIONS = ['JPG', 'JPEG', 'PNG', 'WEBP', 'BMP', 'TIFF', 'AVIF'];
+
+      if (IMAGE_EXTENSIONS.includes(ext) || file.type.startsWith('image/')) {
+        const cleanPrompt = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+
+        setDropToastMessage(`Uploading "${file.name}" as 3D reference image...`);
+
+        getApiClient().uploadImageFile(file, (loadedBytes, totalBytes) => {
+          const percent = getUploadPercent(loadedBytes, totalBytes ?? null);
+          if (percent !== null) {
+            setDropToastMessage(`Uploading "${file.name}" (${percent}%)...`);
+          }
+        }).then(res => {
+          const fileId = requireUploadFileId(res?.file_id, 'image');
+          const serverUrl = `/api/v1/file-upload/download/${encodeURIComponent(fileId)}`;
+          setGenerationSettings(prev => ({
+            ...prev,
+            mode: 'image-to-3d',
+            image: serverUrl,
+            imageFileId: fileId,
+            prompt: cleanPrompt,
+            imageName: cleanPrompt,
+          }));
+          navigateToTool('model');
+          setDropToastMessage(`Reference image "${file.name}" ready for 3D generation`);
+          setTimeout(() => setDropToastMessage(null), 3000);
+        }).catch(err => {
+          console.error('Backend image upload failed:', err);
+          setDropToastMessage(err instanceof Error ? err.message : `Failed to upload reference image "${file.name}"`);
+          setTimeout(() => setDropToastMessage(null), 3500);
+        });
+        return;
+      }
+
+      if (!ALLOWED_EXTENSIONS.includes(ext)) {
+        setDropToastMessage(`Unsupported file format "${ext}". Allowed: ${ALLOWED_EXTENSIONS.join(', ')} or images (${IMAGE_EXTENSIONS.join(', ')})`);
+        setTimeout(() => setDropToastMessage(null), 3500);
+        return;
+      }
+
+      // 1. Immediately create optimistic local preview URL for instant 3D viewport rendering
+      const localUrl = URL.createObjectURL(file);
+      const optimisticId = `upload_${Date.now()}`;
+      const cleanName = file.name.replace(/\.[^/.]+$/, '');
+      const optimisticAsset: ModelAsset = {
+        id: optimisticId,
+        fileId: optimisticId,
+        name: cleanName,
+        category: 'mesh',
+        meshType: 'custom',
+        thumbnail: '',
+        faces: 0,
+        vertices: 0,
+        triangles: 0,
+        statsAvailable: false,
+        format: ext as any,
+        fileSize: `${(file.size / 1048576).toFixed(1)} MB`,
+        source: {
+          filename: file.name,
+          subfolder: 'uploads',
+          type: 'upload',
+          viewUrl: localUrl,
+          localUrl: localUrl,
+          fileId: optimisticId,
+        },
+        topology: 'Triangle',
+        dateCreated: new Date().toISOString().split('T')[0],
+        tags: ['Uploaded', ext],
+      };
+
+      // Reset camera orbit lock for the brand-new model so it frames automatically once
+      hasUserOrbitedRef.current = false;
+      lastFramedAssetIdRef.current = null;
+      addAsset(optimisticAsset);
+      setCurrentAsset(optimisticAsset);
+
+      // 2. Open live upload progress bar UI
+      setMeshUploadProgress({
+        isUploading: true,
+        percent: 0,
+        filename: file.name,
+        isComplete: false,
+        error: null,
+      });
+
+      // 3. Upload to backend in background while user immediately interacts with model
+      uploadMeshAsset(file, {
+        onProgress: (loadedBytes, totalBytes) => {
+          const percent = getUploadPercent(loadedBytes, totalBytes ?? null);
+          if (percent !== null) {
+            setMeshUploadProgress((prev) => prev ? { ...prev, percent } : null);
+          }
+        },
+      }).then((canonicalAsset) => {
+        // Complete progress
+        setMeshUploadProgress((prev) => prev ? { ...prev, percent: 100, isComplete: true } : null);
+
+        // Retain localUrl so the 3D scene does not re-fetch from backend or flicker
+        const mergedAsset: ModelAsset = {
+          ...canonicalAsset,
+          source: {
+            filename: canonicalAsset.source?.filename || file.name,
+            subfolder: canonicalAsset.source?.subfolder || 'uploads',
+            type: canonicalAsset.source?.type || 'upload',
+            viewUrl: canonicalAsset.source?.viewUrl,
+            fileId: canonicalAsset.fileId || canonicalAsset.id,
+            localUrl: localUrl,
+          },
+        };
+
+        lastFramedAssetIdRef.current = canonicalAsset.id;
+        addAsset(mergedAsset);
+        setCurrentAsset(mergedAsset);
+
+        // Auto-dismiss progress overlay after 2.2 seconds
+        setTimeout(() => {
+          setMeshUploadProgress(null);
+        }, 2200);
+      }).catch((uploadErr) => {
+        console.error('Backend mesh upload failed:', uploadErr);
+        const errMsg = uploadErr instanceof Error ? uploadErr.message : `Failed to upload "${file.name}"`;
+        setMeshUploadProgress((prev) => prev ? {
+          ...prev,
+          isUploading: false,
+          error: errMsg,
+        } : null);
+        setTimeout(() => {
+          setMeshUploadProgress(null);
+        }, 4000);
+      });
+    }
+  };
+
+  return (
+    <div 
+      className={`relative w-full h-full overflow-hidden select-none ${className}`}
+      style={{
+        background: environmentSettings.backgroundColor === 'transparent'
+          ? 'radial-gradient(ellipse 80% 70% at 50% 45%, #16181d 0%, #0f1013 55%, #08090a 100%)'
+          : environmentSettings.backgroundColor
+      }}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {/* 3D Canvas Container */}
+      <div 
+        ref={containerRef} 
+        onPointerMove={(e) => {
+          if (activeTool === 'edit' || activeTool === 'texture') {
+            const el = brushReticleRef.current;
+            if (el) {
+              el.style.transform = `translate3d(${e.clientX}px, ${e.clientY}px, 0) translate(-50%, -50%) scale(${isPointerDownRef.current ? 0.94 : 1})`;
+              if (el.style.display !== 'flex') el.style.display = 'flex';
+            }
+          }
+        }}
+        onPointerDown={(e) => {
+          isPointerDownRef.current = true;
+          if (activeTool === 'edit' || activeTool === 'texture') {
+            const el = brushReticleRef.current;
+            if (el) {
+              el.style.transform = `translate3d(${e.clientX}px, ${e.clientY}px, 0) translate(-50%, -50%) scale(0.94)`;
+            }
+          }
+        }}
+        onPointerUp={() => {
+          isPointerDownRef.current = false;
+          const el = brushReticleRef.current;
+          if (el) {
+            el.style.transform = el.style.transform.replace('scale(0.94)', 'scale(1)');
+          }
+        }}
+        onPointerLeave={() => {
+          isPointerDownRef.current = false;
+          const el = brushReticleRef.current;
+          if (el) el.style.display = 'none';
+        }}
+        className={`w-full h-full absolute inset-0 ${
+          activeTool === 'edit' || activeTool === 'texture'
+            ? 'cursor-none'
+            : activeTool === 'uv' || activeTool === 'segment'
+            ? 'cursor-crosshair'
+            : 'cursor-grab active:cursor-grabbing'
+        }`} 
+      />
+
+      {/* Floating Real-Time Zero-Lag Precision Brush Reticle Cursor */}
+      {(activeTool === 'edit' || activeTool === 'texture') && (
+        <div
+          ref={brushReticleRef}
+          className="fixed pointer-events-none z-50 will-change-transform hidden flex-col items-center justify-center"
+          style={{
+            left: 0,
+            top: 0,
+          }}
+        >
+          <div
+            className="rounded-full border-2 flex items-center justify-center"
+            style={{
+              width: `${Math.max(18, activeTool === 'edit' ? (sculptSettings?.radius || 0.15) * 280 : (paintBrushSettings?.size || 24) * 2)}px`,
+              height: `${Math.max(18, activeTool === 'edit' ? (sculptSettings?.radius || 0.15) * 280 : (paintBrushSettings?.size || 24) * 2)}px`,
+              borderColor: activeTool === 'texture' 
+                ? (paintBrushSettings?.color || '#FFCC00') 
+                : '#FFCC00',
+              backgroundColor: activeTool === 'texture' 
+                ? `${paintBrushSettings?.color || '#FFCC00'}22` 
+                : 'rgba(255, 204, 0, 0.08)',
+              boxShadow: '0 0 14px rgba(255, 204, 0, 0.4), inset 0 0 8px rgba(255, 204, 0, 0.2)',
+            }}
+          >
+            {/* Center Reticle Icon — Shows the actual tool/brush icon */}
+            <div 
+              className="w-4 h-4 rounded-full flex items-center justify-center shadow-sm"
+              style={{
+                backgroundColor: activeTool === 'texture' ? (paintBrushSettings?.color || '#FFCC00') : '#FFCC00'
+              }}
+            >
+              {React.createElement(getActiveBrushIcon(activeTool, sculptSettings?.brush, false), {
+                className: "w-2.5 h-2.5 text-black flex-shrink-0"
+              })}
+            </div>
+          </div>
+
+          {/* Floating Brush Type & Radius Badge */}
+          <div className="mt-1.5 px-2.5 py-1 rounded-lg bg-black/90 backdrop-blur-md border border-white/20 text-[9px] font-mono font-bold text-white whitespace-nowrap shadow-xl flex items-center gap-1.5">
+            {React.createElement(getActiveBrushIcon(activeTool, sculptSettings?.brush, false), {
+              className: "w-3.5 h-3.5 text-primary flex-shrink-0"
+            })}
+            <span>
+              {activeTool === 'edit' 
+                ? `${sculptSettings?.brush?.toUpperCase() || 'STANDARD'} • R:${(sculptSettings?.radius || 0.15).toFixed(2)}` 
+                : `PAINT • ${paintBrushSettings?.size || 24}px`}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Dynamic BrushIcon Size Preview HUD */}
+      {brushPreviewVisible && (activeTool === 'edit' || activeTool === 'texture') && (
+        <div className="absolute inset-0 pointer-events-none z-40 flex items-center justify-center animate-in fade-in zoom-in-95 duration-150">
+          <div className="relative flex flex-col items-center justify-center">
+            <div
+              className="rounded-full border-2 border-dashed shadow-[0_0_25px_rgba(255,204,0,0.5)]"
+              style={{
+                width: `${brushPreviewRadius * 2}px`,
+                height: `${brushPreviewRadius * 2}px`,
+                borderColor: brushPreviewColor,
+                backgroundColor: `${brushPreviewColor}18`,
+              }}
+            />
+            <div className="mt-2.5 px-3 py-1 rounded-full bg-black/85 backdrop-blur-md border border-white/[0.16] text-[10px] font-mono font-bold text-white shadow-2xl flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: brushPreviewColor }} />
+              <span>
+                {activeTool === 'edit' 
+                  ? `Sculpt Radius: ${sculptSettings?.radius?.toFixed(2)}` 
+                  : `Paint BrushIcon Size: ${paintBrushSettings?.size}px`}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Drag & Drop Visual Dropzone Overlay */}
+      {isDragOver && (
+        <div className="absolute inset-0 bg-[#0c0c0c]/95 border-2 border-dashed border-primary flex flex-col items-center justify-center z-40 transition-all pointer-events-none">
+          <div className="w-16 h-16 rounded-2xl bg-primary/20 border border-primary/50 flex items-center justify-center text-primary shadow-[0_0_30px_rgba(255,204,0,0.3)] animate-bounce mb-3">
+            <HugeiconsIcon icon={CloudUpload} size={16} className="w-8 h-8" />
+          </div>
+          <span className="text-base font-bold text-white tracking-wide">
+            Drop 3D Asset to Load into Viewport
+          </span>
+          <span className="text-xs text-zinc-400 mt-1">
+            Loads geometry, textures, topology & material configs instantly
+          </span>
+        </div>
+      )}
+
+      {/* Mesh Upload & Cloud Save Live Progress Overlay */}
+      {meshUploadProgress && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 w-full max-w-sm px-4 py-3 rounded-2xl bg-[#14151ae6] backdrop-blur-xl border border-primary/40 shadow-2xl flex flex-col gap-2 text-xs text-white animate-in fade-in slide-in-from-top-3 duration-300 pointer-events-auto">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className={`p-1.5 rounded-lg flex items-center justify-center ${
+                meshUploadProgress.error
+                  ? 'bg-rose-500/20 text-rose-400'
+                  : meshUploadProgress.isComplete
+                  ? 'bg-emerald-500/20 text-emerald-400'
+                  : 'bg-primary/20 text-primary'
+              }`}>
+                {meshUploadProgress.error ? (
+                  <HugeiconsIcon icon={Cancel01Icon} size={16} />
+                ) : meshUploadProgress.isComplete ? (
+                  <HugeiconsIcon icon={CheckIcon} size={16} />
+                ) : (
+                  <HugeiconsIcon icon={CloudUpload} size={16} className="animate-pulse" />
+                )}
+              </div>
+              <div className="min-w-0">
+                <p className="font-semibold text-white truncate max-w-[210px]">
+                  {meshUploadProgress.filename}
+                </p>
+                <p className="text-[10px] text-zinc-400">
+                  {meshUploadProgress.error
+                    ? meshUploadProgress.error
+                    : meshUploadProgress.isComplete
+                    ? '100% saved in cloud storage'
+                    : 'Preview loaded · Saving to server...'}
+                </p>
+              </div>
+            </div>
+            <div className="text-right flex-shrink-0">
+              <span className={`text-xs font-mono font-bold ${
+                meshUploadProgress.error
+                  ? 'text-rose-400'
+                  : meshUploadProgress.isComplete
+                  ? 'text-emerald-400'
+                  : 'text-primary'
+              }`}>
+                {meshUploadProgress.error
+                  ? 'Failed'
+                  : `${Math.round(meshUploadProgress.percent)}%`}
+              </span>
+            </div>
+          </div>
+
+          {/* Animated Progress Bar */}
+          <div className="w-full h-1.5 rounded-full bg-white/[0.08] overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all duration-200 ease-out ${
+                meshUploadProgress.error
+                  ? 'bg-rose-500'
+                  : meshUploadProgress.isComplete
+                  ? 'bg-emerald-400'
+                  : 'bg-gradient-to-r from-cyan-400 to-primary'
+              }`}
+              style={{ width: `${Math.max(5, Math.min(100, meshUploadProgress.percent))}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Drop Notification Toast */}
+      {dropToastMessage && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-[#141414] border border-primary/50 shadow-2xl flex items-center gap-2 text-xs font-semibold text-white animate-in fade-in slide-in-from-top-2 duration-300 max-w-md">
+          {dropToastIsHtmlError ? (
+            <HugeiconsIcon icon={SearchIcon} size={16} className="w-4 h-4 text-rose-400 flex-shrink-0" />
+          ) : (
+            <HugeiconsIcon icon={SparklesIcon} size={16} className="w-4 h-4 text-primary" />
+          )}
+          <span className="truncate">{dropToastMessage}</span>
+          {dropToastIsHtmlError && (
+            <button
+              onClick={() => {
+                setDropToastMessage(null);
+                setDropToastIsHtmlError(false);
+                window.dispatchEvent(new CustomEvent('openUploadDiagnostic'));
+              }}
+              className="ml-2 px-2 py-0.5 rounded-md bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 text-[10px] font-bold flex-shrink-0 transition-colors"
+            >
+              Diagnose
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Sleek Minimalist Studio 3D Generation & Loading Progress Overlay */}
+      {(isExecuting || debugBlueprint || activeTask?.status === 'running' || activeTask?.status === 'queued') && (
+        <GenerationLoadingPreview
+          isExecuting={Boolean(isExecuting || debugBlueprint || activeTask?.status === 'running' || activeTask?.status === 'queued')}
+          progress={executionProgress || activeTask?.progress || 10}
+          stepMessage={executionStep || activeTask?.currentStep || 'Synthesizing 3D mesh...'}
+          stage={activeTask?.stage}
+          referenceImage={generationSettings?.image || activeTask?.inputImage || null}
+          prompt={generationSettings?.prompt || activeTask?.title || null}
+          modelId={activeTask?.provider || generationSettings?.aiModel || null}
+          onCancel={isExecuting ? cancelExecution : () => setDebugBlueprint(false)}
+        />
+      )}
+
+      {/* Smooth Non-Intrusive Loading Overlay (Asset file parsing) */}
+      {isLoading && !isExecuting && (
+        <div className="absolute inset-0 bg-[hsl(var(--surface-1))]/75 backdrop-blur-sm flex flex-col items-center justify-center z-20 pointer-events-none transition-all duration-200 p-4">
+          <div className="bg-[hsl(var(--surface-1))]/90 border border-zinc-800/80 rounded-2xl px-6 py-5 flex flex-col items-center shadow-2xl max-w-xs w-full">
+            <div className="relative flex items-center justify-center mb-3">
+              <div className="w-12 h-12 rounded-full border-2 border-zinc-800 border-t-[hsl(var(--primary))] animate-spin" />
+              <HugeiconsIcon icon={SparklesIcon} size={16} className="w-4 h-4 text-primary absolute animate-pulse" />
+            </div>
+            <span className="text-xs font-bold text-zinc-100 tracking-wide block mb-1">
+              {loadProgress && loadProgress.percent === 100
+                ? 'Processing & GPU Upload...'
+                : 'Loading 3D Model...'}
+            </span>
+            {loadProgress && loadProgress.total > 0 ? (
+              <div className="w-full mt-2 space-y-1.5">
+                <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-[#ebd024] to-[hsl(var(--primary))] transition-all duration-150 rounded-full"
+                    style={{ width: `${Math.max(5, loadProgress.percent)}%` }}
+                  />
+                </div>
+                <div className="flex items-center justify-between text-[10px] text-zinc-400 font-mono">
+                  <span>
+                    {(loadProgress.loaded / (1024 * 1024)).toFixed(1)} / {(loadProgress.total / (1024 * 1024)).toFixed(1)} MB
+                  </span>
+                  <span>{loadProgress.percent}%</span>
+                </div>
+              </div>
+            ) : (
+              <p className="text-[10px] text-zinc-400 mt-1">Preparing high-fidelity mesh</p>
+            )}
+          </div>
+        </div>
+      )}
+
+
+      {showOverlayUI && (activeTool === 'edit' || activeTool === 'texture') && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
+          <div className="pointer-events-auto rounded-xl border border-white/[0.14] bg-[hsl(var(--surface-1))]/95 backdrop-blur-md shadow-2xl px-3.5 py-2 flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded-lg bg-black/60 border border-white/10 flex items-center justify-center text-primary flex-shrink-0">
+                {React.createElement(getActiveBrushIcon(activeTool, sculptSettings?.brush), { className: "w-3.5 h-3.5" })}
+              </div>
+              <span className="text-xs font-bold text-white tracking-wide uppercase">
+                {activeTool === 'edit' ? `Sculpt: ${sculptSettings?.brush || 'standard'}` : `3D Paint: ${paintBrushSettings?.color || '#FFCC00'}`}
+              </span>
+            </div>
+            <div className="h-4 w-px bg-white/10" />
+            <div className="text-[10.5px] text-zinc-300 font-mono flex items-center gap-2">
+              {activeTool === 'edit' ? (
+                <>
+                  <span>Radius: {sculptSettings?.radius?.toFixed(2) || '0.15'}</span>
+                  <span>•</span>
+                  <span>Strength: {sculptSettings?.strength?.toFixed(2) || '0.50'}</span>
+                  <span>•</span>
+                  <span className="text-primary font-bold">Drag on mesh to sculpt (Shift: Smooth, Ctrl: Invert)</span>
+                </>
+              ) : (
+                <>
+                  <span>Size: {paintBrushSettings?.size || 24}px</span>
+                  <span>•</span>
+                  <span>Opacity: {Math.round((paintBrushSettings?.opacity ?? 1) * 100)}%</span>
+                  <span>•</span>
+                  <span className="text-primary font-bold">Drag on mesh to paint (Ctrl: Erase)</span>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showOverlayUI && currentAsset?.artifacts?.physicsReady && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
+          <div className="pointer-events-auto rounded-xl border border-white/[0.12] bg-[hsl(var(--surface-1))]/95 backdrop-blur-md shadow-2xl px-2 py-2">
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setPhysicsModeOpen(prev => !prev)}
+                className={physicsModeOpen ? 'px-2.5 py-1.5 rounded-lg bg-primary text-black text-[10px] font-bold' : 'px-2.5 py-1.5 rounded-lg bg-[hsl(var(--surface-2))] text-zinc-200 text-[10px] font-bold border border-white/[0.08]'}
+              >
+                Physics
+              </button>
+              {physicsModeOpen && (
+                <>
+                  <button type="button" disabled={!physicsViewerReady}
+                    onClick={() => {
+                      try {
+                        const runtime = physicsRuntimeRef.current;
+                        if (!runtime?.isReady()) return;
+                        const running = !runtime.isRunning();
+                        runtime.setRunning(running);
+                        setPhysicsRunning(running);
+                      } catch (err) {
+                        console.warn('[MeshViewer] Physics toggle error:', err);
+                      }
+                    }}
+                    className="px-2 py-1.5 rounded-lg bg-[hsl(var(--surface-2))] text-[10px] text-zinc-200 border border-white/[0.08] disabled:opacity-40 disabled:cursor-not-allowed"
+                  >{physicsRunning ? 'Pause' : 'Play'}</button>
+                  <button type="button" disabled={!physicsViewerReady}
+                    onClick={() => {
+                      try {
+                        if (physicsRuntimeRef.current?.isReady()) physicsRuntimeRef.current.step();
+                      } catch (err) {
+                        console.warn('[MeshViewer] Physics step error:', err);
+                      }
+                    }}
+                    className="px-2 py-1.5 rounded-lg bg-[hsl(var(--surface-2))] text-[10px] text-zinc-200 border border-white/[0.08] disabled:opacity-40 disabled:cursor-not-allowed"
+                  >Step</button>
+                  <button type="button" disabled={!physicsViewerReady}
+                    onClick={() => {
+                      try {
+                        const runtime = physicsRuntimeRef.current;
+                        if (!runtime?.isReady()) return;
+                        runtime.reset();
+                        setPhysicsRunning(false);
+                      } catch (err) {
+                        console.warn('[MeshViewer] Physics reset error:', err);
+                      }
+                    }}
+                    className="px-2 py-1.5 rounded-lg bg-[hsl(var(--surface-2))] text-[10px] text-zinc-200 border border-white/[0.08] disabled:opacity-40 disabled:cursor-not-allowed"
+                  >Reset</button>
+                  <button type="button" disabled={!physicsViewerReady}
+                    onClick={() => setPhysicsDebug(prev => !prev)}
+                    className={physicsDebug ? 'px-2 py-1.5 rounded-lg bg-primary/20 text-primary border border-primary/40 text-[10px] font-bold disabled:opacity-40' : 'px-2 py-1.5 rounded-lg bg-[hsl(var(--surface-2))] text-zinc-300 border border-white/[0.08] text-[10px] disabled:opacity-40'}
+                  >Colliders</button>
+                  {(['drop', 'bounce', 'slide', 'spin'] as const).map(test => (
+                    <button key={test} type="button" disabled={!physicsViewerReady}
+                      onClick={() => {
+                        try {
+                          const runtime = physicsRuntimeRef.current;
+                          if (!runtime?.isReady()) return;
+                          runtime.applyTest(test);
+                          setPhysicsRunning(true);
+                        } catch (err) {
+                          console.warn('[MeshViewer] Physics applyTest error:', err);
+                        }
+                      }}
+                      className="px-2 py-1.5 rounded-lg bg-[hsl(var(--surface-2))] text-zinc-300 border border-white/[0.08] text-[10px] capitalize disabled:opacity-40 disabled:cursor-not-allowed"
+                    >{test}</button>
+                  ))}
+                </>
+              )}
+            </div>
+            {physicsModeOpen && (
+              <div className="pt-1 text-[9px] text-zinc-500 text-center">
+                {physicsStatus || 'Preparing physics runtime…'} · soft-body/jiggle is capability-gated
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Empty State Overlay when no asset is active */}
+      {!currentAsset && !isLoading && !isExecuting && !debugBlueprint && showOverlayUI && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center z-10 pointer-events-none p-4">
+          <div className="max-w-xs w-full p-5 rounded-2xl bg-[hsl(var(--surface-1))]/95 border border-white/[0.12] card-depth shadow-2xl backdrop-blur-md text-center pointer-events-auto space-y-3">
+            <div className="w-12 h-12 rounded-2xl bg-[hsl(var(--surface-2))] border border-white/[0.12] flex items-center justify-center mx-auto text-primary shadow-[0_0_20px_rgba(255,204,0,0.15)]">
+              <HugeiconsIcon icon={Box} size={16} className="w-6 h-6 stroke-[2.2]" />
+            </div>
+            <div className="space-y-1">
+              <h3 className="font-bold text-sm text-white">3D Viewport Ready</h3>
+              <p className="text-[11px] text-zinc-400 leading-relaxed">
+                Generate a 3D asset from the left panel, or drag and drop a GLB/OBJ file directly here.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                onClick={() => {
+                  setIsLeftPanelOpen(true);
+                  setActiveTool('model');
+                }}
+                className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-[#FFE066] via-[#FFCC00] to-[#E09800] hover:brightness-105 text-[#080808] font-black text-[11px] flex items-center justify-center gap-1.5 transition-all shadow-[0_4px_16px_rgba(255,204,0,0.35)] hover:shadow-[0_6px_22px_rgba(255,204,0,0.5)] active:scale-95 cursor-pointer btn-lighting-shine"
+              >
+                <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5" />
+                <span>Generate 3D Asset</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Persistent Viewport Overlays */}
+      {showOverlayUI && (
+        <>
+          {/* Top-Right: Topology HUD & Corner View Controller */}
+          <div 
+            style={{ right: `${rightOffset}px` }} 
+            className="absolute top-3 z-10 flex items-center gap-1.5 sm:gap-2 max-w-[calc(100vw-1.5rem)] transition-all duration-200 pointer-events-auto"
+          >
+            {currentAsset?.artifacts && (() => {
+              const rawLods = currentAsset.artifacts.lods;
+              const lodList: any[] = Array.isArray(rawLods)
+                ? rawLods
+                : (rawLods && typeof rawLods === 'object')
+                  ? Object.values(rawLods)
+                  : [];
+              return (
+                <div className="flex items-center gap-1 p-1 rounded-xl bg-[hsl(var(--surface-1))]/90 backdrop-blur-md border border-white/[0.12] shadow-2xl">
+                  <span className="px-1.5 text-[8px] font-bold uppercase tracking-wider text-zinc-500 hidden lg:inline">Artifact</span>
+                  {[
+                    { id: 'game-ready' as const, label: 'Game' },
+                    { id: 'source' as const, label: 'Source' },
+                    ...lodList.slice(0, 4).map((_, i) => ({ id: ('lod' + i) as 'lod0' | 'lod1' | 'lod2' | 'lod3', label: 'L' + i })),
+                  ].map(item => {
+                    const disabled =
+                      item.id === 'source' ? !currentAsset.artifacts?.source :
+                      item.id === 'game-ready' ? !currentAsset.artifacts?.gameReady :
+                      !lodList[Number(item.id.slice(3))];
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => switchArtifactView(item.id)}
+                        className={"px-2 py-1 rounded-lg text-[9px] font-bold transition-all disabled:opacity-30 disabled:cursor-not-allowed " + (
+                          artifactView === item.id
+                            ? "bg-primary text-black"
+                            : "text-zinc-300 hover:text-white hover:bg-white/[0.05]"
+                        )}
+                      >
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+
+            <div className="flex items-center gap-0.5 p-1 rounded-xl bg-[hsl(var(--surface-1))]/90 backdrop-blur-md border border-white/[0.12] shadow-2xl">
+              <span className="px-1.5 text-[8px] font-bold uppercase tracking-wider text-zinc-500 hidden lg:inline">FPS</span>
+              {(['auto', 'smooth', 'quality'] as const).map(mode => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setPerformanceMode(mode)}
+                  className={"px-2 py-1 rounded-lg text-[9px] font-bold transition-all " + (
+                    performanceMode === mode ? "bg-primary text-black" : "text-zinc-300 hover:text-white hover:bg-white/[0.05]"
+                  )}
+                >
+                  {mode === 'smooth' ? 'Fast' : mode === 'quality' ? 'Detail' : 'Auto'}
+                </button>
+              ))}
+            </div>
+
+            {/* Unobtrusive Corner Zoom / Orbit Controller Set */}
+            <div className="flex items-center gap-0.5 p-1 rounded-xl bg-[hsl(var(--surface-1))]/90 backdrop-blur-md border border-white/[0.12] shadow-2xl text-zinc-300">
+              {/* Orbit/Pan Mode Toggle with Active Visual Indicator */}
+              <SimpleTooltip side="bottom" label={`Mode: ${interactionMode === 'pan' ? 'Pan' : 'Orbit'} (Click to toggle)`}>
+                <button
+                  id="btn-corner-orbit-toggle"
+                  onClick={() => setInteractionMode(interactionMode === 'pan' ? 'orbit' : 'pan')}
+                  className={`flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                    interactionMode === 'orbit'
+                      ? 'bg-[#181818] text-primary border border-primary/40 shadow-sm'
+                      : 'bg-[#181818] text-zinc-300 hover:text-white'
+                  }`}
+                >
+                  <HugeiconsIcon icon={CompassIcon} size={16} className="w-3 h-3 text-primary" />
+                  <span className="capitalize">{interactionMode}</span>
+                </button>
+              </SimpleTooltip>
+
+              <div className="w-px h-3.5 bg-white/[0.12] mx-0.5" />
+
+              {/* Zoom In */}
+              <SimpleTooltip side="bottom" label="Zoom In (+)">
+                <button
+                  id="btn-corner-zoom-in"
+                  onClick={handleZoomIn}
+                  className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-[#181818] transition-all cursor-pointer"
+                >
+                  <HugeiconsIcon icon={ZoomInIcon} size={16} className="w-3.5 h-3.5" />
+                </button>
+              </SimpleTooltip>
+
+              {/* Zoom Out */}
+              <SimpleTooltip side="bottom" label="Zoom Out (-)">
+                <button
+                  id="btn-corner-zoom-out"
+                  onClick={handleZoomOut}
+                  className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-[#181818] transition-all cursor-pointer"
+                >
+                  <HugeiconsIcon icon={ZoomOutIcon} size={16} className="w-3.5 h-3.5" />
+                </button>
+              </SimpleTooltip>
+
+              {/* Fit / Focus View */}
+              <SimpleTooltip side="bottom" label="Reset Focus / Center (Hotkey: F)">
+                <button
+                  id="btn-corner-fit-view"
+                  onClick={resetCamera}
+                  className="p-1 rounded-lg text-zinc-400 hover:text-primary hover:bg-[#181818] transition-all cursor-pointer"
+                >
+                  <HugeiconsIcon icon={Maximize02Icon} size={16} className="w-3.5 h-3.5" />
+                </button>
+              </SimpleTooltip>
+            </div>
+
+            <div className="flex items-center gap-0.5 p-1 rounded-xl bg-[hsl(var(--surface-1))]/90 backdrop-blur-md border border-white/[0.12] shadow-2xl">
+              <SimpleTooltip side="bottom" label={physicsViewerReady ? 'Run rigid-body physics test' : 'Run lightweight bounds-based physics smoke test'}>
+                <button
+                  type="button"
+                  onClick={() => void runPhysicsSmokeTest()}
+                  disabled={!currentAsset || isLoading}
+                  className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold text-zinc-200 hover:text-primary hover:bg-white/[0.05] disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                >
+                  <HugeiconsIcon icon={ZapIcon} size={16} className="w-3 h-3 text-primary" />
+                  <span className="hidden sm:inline">Test Physics</span>
+                </button>
+              </SimpleTooltip>
+              <div className="w-px h-3.5 bg-white/[0.12] mx-0.5" />
+              <SimpleTooltip side="bottom" label={reflectionPeekEnabled ? 'Hide mirror detail peek' : 'Show low-rate mirror detail peek'}>
+                <button
+                  type="button"
+                  onClick={() => setReflectionPeekEnabled(prev => !prev)}
+                  onMouseEnter={() => { if (reflectionPeekEnabled) handleReflectionPeekEnter(); }}
+                  onMouseLeave={() => { if (reflectionPeekEnabled) handleReflectionPeekLeave(); }}
+                  disabled={!currentAsset}
+                  className={"flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed " + (reflectionPeekEnabled ? "bg-primary/15 text-primary" : "text-zinc-300 hover:text-white hover:bg-white/[0.05]")}
+                >
+                  <HugeiconsIcon icon={FlipHorizontalIcon} size={16} className="w-3 h-3" />
+                  <span className="hidden sm:inline">Mirror</span>
+                </button>
+              </SimpleTooltip>
+            </div>
+
+            {/* Topology HUD */}
+            <div className="bg-[hsl(var(--surface-1))]/90 backdrop-blur-md border border-white/[0.12] rounded-xl px-2.5 sm:px-3 py-1.5 shadow-2xl flex items-center gap-2 sm:gap-3 text-xs font-mono">
+              <div className="flex items-center gap-1 sm:gap-1.5">
+                <span className="text-zinc-500 text-[10px] uppercase font-semibold hidden sm:inline">Topology</span>
+                <span className="text-primary font-bold text-[10px]">
+                  {currentAsset?.topology || (meshStats ? 'Triangle' : '—')}
+                </span>
+              </div>
+              <div className="w-px h-3 bg-white/[0.12]" />
+              <div className="flex items-center gap-1 sm:gap-1.5">
+                <span className="text-zinc-500 text-[10px] uppercase font-semibold hidden sm:inline">Geometry</span>
+                <span className="text-[hsl(var(--neon-green))] font-bold text-[10px]">
+                  {currentAsset?.statsAvailable 
+                    ? `${(currentAsset.faces / 1000).toFixed(1)}k / ${(currentAsset.vertices / 1000).toFixed(1)}k` 
+                    : meshStats 
+                      ? `${(meshStats.faces / 1000).toFixed(1)}k / ${(meshStats.vertices / 1000).toFixed(1)}k`
+                      : '—'}
+                </span>
+              </div>
+              {meshStats?.dimensions && (
+                <>
+                  <div className="w-px h-3 bg-white/[0.12] hidden md:block" />
+                  <div className="hidden md:flex items-center gap-1.5">
+                    <span className="text-zinc-500 text-[10px] uppercase font-semibold">Size</span>
+                    <span className="text-zinc-300 font-bold text-[10px]">
+                      {meshStats.dimensions.x}×{meshStats.dimensions.y}×{meshStats.dimensions.z}m
+                    </span>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Right Floating Tool Rail - visible on tablet & desktop (hidden on mobile to prevent clutter) */}
+          <div 
+            style={{ right: `${rightOffset}px` }} 
+            className="hidden md:flex absolute top-1/2 -translate-y-1/2 z-10 flex-col gap-1.5 bg-[hsl(var(--surface-1))] border border-white/[0.12] p-1.5 rounded-2xl shadow-2xl transition-all duration-200"
+          >
+            <SimpleTooltip side="left" label={interactionMode === 'move' ? 'Return to Orbit Mode' : 'Move / Translate 3D Model'}>
+              <button
+                id="btn-viewport-move-tool"
+                onClick={() => setInteractionMode(interactionMode === 'move' ? 'orbit' : 'move')}
+                className={`p-2 rounded-xl transition-all ${
+                  interactionMode === 'move' 
+                    ? 'bg-primary text-black font-bold ring-2 ring-[hsl(var(--primary))]/40' 
+                    : 'text-zinc-300 hover:text-white hover:bg-[#1f222a]'
+                }`}
+              >
+                <HugeiconsIcon icon={MoveIcon} size={16} className="w-4 h-4 stroke-[2.2]" />
+              </button>
+            </SimpleTooltip>
+
+            <SimpleTooltip side="left" label={interactionMode === 'pan' ? 'Switch to Orbit Mode' : 'Switch to Pan Mode'}>
+              <button
+                onClick={() => setInteractionMode(interactionMode === 'pan' ? 'orbit' : 'pan')}
+                className={`p-2 rounded-xl transition-all ${
+                  interactionMode === 'pan' 
+                    ? 'bg-primary text-black font-bold' 
+                    : 'text-zinc-300 hover:text-white hover:bg-[#1f222a]'
+                }`}
+              >
+                <HugeiconsIcon icon={Hand} size={16} className="w-4 h-4 stroke-[2.2]" />
+              </button>
+            </SimpleTooltip>
+
+            <SimpleTooltip side="left" label="Capture 3D Viewport Screenshot">
+              <button
+                onClick={handleScreenshot}
+                className="p-2 rounded-xl text-zinc-300 hover:text-primary hover:bg-[#1f222a] transition-all"
+              >
+                <HugeiconsIcon icon={CameraIcon} size={16} className="w-4 h-4 stroke-[2.2]" />
+              </button>
+            </SimpleTooltip>
+
+            <SimpleTooltip side="left" label={environmentSettings.gridVisible ? 'Hide Floor Grid' : 'Show Floor Grid'}>
+              <button
+                onClick={() => patchEnv({ gridVisible: !environmentSettings.gridVisible })}
+                className={`p-2 rounded-xl transition-all ${
+                  environmentSettings.gridVisible 
+                    ? 'text-primary bg-[#1f222a]' 
+                    : 'text-zinc-300 hover:text-white hover:bg-[#1f222a]'
+                }`}
+              >
+                <HugeiconsIcon icon={GridIcon} size={16} className="w-4 h-4 stroke-[2.2]" />
+              </button>
+            </SimpleTooltip>
+
+            <SimpleTooltip side="left" label="Reset Camera (Hotkey: F)">
+              <button
+                onClick={resetCamera}
+                className="p-2 rounded-xl text-zinc-300 hover:text-white hover:bg-[#1f222a] transition-all"
+              >
+                <HugeiconsIcon icon={RotateCcwIcon} size={16} className="w-4 h-4 stroke-[2.2]" />
+              </button>
+            </SimpleTooltip>
+
+            <SimpleTooltip side="left" label="Environment Settings — Lighting &amp; Camera">
+              <button
+                id="btn-env-settings-toggle"
+                onClick={() => setShowEnvironmentPanel(!showEnvironmentPanel)}
+                className={`p-2 rounded-xl transition-all cursor-pointer ${
+                  showEnvironmentPanel
+                    ? 'bg-primary text-black font-bold' 
+                    : 'text-zinc-300 hover:text-white hover:bg-[#1f222a]'
+                }`}
+              >
+                <HugeiconsIcon icon={SunIcon} size={16} className="w-4 h-4 stroke-[2.2]" />
+              </button>
+            </SimpleTooltip>
+          </div>
+
+          {/* Environment Settings Panel */}
+          {showEnvironmentPanel && (
+            <div 
+              ref={envPanelRef}
+              style={{ right: `${isDesktopScreen ? rightOffset + 56 : 16}px` }} 
+              className="absolute top-1/2 -translate-y-1/2 z-20 w-80 max-w-[calc(100vw-2rem)] max-h-[85vh] overflow-y-auto custom-scrollbar bg-[hsl(var(--surface-1))]/95 backdrop-blur-2xl border border-white/[0.12] rounded-2xl shadow-2xl p-4 space-y-3.5 transition-all duration-200 animate-in fade-in zoom-in-95"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-white/[0.08] pb-2">
+                <div className="flex items-center gap-1.5">
+                  <HugeiconsIcon icon={SunIcon} size={16} className="w-3.5 h-3.5 text-primary" />
+                  <h3 className="text-[11px] font-bold tracking-wider text-white uppercase">Studio Environment</h3>
+                </div>
+                <button
+                  onClick={() => setShowEnvironmentPanel(false)}
+                  className="p-1 rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.08] transition-colors"
+                >
+                  <HugeiconsIcon icon={Cancel} size={16} className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {/* Presets Section */}
+              <div className="space-y-1.5">
+                <span className="text-[9px] font-semibold text-zinc-400 uppercase tracking-wider">Atmosphere Presets</span>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {ENVIRONMENT_PRESETS.map((preset) => (
+                    <button
+                      key={preset.id}
+                      onClick={() => applyPreset(preset.id)}
+                      className={`px-2 py-1.5 rounded-lg text-[10px] font-medium transition-all text-left truncate ${
+                        selectedPreset === preset.id
+                          ? 'bg-primary text-black font-bold shadow-md shadow-primary/20'
+                          : 'bg-[hsl(var(--surface-2))] text-zinc-300 border border-white/[0.08] hover:border-primary/40 hover:text-white'
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Backdrop / Background Color Section */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] font-semibold text-zinc-400 uppercase tracking-wider">Backdrop Color</span>
+                  <span className="text-[9px] text-zinc-400 font-mono capitalize">
+                    {BACKGROUND_OPTIONS.find(b => b.value === environmentSettings.backgroundColor)?.label || 'Custom'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-6 gap-1.5">
+                  {BACKGROUND_OPTIONS.map((opt) => {
+                    const isSelected = environmentSettings.backgroundColor === opt.value;
+                    return (
+                      <button
+                        key={opt.id}
+                        title={opt.label}
+                        onClick={() => {
+                          setSelectedPreset(null);
+                          patchEnv({ backgroundColor: opt.value });
+                        }}
+                        style={{ background: opt.preview }}
+                        className={`h-7 rounded-lg border transition-all ${
+                          isSelected
+                            ? 'border-primary ring-2 ring-primary/40 scale-105'
+                            : 'border-white/[0.15] hover:border-white/40'
+                        }`}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Lighting Tone */}
+              <div className="space-y-1.5">
+                <span className="text-[9px] font-semibold text-zinc-400 uppercase tracking-wider">Lighting Tone</span>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {(Object.keys(LIGHT_TONES) as LightTone[]).map((toneKey) => (
+                    <button
+                      key={toneKey}
+                      onClick={() => {
+                        setSelectedPreset(null);
+                        patchEnv({ lightTone: toneKey });
+                      }}
+                      className={`px-2 py-1 rounded-lg text-[10px] font-medium transition-all text-left ${
+                        environmentSettings.lightTone === toneKey
+                          ? 'bg-primary/20 text-primary border border-primary/50 font-bold'
+                          : 'bg-[hsl(var(--surface-2))] text-zinc-400 border border-white/[0.08] hover:border-white/20 hover:text-zinc-200'
+                      }`}
+                    >
+                      {LIGHT_TONES[toneKey].label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Lighting Sliders */}
+              <div className="space-y-2 border-t border-white/[0.06] pt-2">
+                <span className="text-[9px] font-semibold text-zinc-400 uppercase tracking-wider">Light Levels</span>
+
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] text-zinc-300">Key Light</span>
+                    <span className="text-[9px] font-mono text-primary font-bold">{environmentSettings.keyLightIntensity.toFixed(1)}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={5}
+                    step={0.1}
+                    value={environmentSettings.keyLightIntensity}
+                    onChange={(e) => {
+                      setSelectedPreset(null);
+                      patchEnv({ keyLightIntensity: parseFloat(e.target.value) });
+                    }}
+                    className="w-full h-1 rounded-full bg-zinc-700 appearance-none cursor-pointer accent-primary"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] text-zinc-300">Fill Light</span>
+                    <span className="text-[9px] font-mono text-primary font-bold">{environmentSettings.fillLightIntensity.toFixed(1)}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={4}
+                    step={0.1}
+                    value={environmentSettings.fillLightIntensity}
+                    onChange={(e) => {
+                      setSelectedPreset(null);
+                      patchEnv({ fillLightIntensity: parseFloat(e.target.value) });
+                    }}
+                    className="w-full h-1 rounded-full bg-zinc-700 appearance-none cursor-pointer accent-primary"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] text-zinc-300">Back / Rim Light</span>
+                    <span className="text-[9px] font-mono text-primary font-bold">{environmentSettings.rimLightIntensity.toFixed(1)}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={5}
+                    step={0.1}
+                    value={environmentSettings.rimLightIntensity}
+                    onChange={(e) => {
+                      setSelectedPreset(null);
+                      patchEnv({ rimLightIntensity: parseFloat(e.target.value) });
+                    }}
+                    className="w-full h-1 rounded-full bg-zinc-700 appearance-none cursor-pointer accent-primary"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] text-zinc-300">Ambient</span>
+                    <span className="text-[9px] font-mono text-primary font-bold">{environmentSettings.ambientIntensity.toFixed(1)}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={3}
+                    step={0.1}
+                    value={environmentSettings.ambientIntensity}
+                    onChange={(e) => {
+                      setSelectedPreset(null);
+                      patchEnv({ ambientIntensity: parseFloat(e.target.value) });
+                    }}
+                    className="w-full h-1 rounded-full bg-zinc-700 appearance-none cursor-pointer accent-primary"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] text-zinc-300">Camera Exposure</span>
+                    <span className="text-[9px] font-mono text-primary font-bold">{environmentSettings.exposure.toFixed(2)}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0.5}
+                    max={3}
+                    step={0.05}
+                    value={environmentSettings.exposure}
+                    onChange={(e) => {
+                      setSelectedPreset(null);
+                      patchEnv({ exposure: parseFloat(e.target.value) });
+                    }}
+                    className="w-full h-1 rounded-full bg-zinc-700 appearance-none cursor-pointer accent-primary"
+                  />
+                </div>
+              </div>
+
+              {/* Tone Mapping Pipeline */}
+              <div className="space-y-1.5 border-t border-white/[0.06] pt-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] font-semibold text-zinc-400 uppercase tracking-wider">Tone Mapping</span>
+                  <span className="text-[9px] text-primary font-mono font-bold uppercase">{environmentSettings.toneMapping || 'neutral'}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    onClick={() => patchEnv({ toneMapping: 'neutral' })}
+                    className={`px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all text-center ${
+                      environmentSettings.toneMapping !== 'aces'
+                        ? 'bg-primary text-black font-extrabold shadow-sm'
+                        : 'bg-[hsl(var(--surface-2))] text-zinc-400 border border-white/[0.08] hover:text-white'
+                    }`}
+                  >
+                    Khronos Neutral
+                  </button>
+                  <button
+                    onClick={() => patchEnv({ toneMapping: 'aces' })}
+                    className={`px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all text-center ${
+                      environmentSettings.toneMapping === 'aces'
+                        ? 'bg-primary text-black font-extrabold shadow-sm'
+                        : 'bg-[hsl(var(--surface-2))] text-zinc-400 border border-white/[0.08] hover:text-white'
+                    }`}
+                  >
+                    ACES Filmic
+                  </button>
+                </div>
+              </div>
+
+              {/* Stage & Floor Section */}
+              <div className="space-y-2 border-t border-white/[0.06] pt-2">
+                <span className="text-[9px] font-semibold text-zinc-400 uppercase tracking-wider">Stage & Floor</span>
+
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] text-zinc-300">Contact Shadow</span>
+                    <span className="text-[9px] font-mono text-primary font-bold">{Math.round(environmentSettings.floorShadowOpacity * 100)}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={environmentSettings.floorShadowOpacity}
+                    onChange={(e) => patchEnv({ floorShadowOpacity: parseFloat(e.target.value) })}
+                    className="w-full h-1 rounded-full bg-zinc-700 appearance-none cursor-pointer accent-primary"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between pt-1">
+                  <span className="text-[10px] text-zinc-300">Floor Grid</span>
+                  <button
+                    onClick={() => patchEnv({ gridVisible: !environmentSettings.gridVisible })}
+                    className={`w-7 h-4 rounded-full transition-colors relative ${environmentSettings.gridVisible ? 'bg-primary' : 'bg-zinc-700'}`}
+                  >
+                    <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-black transition-transform ${environmentSettings.gridVisible ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-zinc-300">Turntable Rotate</span>
+                  <button
+                    onClick={() => patchEnv({ autoRotate: !environmentSettings.autoRotate })}
+                    className={`w-7 h-4 rounded-full transition-colors relative ${environmentSettings.autoRotate ? 'bg-primary' : 'bg-zinc-700'}`}
+                  >
+                    <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-black transition-transform ${environmentSettings.autoRotate ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Reset to Defaults */}
+              <button
+                onClick={() => {
+                  setSelectedPreset('studio');
+                  setEnvironmentSettings({
+                    ambientIntensity: 0.85,
+                    keyLightIntensity: 1.8,
+                    fillLightIntensity: 1.1,
+                    rimLightIntensity: 1.5,
+                    exposure: 1.05,
+                    toneMapping: 'neutral',
+                    lightTone: 'studio',
+                    backgroundColor: 'transparent',
+                    gridVisible: false,
+                    gridColor: '#222222',
+                    floorShadowOpacity: 0.25,
+                    autoRotate: false,
+                    showAxes: true,
+                    showStats: true,
+                  });
+                }}
+                className="w-full py-1.5 rounded-lg text-[10px] font-semibold text-zinc-300 bg-[hsl(var(--surface-2))] border border-white/[0.1] hover:border-primary/50 hover:text-primary transition-colors"
+              >
+                Reset to Studio Defaults
+              </button>
+            </div>
+          )}
+
+          {/* Top-Right Horizontal Job & Queue Tracker (Line-by-line & Drawer for >4 jobs) */}
+          {(() => {
+            const jobList = Object.values(jobsById || {}).sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
+            const hasJobs = jobList.length > 0;
+            const showHUD = hasJobs || isExecuting || (batchQueue && batchQueue.length > 0);
+
+            if (!showHUD) return null;
+
+            const renderCard = (job: any) => {
+              const isRunning = job.status === 'running';
+              const isCompleted = job.status === 'completed';
+              const isFailed = job.status === 'failed';
+              const isQueued = job.status === 'queued';
+              const thumbUrl = job.inputImage || (isCompleted && job.result?.thumbnail_url) || '';
+
+              return (
+                <div
+                  key={job.id}
+                  className="flex items-center gap-2.5 p-2 pl-2.5 rounded-2xl bg-black/85 backdrop-blur-xl border border-white/[0.14] shadow-2xl hover:border-primary/50 transition-all select-none min-w-[240px] max-w-[270px]"
+                >
+                  {/* Reference Thumbnail or Active Icon */}
+                  <div className="relative w-9 h-9 rounded-xl overflow-hidden bg-zinc-900 border border-white/10 flex-shrink-0 flex items-center justify-center">
+                    {thumbUrl ? (
+                      <img
+                        src={thumbUrl}
+                        alt={job.modelName || 'Job'}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <HugeiconsIcon icon={SparklesIcon} size={16} className={`w-4 h-4 ${isRunning ? 'text-primary animate-pulse' : 'text-zinc-400'}`} />
+                    )}
+                    {isRunning && (
+                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                        <div className="w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Job Info and Stage Progress */}
+                  <div className="flex flex-col min-w-[110px] max-w-[160px] flex-1">
+                    <div className="flex items-center justify-between gap-1 text-[10px]">
+                      <span className="font-bold text-white truncate">
+                        {job.modelName || job.title || '3D Generating'}
+                      </span>
+                      <span className="font-mono text-[9px] font-bold">
+                        {isCompleted && <span className="text-emerald-400">Ready</span>}
+                        {isFailed && <span className="text-red-400">Failed</span>}
+                        {isQueued && <span className="text-amber-300">Queued</span>}
+                        {isRunning && <span className="text-primary">{Math.round(job.progress || 0)}%</span>}
+                      </span>
+                    </div>
+
+                    {/* Horizontal Progress bar */}
+                    <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mt-1 p-[0.5px]">
+                      <div
+                        className={`h-full rounded-full transition-all duration-300 ${
+                          isCompleted
+                            ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]'
+                            : isFailed
+                            ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]'
+                            : isQueued
+                            ? 'bg-amber-400/50'
+                            : 'bg-gradient-to-r from-amber-400 to-primary shadow-[0_0_8px_rgba(255,204,0,0.6)]'
+                        }`}
+                        style={{
+                          width: `${isCompleted || isFailed ? 100 : isQueued ? 15 : Math.max(job.progress || 0, 5)}%`,
+                        }}
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between gap-1 mt-0.5">
+                      <span className="text-[8.5px] text-zinc-400 truncate">
+                        {job.stage || (isQueued ? 'In queue (waiting for GPU)' : isRunning ? 'Processing...' : isCompleted ? 'Completed' : 'Error')}
+                      </span>
+                      {isCompleted && (
+                        <QualityBadge rawResult={job.result} size="sm" />
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Actions: View when completed & Dismiss */}
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    {isCompleted && (
+                      <button
+                        type="button"
+                        onClick={() => selectJobToView(job.id)}
+                        className="px-2 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-[9px] font-bold transition-all cursor-pointer flex items-center gap-0.5"
+                        title="Load into 3D Viewport"
+                      >
+                        <HugeiconsIcon icon={EyeIcon} size={11} />
+                        View
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => dismissJob(job.id)}
+                      title="Dismiss"
+                      className="p-1 rounded-lg hover:bg-white/10 text-zinc-400 hover:text-white transition-colors"
+                    >
+                      <HugeiconsIcon icon={Cancel01Icon} size={11} />
+                    </button>
+                  </div>
+                </div>
+              );
+            };
+
+            if (hasJobs) {
+              const isMultiJob = jobList.length > 4;
+              const activeRunningCount = jobList.filter(j => j.status === 'running' || j.status === 'queued').length;
+
+              return (
+                <div
+                  style={{ right: `${rightOffset}px` }}
+                  className="absolute top-14 z-20 pointer-events-auto transition-[right] duration-200 flex flex-col gap-2"
+                >
+                  {isMultiJob && (
+                    <div
+                      onClick={() => setIsQueueDrawerOpen(!isQueueDrawerOpen)}
+                      className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-black/90 backdrop-blur-xl border border-white/[0.16] shadow-xl text-xs font-semibold text-white cursor-pointer hover:border-primary/50 transition-all select-none min-w-[240px] max-w-[270px]"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <HugeiconsIcon icon={Layers01Icon} size={14} className="text-primary animate-pulse" />
+                        <span>Queue ({jobList.length})</span>
+                        {activeRunningCount > 0 && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-primary/20 text-primary font-bold">
+                            {activeRunningCount} active
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 text-[10px] text-zinc-400 hover:text-white">
+                        <span>{isQueueDrawerOpen ? 'Collapse' : 'Expand'}</span>
+                        <HugeiconsIcon
+                          icon={ChevronDown}
+                          size={12}
+                          className={`transition-transform duration-200 ${isQueueDrawerOpen ? 'rotate-180' : ''}`}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* If <= 4 jobs: stack line by line. If > 4 jobs: show inside scrollable drawer when open */}
+                  {(!isMultiJob || isQueueDrawerOpen) && (
+                    <div className={`flex flex-col gap-2 ${isMultiJob ? 'max-h-[60vh] overflow-y-auto pr-1' : ''}`}>
+                      {jobList.map(job => renderCard(job))}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            return (
+              <div
+                style={{ right: `${rightOffset}px` }}
+                className="absolute top-14 z-20 pointer-events-auto transition-[right] duration-200"
+              >
+                <div className="flex items-center gap-2 p-1.5 pl-2 rounded-2xl bg-black/85 backdrop-blur-xl border border-white/[0.14] shadow-2xl hover:border-primary/50 transition-all select-none">
+                  <div className="relative w-9 h-9 rounded-xl overflow-hidden bg-zinc-900 border border-white/10 flex-shrink-0 flex items-center justify-center">
+                    {generationSettings.image ? (
+                      <img
+                        src={generationSettings.image}
+                        alt="Active generation reference"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <HugeiconsIcon icon={SparklesIcon} size={16} className="w-4 h-4 text-primary animate-pulse" />
+                    )}
+                    {isExecuting && (
+                      <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+                        <div className="w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col min-w-[120px] max-w-[180px]">
+                    <div className="flex items-center justify-between gap-1 text-[10px]">
+                      <span className="font-bold text-white truncate">
+                        {isExecuting ? (activeTask?.title || '3D Generating...') : 'Queue Ready'}
+                      </span>
+                      <span className="font-mono text-primary font-bold text-[9px]">
+                        {isExecuting ? `${Math.round(executionProgress || 0)}%` : `${batchQueue.length} queued`}
+                      </span>
+                    </div>
+
+                    <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mt-1 p-[0.5px]">
+                      <div
+                        className="h-full bg-gradient-to-r from-amber-400 to-primary rounded-full transition-all duration-300 shadow-[0_0_8px_rgba(255,204,0,0.6)]"
+                        style={{ width: `${isExecuting ? Math.max(executionProgress || 0, 5) : 100}%` }}
+                      />
+                    </div>
+
+                    <span className="text-[8.5px] text-zinc-400 truncate mt-0.5">
+                      {executionStep || (batchQueue.length > 0 ? `${batchQueue.length} jobs in background` : 'Idle')}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {reflectionPeekEnabled && (
+            <div
+              className="absolute top-28 z-10 pointer-events-auto transition-[right] duration-200"
+              style={{ right: `${rightOffset}px` }}
+              onMouseEnter={handleReflectionPeekEnter}
+              onMouseLeave={handleReflectionPeekLeave}
+              onFocus={handleReflectionPeekEnter}
+              onBlur={handleReflectionPeekLeave}
+            >
+              <div
+                className={"relative w-[120px] h-[88px] overflow-hidden rounded-xl bg-black/80 border " + (reflectionPeekFocused ? "border-primary shadow-[0_0_22px_rgba(255,204,0,0.22)]" : "border-white/[0.12]") + " backdrop-blur-md transition-all duration-150"}
+                onClick={() => {
+                  if (reflectionPeekFocused) handleReflectionPeekLeave();
+                  else handleReflectionPeekEnter();
+                }}
+                role="button"
+                tabIndex={0}
+                aria-label="Mirror preview and temporary focus zoom"
+              >
+                {reflectionPreviewUrl ? (
+                  <img
+                    src={reflectionPreviewUrl}
+                    alt="Mirrored viewport preview"
+                    className="h-full w-full object-cover"
+                    style={{ transform: 'scaleX(-1)' }}
+                  />
+                ) : (
+                  <div className="h-full w-full flex items-center justify-center text-[9px] text-zinc-500">Capturing…</div>
+                )}
+                <div className="absolute inset-x-1 bottom-1 flex items-center justify-between gap-1">
+                  <span className="px-1.5 py-0.5 rounded bg-black/70 text-[8px] font-bold uppercase tracking-wider text-zinc-300">Mirror</span>
+                  {reflectionPeekFocused && (
+                    <span className="px-1.5 py-0.5 rounded bg-primary text-black text-[8px] font-bold">Detail zoom</span>
+                  )}
+                </div>
+              </div>
+              {reflectionPeekFocused && reflectionPreviewUrl && (
+                <div className="absolute top-0 right-[calc(100%+8px)] hidden md:block">
+                  <div className="w-[280px] h-[210px] overflow-hidden rounded-2xl border border-primary/40 bg-black/90 shadow-2xl">
+                    <img
+                      src={reflectionPreviewUrl}
+                      alt="Enlarged mirrored viewport preview"
+                      className="h-full w-full object-contain"
+                      style={{ transform: 'scaleX(-1)' }}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Unified Minimalist Viewport Transport & Shading HUD Capsule */}
+          {!isExecuting && !debugBlueprint && (
+            <div className="absolute bottom-14 md:bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1 sm:gap-2 max-w-[calc(100vw-1.5rem)] flex-wrap justify-center pointer-events-auto">
+              {/* Camera Presets Dropdown */}
+              <div className="relative" ref={cameraMenuRef}>
+                <button
+                  onClick={() => setCameraMenuOpen(!cameraMenuOpen)}
+                  className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-[hsl(var(--surface-1))]/90 backdrop-blur-md border border-white/[0.12] text-xs font-semibold text-zinc-200 hover:text-white hover:border-primary/40 shadow-2xl transition-all cursor-pointer active:scale-95"
+                >
+                  <HugeiconsIcon icon={RotateCw} size={16} className="w-3.5 h-3.5 text-primary" />
+                  <span className="capitalize">{cameraPreset}</span>
+                  <HugeiconsIcon icon={ChevronDown} size={16} className={`w-3 h-3 text-zinc-400 transition-transform ${cameraMenuOpen ? 'rotate-180 text-primary' : ''}`} />
+                </button>
+
+                {cameraMenuOpen && (
+                  <div className="absolute bottom-full left-0 mb-1.5 w-36 py-1 rounded-xl bg-[#181B22]/95 backdrop-blur-xl border border-white/[0.12] shadow-2xl z-50 text-xs animate-in fade-in zoom-in-95 duration-100">
+                    {(['perspective', 'front', 'back', 'top', 'bottom', 'left', 'right'] as CameraViewPreset[]).map((p) => (
+                      <button
+                        key={p}
+                        onClick={() => {
+                          applyCameraPreset(p);
+                          setCameraMenuOpen(false);
+                        }}
+                        className={`w-full text-left px-3 py-1.5 capitalize hover:bg-[#222630] transition-colors flex items-center justify-between cursor-pointer ${
+                          cameraPreset === p ? 'text-primary font-bold' : 'text-zinc-300'
+                        }`}
+                      >
+                        <span>{p}</span>
+                        {cameraPreset === p && <HugeiconsIcon icon={CheckIcon} size={16} className="w-3 h-3 text-primary" />}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Quick Shading Selector (PBR, Clay, Wireframe, Normals) */}
+              <div className="relative" ref={shadingMenuRef}>
+                <button
+                  onClick={() => setShadingMenuOpen(!shadingMenuOpen)}
+                  className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-[hsl(var(--surface-1))]/90 backdrop-blur-md border border-white/[0.12] text-xs font-semibold text-zinc-200 hover:text-white hover:border-primary/40 shadow-2xl transition-all cursor-pointer active:scale-95"
+                >
+                  <div className={`w-2.5 h-2.5 rounded-full ${
+                    shadingMode === 'textured' ? 'bg-primary' :
+                    shadingMode === 'clay' ? 'bg-zinc-400' :
+                    shadingMode === 'wireframe' ? 'bg-[hsl(var(--neon-green))]' :
+                    shadingMode === 'matcap-gold' ? 'bg-amber-400' :
+                    shadingMode === 'matcap-ceramic' ? 'bg-white' :
+                    shadingMode === 'matcap-chrome' ? 'bg-zinc-300' : 'bg-sky-400'
+                  }`} />
+                  <span className="capitalize">{shadingMode.replace('matcap-', '')}</span>
+                  <HugeiconsIcon icon={ChevronDown} size={16} className={`w-3 h-3 text-zinc-400 transition-transform ${shadingMenuOpen ? 'rotate-180 text-primary' : ''}`} />
+                </button>
+
+                {shadingMenuOpen && (
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 w-44 py-1.5 rounded-xl bg-[#181B22]/95 backdrop-blur-xl border border-white/[0.12] shadow-2xl z-50 text-xs animate-in fade-in zoom-in-95 duration-100">
+                    <div className="px-3 py-1 text-[9px] font-bold uppercase tracking-wider text-zinc-500">
+                      Shading Mode
+                    </div>
+                    {[
+                      { id: 'textured', label: 'PBR Textured', dot: 'bg-primary' },
+                      { id: 'clay', label: 'Matte Clay', dot: 'bg-zinc-400' },
+                      { id: 'matcap-gold', label: 'Metallic Gold', dot: 'bg-amber-400' },
+                      { id: 'matcap-chrome', label: 'Chrome Mirror', dot: 'bg-zinc-300' },
+                      { id: 'matcap-ceramic', label: 'Ceramic Gloss', dot: 'bg-white' },
+                      { id: 'matcap-normal', label: 'Tangent Normals', dot: 'bg-sky-400' },
+                      { id: 'wireframe', label: 'Topology Wireframe', dot: 'bg-[hsl(var(--neon-green))]' },
+                    ].map((s) => (
+                      <button
+                        key={s.id}
+                        onClick={() => {
+                          setShadingMode(s.id as any);
+                          setShadingMenuOpen(false);
+                        }}
+                        className={`w-full text-left px-3 py-1.5 hover:bg-[#222630] transition-colors flex items-center justify-between cursor-pointer ${
+                          shadingMode === s.id ? 'text-primary font-bold' : 'text-zinc-300'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <div className={`w-2 h-2 rounded-full ${s.dot}`} />
+                          <span>{s.label}</span>
+                        </div>
+                        {shadingMode === s.id && <HugeiconsIcon icon={CheckIcon} size={16} className="w-3 h-3 text-primary" />}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Wireframe Quick Toggle */}
+              <SimpleTooltip side="top" label="Toggle Wireframe Overlay">
+                <button
+                  onClick={() => setShowWireframe(!showWireframe)}
+                  className={`flex items-center gap-1 px-2 sm:px-2.5 py-1.5 rounded-xl border text-xs font-mono font-bold transition-all cursor-pointer active:scale-95 ${
+                    showWireframe
+                      ? 'bg-[hsl(var(--neon-green))]/15 text-[hsl(var(--neon-green))] border-[hsl(var(--neon-green))]/40 shadow-sm'
+                      : 'bg-[hsl(var(--surface-1))]/90 backdrop-blur-md border-white/[0.12] text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  <span>#</span>
+                  <span className="hidden sm:inline text-[10px]">Wire</span>
+                </button>
+              </SimpleTooltip>
+
+              {/* Turntable 360° */}
+              <SimpleTooltip side="top" label={isTurntable ? 'Pause Turntable' : 'Turntable 360°'}>
+                <button
+                  onClick={() => setIsTurntable(!isTurntable)}
+                  className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer active:scale-95 flex items-center gap-1.5 ${
+                    isTurntable
+                      ? 'bg-gradient-to-r from-[#FFE066] via-[#FFCC00] to-[#E09800] text-[#080808] border-primary font-bold shadow-md'
+                      : 'bg-[hsl(var(--surface-1))]/90 backdrop-blur-md border-white/[0.12] text-zinc-300 hover:text-white'
+                  }`}
+                >
+                  <HugeiconsIcon icon={RotateCw} size={16} className={`w-3.5 h-3.5 ${isTurntable ? 'animate-spin' : ''}`} />
+                  <span className="hidden sm:inline text-[11px]">360°</span>
+                </button>
+              </SimpleTooltip>
+
+              {/* Turntable Capture (T-15) */}
+              {isTurntable && (
+                <SimpleTooltip side="top" label={isCapturingTurntable ? `Recording 360° (${turntableProgress}%)` : 'Capture Turntable (MP4/WebM)'}>
+                  <button
+                    onClick={handleCaptureTurntable}
+                    disabled={isCapturingTurntable}
+                    className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer active:scale-95 flex items-center gap-1.5 ${
+                      isCapturingTurntable
+                        ? 'bg-rose-500/20 text-rose-300 border-rose-500/50 animate-pulse'
+                        : 'bg-[hsl(var(--surface-1))]/90 backdrop-blur-md border-white/[0.12] text-zinc-300 hover:text-rose-400 hover:border-rose-500/30'
+                    }`}
+                  >
+                    <HugeiconsIcon icon={RecordIcon} size={15} className={`w-3.5 h-3.5 ${isCapturingTurntable ? 'text-rose-500 fill-rose-500' : 'text-rose-400'}`} />
+                    <span className="hidden sm:inline text-[11px]">
+                      {isCapturingTurntable ? `${turntableProgress}%` : 'Capture'}
+                    </span>
+                  </button>
+                </SimpleTooltip>
+              )}
+
+              {/* Export CTA Button */}
+              <button
+                id="btn-viewport-export"
+                onClick={() => setIsExportModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-xl bg-gradient-to-r from-[#FFE066] via-[#FFCC00] to-[#E09800] hover:brightness-105 active:scale-95 text-[#080808] text-xs font-black shadow-[0_4px_16px_rgba(255,204,0,0.35)] hover:shadow-[0_6px_22px_rgba(255,204,0,0.5)] transition-all cursor-pointer border border-white/20 btn-lighting-shine"
+              >
+                <HugeiconsIcon icon={DownloadIcon} size={16} className="w-3.5 h-3.5 stroke-[2.5]" />
+                <span>Export</span>
+              </button>
+            </div>
+          )}
+          {/* Refine with Hi3D — stays visible while the refinement job runs */}
+          <ViewerToolbar />
+        </>
+      )}
+    </div>
+  );
+};

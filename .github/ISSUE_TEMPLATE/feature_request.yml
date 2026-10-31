@@ -1,0 +1,41 @@
+name: Feature Request / Proposal
+description: Suggest an idea, enhancement, or new feature for ForMesh 3D.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        We welcome proposals for new features, pipeline enhancements, and developer experience improvements!
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: Is your feature request related to a specific problem or friction point?
+      placeholder: "I'm always frustrated when..."
+    validations:
+      required: true
+  - type: textarea
+    id: proposed_solution
+    attributes:
+      label: Proposed Solution or Workflow
+      description: Describe the solution you'd like to see implemented.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Describe any alternative solutions or features you've considered.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area of Impact
+      options:
+        - Frontend UI / 3D Viewport
+        - Generation Pipeline / Post-Processing
+        - Model Adapters / Integrations
+        - Scheduler & Memory Management
+        - Devops, Scripts & Docker
+        - Documentation & Testing
+    validations:
+      required: true
